@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from students.views import SchoolViewSet, SchoolClassViewSet, StudentViewSet
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
@@ -35,5 +36,7 @@ router.register(r"reports", StudentReportViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/', include(router.urls)),
 ]

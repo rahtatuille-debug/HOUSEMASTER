@@ -11,7 +11,7 @@ from gradebook.models import Grade
 from attendance.models import AttendanceRecord
 from .models import StudentReport
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.6-flash"
 
 TONE_GUIDANCE = {
     "formal": "Formal, professional register. Avoid contractions and casual phrasing.",
