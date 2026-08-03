@@ -23,6 +23,7 @@ from students.views import SchoolViewSet, SchoolClassViewSet, StudentViewSet
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
+from accounts.views import me
 
 router = DefaultRouter()
 router.register(r"schools", SchoolViewSet)
@@ -38,5 +39,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/me/', me, name='me'),
     path('api/', include(router.urls)),
 ]

@@ -21,3 +21,4 @@ class StudentSerializer(serializers.ModelSerializer):
             "id", "school", "school_class", "external_id",
             "first_name", "last_name", "house", "enrolled_on", "is_active",
         ]
+        extra_kwargs = {"school": {"read_only": True}}

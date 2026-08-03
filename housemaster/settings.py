@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
+import os
+
 import dj_database_url
 from dotenv import load_dotenv
 
@@ -45,6 +47,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'django_filters',
+    'corsheaders',
     'accounts',
     'students',
     'gradebook',
@@ -54,6 +57,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -147,6 +151,22 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# CORS: allow the frontend's origin(s) to call this API.
+# In dev, Vite can bump to a different port (5174, 5175...) if 5173 is
+# taken, so we allow any localhost/127.0.0.1 port via regex rather than
+# hardcoding one — avoids this breaking every time a stray process is
+# already holding port 5173. For production, set CORS_ALLOWED_ORIGINS
+# (comma-separated, exact origins only — e.g. the real Vercel URL).
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^http://localhost:\d+$',
+    r'^http://127\.0\.0\.1:\d+$',
+]
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+    if origin.strip()
+]
 
 
 from datetime import timedelta  # noqa: E402

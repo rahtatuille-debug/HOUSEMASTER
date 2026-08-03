@@ -6,12 +6,14 @@ class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
         fields = ["id", "school", "name"]
+        extra_kwargs = {"school": {"read_only": True}}
 
 
 class TermSerializer(serializers.ModelSerializer):
     class Meta:
         model = Term
         fields = ["id", "school", "name", "start_date", "end_date"]
+        extra_kwargs = {"school": {"read_only": True}}
 
 
 class GradeSerializer(serializers.ModelSerializer):
