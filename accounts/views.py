@@ -1,8 +1,15 @@
+from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from .permissions import HasSchoolProfile
+from accounts.mixins import SchoolScopedViewSetMixin
+
+from .models import Invite
+from .permissions import HasSchoolProfile, IsSchoolAdmin
+from .serializers import AcceptInviteSerializer, InvitePreviewSerializer, InviteSerializer
 
 
 @api_view(["GET"])
@@ -16,3 +23,35 @@ def me(request):
             "school": {"id": profile.school.id, "name": profile.school.name},
         }
     )
+
+
+class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+    queryset = Invite.objects.all()
+    serializer_class = InviteSerializer
+    permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.get_school(), invited_by=self.request.user)
+
+
+class InvitePreviewView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        try:
+            invite = Invite.objects.get(token=token)
+        except Invite.DoesNotExist:
+            return Response({"detail": "Invite not found."}, status=404)
+        return Response(InvitePreviewSerializer(invite).data)
+
+
+class AcceptInviteView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = AcceptInviteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)

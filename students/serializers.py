@@ -8,6 +8,13 @@ class SchoolSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "report_tone", "created_at"]
 
 
+class YearGroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = YearGroup
+        fields = ["id", "school", "name"]
+        extra_kwargs = {"school": {"read_only": True}}
+
+
 class SchoolClassSerializer(serializers.ModelSerializer):
     class Meta:
         model = SchoolClass

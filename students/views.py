@@ -2,8 +2,8 @@ from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
 
-from .models import School, SchoolClass, Student
-from .serializers import SchoolSerializer, SchoolClassSerializer, StudentSerializer
+from .models import School, YearGroup, SchoolClass, Student
+from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
 
 
 class SchoolViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
@@ -20,6 +20,18 @@ class SchoolViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         # School IS the tenant here, not a related object one hop away, so
         # this doesn't use the mixin's generic school_lookup filtering.
         return School.objects.filter(id=self.get_school().id)
+
+
+class YearGroupViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+    queryset = YearGroup.objects.all()
+    serializer_class = YearGroupSerializer
+    school_lookup = "school"
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.get_school())
+
+    def perform_update(self, serializer):
+        serializer.save(school=self.get_school())
 
 
 class SchoolClassViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):

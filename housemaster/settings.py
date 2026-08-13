@@ -27,12 +27,26 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-y9g=yf*er$t!1v1kye1bc523&6b_1(*by6&%v^nlrj232-bu0^'
+# Reads SECRET_KEY from the environment in production (set this in Render's
+# dashboard); falls back to the old insecure dev key so local dev with no
+# .env still works out of the box, same pattern as DATABASE_URL below.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY', 'django-insecure-y9g=yf*er$t!1v1kye1bc523&6b_1(*by6&%v^nlrj232-bu0^'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Defaults to True (local dev), so this is opt-out, not opt-in — Render
+# MUST set DJANGO_DEBUG=False explicitly, or the deployment is still
+# running with DEBUG=True.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+# Comma-separated list of allowed hostnames in production, e.g.
+# "housemaster-api.onrender.com". Local dev values always included.
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + [
+    host.strip()
+    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+    if host.strip()
+]
 
 
 # Application definition
@@ -57,6 +71,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise serves static files (Django admin CSS, DRF browsable-API
+    # assets) directly from the Django process, right after
+    # SecurityMiddleware per WhiteNoise's own placement requirement — no
+    # separate static file host needed on Render.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -151,17 +170,31 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+# Where `collectstatic` gathers files to on Render's build step; WhiteNoise
+# serves from here at runtime. Doesn't exist/matter for local dev (no one
+# runs collectstatic there), so it's safe to leave set unconditionally.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # CORS: allow the frontend's origin(s) to call this API.
 # In dev, Vite can bump to a different port (5174, 5175...) if 5173 is
-# taken, so we allow any localhost/127.0.0.1 port via regex rather than
-# hardcoding one — avoids this breaking every time a stray process is
-# already holding port 5173. For production, set CORS_ALLOWED_ORIGINS
-# (comma-separated, exact origins only — e.g. the real Vercel URL).
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r'^http://localhost:\d+$',
-    r'^http://127\.0\.0\.1:\d+$',
-]
+# taken, so we allow any localhost/127.0.0.1 port via regex — avoids this
+# breaking every time a stray process is already holding port 5173.
+# Gated to DEBUG only: production must not accept a request just because
+# its Origin header claims to be some localhost port.
+if DEBUG:
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r'^http://localhost:\d+$',
+        r'^http://127\.0\.0\.1:\d+$',
+    ]
+
+# Exact-origin allowlist — this is what actually matters in production.
+# Set CORS_ALLOWED_ORIGINS in Render to the real Vercel URL(s), e.g.
+# "https://housemaster.vercel.app,https://housemaster-git-main-yourteam.vercel.app"
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
@@ -175,3 +208,36 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+# Staff invite emails (accounts.Invite).
+# In dev, EMAIL_BACKEND defaults to the console backend, so invite emails
+# just print to the runserver log instead of actually sending — set
+# EMAIL_BACKEND/EMAIL_HOST/etc. via the environment for real SMTP delivery
+# in production. FRONTEND_URL is the base URL the accept-invite link points
+# at (the deployed Vercel URL in production, the local Vite dev server for
+# now).
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@housemaster.local')
+
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+# Production-only hardening. Skipped when DEBUG=True so local dev over
+# plain http://127.0.0.1:8001 still works without a redirect loop.
+if not DEBUG:
+    # Render terminates TLS in front of the app and forwards over HTTP,
+    # setting X-Forwarded-Proto — this tells Django to trust that header
+    # when deciding request.is_secure(), which SECURE_SSL_REDIRECT below
+    # depends on.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # start at 1 week, raise once confirmed working
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
