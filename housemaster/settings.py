@@ -241,3 +241,27 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # start at 1 week, raise once confirmed working
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+# Error monitoring (Sentry). Only initializes if SENTRY_DSN is set in the
+# environment, so local dev (and CI) with no DSN configured is unaffected —
+# nothing breaks, errors just aren't reported anywhere. Set SENTRY_DSN on
+# Render to start getting real production error reports.
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        # Fraction of requests to trace for performance monitoring. Kept
+        # low since this is a small app on a free-tier host — raise if
+        # request-level timing data becomes useful later.
+        traces_sample_rate=0.2,
+        # Sentry's own default; scrubs cookies, auth headers, and
+        # request bodies from error reports so JWT tokens and passwords
+        # submitted in login/report-generation requests are never sent
+        # to Sentry.
+        send_default_pii=False,
+        environment=os.environ.get('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
+    )
