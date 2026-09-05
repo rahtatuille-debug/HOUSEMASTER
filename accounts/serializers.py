@@ -18,7 +18,7 @@ class InviteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invite
         fields = [
-            "id", "school", "role", "email", "token",
+            "id", "school", "role", "name", "email", "token",
             "invited_by_username", "created_at", "expires_at",
             "accepted_at", "accepted_by_username", "status",
         ]

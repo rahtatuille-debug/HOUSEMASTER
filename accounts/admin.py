@@ -11,6 +11,6 @@ class ProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Invite)
 class InviteAdmin(admin.ModelAdmin):
-    list_display = ("school", "role", "email", "invited_by", "created_at", "expires_at", "accepted_by")
+    list_display = ("school", "role", "name", "email", "invited_by", "created_at", "expires_at", "accepted_by")
     list_filter = ("school", "role")
     readonly_fields = ("token", "created_at", "accepted_at", "accepted_by")

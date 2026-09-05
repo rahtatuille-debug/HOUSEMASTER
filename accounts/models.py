@@ -46,6 +46,9 @@ class Invite(models.Model):
 
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="invites")
     role = models.CharField(max_length=20, choices=Profile.Role.choices, default=Profile.Role.TEACHER)
+    name = models.CharField(
+        max_length=255, blank=True, help_text="Full name of the invitee — for the admin's own reference."
+    )
     email = models.EmailField(blank=True, help_text="Optional — for the admin's own reference.")
     token = models.CharField(max_length=64, unique=True, default=_generate_token, editable=False)
     invited_by = models.ForeignKey(
