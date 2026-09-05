@@ -17,11 +17,12 @@ Run just this file with:
     python manage.py test accounts
 """
 from django.contrib.auth.models import User
+from django.core import mail
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from students.models import School
-from .models import Profile
+from .models import PasswordResetToken, Profile
 
 
 class SchoolScopedAPITestCase(APITestCase):
@@ -135,3 +136,61 @@ class SchoolViewSetScopingTests(SchoolScopedAPITestCase):
 
         response = self.client_a.delete(f"/api/schools/{self.school_a.id}/")
         self.assertEqual(response.status_code, 405)
+
+
+class PasswordResetTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.user_a.email = "teacher.a@alpha.test"
+        self.user_a.save(update_fields=["email"])
+
+    def test_request_with_known_username_sends_email_and_creates_token(self):
+        response = self.client.post("/api/password-reset/", {"username": self.user_a.username})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.filter(user=self.user_a).count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.user_a.email, mail.outbox[0].to)
+
+    def test_request_with_unknown_username_still_returns_200_and_sends_nothing(self):
+        response = self.client.post("/api/password-reset/", {"username": "nobody-here"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.count(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_request_with_no_email_on_file_sends_nothing(self):
+        self.user_b.email = ""
+        self.user_b.save(update_fields=["email"])
+        response = self.client.post("/api/password-reset/", {"username": self.user_b.username})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.count(), 0)
+
+    def test_confirm_with_valid_token_changes_password_and_consumes_token(self):
+        reset_token = PasswordResetToken.objects.create(user=self.user_a)
+        response = self.client.post(
+            "/api/password-reset/confirm/",
+            {"token": reset_token.token, "password": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.user_a.refresh_from_db()
+        self.assertTrue(self.user_a.check_password("a-brand-new-strong-pw9"))
+        reset_token.refresh_from_db()
+        self.assertIsNotNone(reset_token.used_at)
+
+    def test_confirm_rejects_reused_token(self):
+        reset_token = PasswordResetToken.objects.create(user=self.user_a)
+        self.client.post(
+            "/api/password-reset/confirm/",
+            {"token": reset_token.token, "password": "a-brand-new-strong-pw9"},
+        )
+        response = self.client.post(
+            "/api/password-reset/confirm/",
+            {"token": reset_token.token, "password": "another-strong-pw123"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_confirm_rejects_unknown_token(self):
+        response = self.client.post(
+            "/api/password-reset/confirm/",
+            {"token": "not-a-real-token", "password": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 400)

@@ -10,7 +10,14 @@ from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, 
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
-from accounts.views import me, InviteViewSet, InvitePreviewView, AcceptInviteView
+from accounts.views import (
+    me,
+    AcceptInviteView,
+    ConfirmPasswordResetView,
+    InvitePreviewView,
+    InviteViewSet,
+    RequestPasswordResetView,
+)
 
 router = DefaultRouter()
 router.register(r"schools", SchoolViewSet)
@@ -31,5 +38,7 @@ urlpatterns = [
     path('api/me/', me, name='me'),
     path('api/invites/preview/<str:token>/', InvitePreviewView.as_view(), name='invite_preview'),
     path('api/invites/accept/', AcceptInviteView.as_view(), name='invite_accept'),
+    path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),
+    path('api/password-reset/confirm/', ConfirmPasswordResetView.as_view(), name='password_reset_confirm'),
     path('api/', include(router.urls)),
 ]

@@ -9,7 +9,13 @@ from accounts.mixins import SchoolScopedViewSetMixin
 
 from .models import Invite
 from .permissions import HasSchoolProfile, IsSchoolAdmin
-from .serializers import AcceptInviteSerializer, InvitePreviewSerializer, InviteSerializer
+from .serializers import (
+    AcceptInviteSerializer,
+    ConfirmPasswordResetSerializer,
+    InvitePreviewSerializer,
+    InviteSerializer,
+    RequestPasswordResetSerializer,
+)
 
 
 @api_view(["GET"])
@@ -55,3 +61,25 @@ class AcceptInviteView(APIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
         return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)
+
+
+class RequestPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = RequestPasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        # Always the same response, whether or not the username exists or
+        # has an email on file — this endpoint must not reveal that.
+        return Response({"detail": "If that account exists, a reset link has been sent."})
+
+
+class ConfirmPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ConfirmPasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password has been reset. You can now log in."})

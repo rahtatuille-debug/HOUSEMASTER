@@ -3,7 +3,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Invite, Profile
+from .emails import send_password_reset_email
+from .models import Invite, PasswordResetToken, Profile
 
 
 class InviteSerializer(serializers.ModelSerializer):
@@ -74,4 +75,56 @@ class AcceptInviteSerializer(serializers.Serializer):
         invite.accepted_at = timezone.now()
         invite.accepted_by = user
         invite.save(update_fields=["accepted_at", "accepted_by"])
+        return user
+
+
+class RequestPasswordResetSerializer(serializers.Serializer):
+    """
+    Accepts a username (rather than an email — User.email isn't guaranteed
+    to be populated for staff created via the invite flow). Always
+    succeeds from the caller's point of view, whether or not the username
+    exists, so this endpoint can't be used to probe which usernames are
+    registered.
+    """
+
+    username = serializers.CharField()
+
+    def save(self):
+        try:
+            user = User.objects.get(username=self.validated_data["username"], is_active=True)
+        except User.DoesNotExist:
+            return
+        if not user.email:
+            return
+        reset_token = PasswordResetToken.objects.create(user=user)
+        send_password_reset_email(reset_token)
+
+
+class ConfirmPasswordResetSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+    def validate_token(self, value):
+        try:
+            reset_token = PasswordResetToken.objects.get(token=value)
+        except PasswordResetToken.DoesNotExist:
+            raise serializers.ValidationError("This reset link is invalid.")
+        if reset_token.is_used:
+            raise serializers.ValidationError("This reset link has already been used.")
+        if reset_token.is_expired:
+            raise serializers.ValidationError("This reset link has expired. Request a new one.")
+        self._reset_token = reset_token
+        return value
+
+    def validate_password(self, value):
+        validate_password(value, user=getattr(self, "_reset_token", None) and self._reset_token.user)
+        return value
+
+    def save(self):
+        reset_token = self._reset_token
+        user = reset_token.user
+        user.set_password(self.validated_data["password"])
+        user.save(update_fields=["password"])
+        reset_token.used_at = timezone.now()
+        reset_token.save(update_fields=["used_at"])
         return user

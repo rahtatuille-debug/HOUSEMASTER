@@ -79,3 +79,35 @@ class Invite(models.Model):
 
     def __str__(self):
         return f"Invite to {self.school} as {self.role} ({self.status})"
+
+
+def _reset_token_expiry():
+    return timezone.now() + timezone.timedelta(hours=1)
+
+
+class PasswordResetToken(models.Model):
+    """
+    A one-time, short-lived token e-mailed to a user who asked to reset
+    their password. Deliberately separate from Invite (different actor —
+    an existing user rather than an admin-invited one — and a much
+    shorter expiry) even though the shape is similar.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="password_reset_tokens"
+    )
+    token = models.CharField(max_length=64, unique=True, default=_generate_token, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(default=_reset_token_expiry)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_used(self):
+        return self.used_at is not None
+
+    def __str__(self):
+        return f"Password reset for {self.user.username} ({'used' if self.is_used else 'pending'})"
