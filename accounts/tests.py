@@ -40,13 +40,19 @@ class SchoolScopedAPITestCase(APITestCase):
         self.school_a = School.objects.create(name="Alpha Academy", report_tone="formal")
         self.school_b = School.objects.create(name="Beta College", report_tone="warm")
 
-        self.user_a = User.objects.create_user(username="teacher_a", password="pass1234")
+        self.user_a = User.objects.create_user(
+            username="teacher_a", email="teacher.a@alpha.test", password="pass1234"
+        )
         Profile.objects.create(user=self.user_a, school=self.school_a, role=Profile.Role.TEACHER)
 
-        self.user_b = User.objects.create_user(username="teacher_b", password="pass1234")
+        self.user_b = User.objects.create_user(
+            username="teacher_b", email="teacher.b@beta.test", password="pass1234"
+        )
         Profile.objects.create(user=self.user_b, school=self.school_b, role=Profile.Role.TEACHER)
 
-        self.admin_a = User.objects.create_user(username="admin_a", password="pass1234")
+        self.admin_a = User.objects.create_user(
+            username="admin_a", email="admin.a@alpha.test", password="pass1234"
+        )
         Profile.objects.create(user=self.admin_a, school=self.school_a, role=Profile.Role.ADMIN)
 
         self.client_a = self.authed_client(self.user_a)
@@ -83,10 +89,10 @@ class HasSchoolProfilePermissionTests(SchoolScopedAPITestCase):
 
 
 class MeEndpointTests(SchoolScopedAPITestCase):
-    def test_me_returns_own_username_role_and_school(self):
+    def test_me_returns_own_email_role_and_school(self):
         response = self.client_a.get("/api/me/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["username"], "teacher_a")
+        self.assertEqual(response.data["email"], "teacher.a@alpha.test")
         self.assertEqual(response.data["role"], "teacher")
         self.assertEqual(response.data["school"]["id"], self.school_a.id)
         self.assertEqual(response.data["school"]["name"], "Alpha Academy")
@@ -139,30 +145,34 @@ class SchoolViewSetScopingTests(SchoolScopedAPITestCase):
 
 
 class PasswordResetTests(SchoolScopedAPITestCase):
-    def setUp(self):
-        super().setUp()
-        self.user_a.email = "teacher.a@alpha.test"
-        self.user_a.save(update_fields=["email"])
-
-    def test_request_with_known_username_sends_email_and_creates_token(self):
-        response = self.client.post("/api/password-reset/", {"username": self.user_a.username})
+    def test_request_with_known_email_sends_email_and_creates_token(self):
+        response = self.client.post("/api/password-reset/", {"email": self.user_a.email})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(PasswordResetToken.objects.filter(user=self.user_a).count(), 1)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.user_a.email, mail.outbox[0].to)
 
-    def test_request_with_unknown_username_still_returns_200_and_sends_nothing(self):
-        response = self.client.post("/api/password-reset/", {"username": "nobody-here"})
+    def test_request_with_unknown_email_still_returns_200_and_sends_nothing(self):
+        response = self.client.post("/api/password-reset/", {"email": "nobody@nowhere.test"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(PasswordResetToken.objects.count(), 0)
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_request_with_no_email_on_file_sends_nothing(self):
-        self.user_b.email = ""
-        self.user_b.save(update_fields=["email"])
-        response = self.client.post("/api/password-reset/", {"username": self.user_b.username})
-        self.assertEqual(response.status_code, 200)
+    def test_request_with_blank_email_is_a_validation_error(self):
+        response = self.client.post("/api/password-reset/", {"email": ""})
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(PasswordResetToken.objects.count(), 0)
+
+    def test_request_matches_every_account_sharing_that_email(self):
+        # User.email has no uniqueness constraint, so a shared address
+        # should get a reset link for each account that uses it.
+        self.user_b.email = self.user_a.email
+        self.user_b.save(update_fields=["email"])
+        response = self.client.post("/api/password-reset/", {"email": self.user_a.email})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.filter(user=self.user_a).count(), 1)
+        self.assertEqual(PasswordResetToken.objects.filter(user=self.user_b).count(), 1)
+        self.assertEqual(len(mail.outbox), 2)
 
     def test_confirm_with_valid_token_changes_password_and_consumes_token(self):
         reset_token = PasswordResetToken.objects.create(user=self.user_a)
@@ -192,5 +202,91 @@ class PasswordResetTests(SchoolScopedAPITestCase):
         response = self.client.post(
             "/api/password-reset/confirm/",
             {"token": "not-a-real-token", "password": "a-brand-new-strong-pw9"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class LoginTests(SchoolScopedAPITestCase):
+    def test_login_with_email_and_password_succeeds(self):
+        response = self.client.post(
+            "/api/token/", {"email": self.user_a.email, "password": "pass1234"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_login_with_wrong_password_fails(self):
+        response = self.client.post(
+            "/api/token/", {"email": self.user_a.email, "password": "wrong-password"}
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_with_username_field_instead_of_email_fails(self):
+        # `username` is no longer accepted by this endpoint at all — only
+        # `email` is a recognised field now.
+        response = self.client.post(
+            "/api/token/", {"username": self.user_a.username, "password": "pass1234"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_login_is_case_insensitive_on_email(self):
+        response = self.client.post(
+            "/api/token/", {"email": self.user_a.email.upper(), "password": "pass1234"}
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class AcceptInviteTests(SchoolScopedAPITestCase):
+    def _create_invite(self, email="new.teacher@alpha.test"):
+        from .models import Invite
+
+        return Invite.objects.create(
+            school=self.school_a,
+            role=Profile.Role.TEACHER,
+            email=email,
+            invited_by=self.admin_a,
+        )
+
+    def test_accept_with_valid_token_creates_account_with_invites_email(self):
+        invite = self._create_invite()
+        response = self.client.post(
+            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"}
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("access", response.data)
+
+        user = User.objects.get(email="new.teacher@alpha.test")
+        self.assertTrue(user.check_password("a-strong-new-pw9"))
+        self.assertEqual(user.profile.school, self.school_a)
+        self.assertEqual(user.profile.role, Profile.Role.TEACHER)
+
+        invite.refresh_from_db()
+        self.assertTrue(invite.is_accepted)
+        self.assertEqual(invite.accepted_by, user)
+
+    def test_accept_does_not_let_invitee_choose_a_different_email(self):
+        # There's no `email`/`username` field on this endpoint at all —
+        # the account's email always comes from the invite itself.
+        invite = self._create_invite()
+        response = self.client.post(
+            "/api/invites/accept/",
+            {"token": invite.token, "email": "someone-else@alpha.test", "password": "a-strong-new-pw9"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="new.teacher@alpha.test").exists())
+        self.assertFalse(User.objects.filter(email="someone-else@alpha.test").exists())
+
+    def test_accept_rejects_reused_token(self):
+        invite = self._create_invite()
+        self.client.post("/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"})
+        response = self.client.post(
+            "/api/invites/accept/", {"token": invite.token, "password": "another-strong-pw2"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_accept_rejects_email_already_in_use(self):
+        invite = self._create_invite(email=self.user_a.email)
+        response = self.client.post(
+            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"}
         )
         self.assertEqual(response.status_code, 400)

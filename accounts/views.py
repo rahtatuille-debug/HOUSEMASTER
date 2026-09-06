@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from accounts.mixins import SchoolScopedViewSetMixin
 
@@ -12,10 +13,17 @@ from .permissions import HasSchoolProfile, IsSchoolAdmin
 from .serializers import (
     AcceptInviteSerializer,
     ConfirmPasswordResetSerializer,
+    EmailTokenObtainPairSerializer,
     InvitePreviewSerializer,
     InviteSerializer,
     RequestPasswordResetSerializer,
 )
+
+
+class EmailTokenObtainPairView(TokenObtainPairView):
+    """Login by email + password instead of username + password."""
+
+    serializer_class = EmailTokenObtainPairSerializer
 
 
 @api_view(["GET"])
@@ -24,7 +32,7 @@ def me(request):
     profile = request.user.profile
     return Response(
         {
-            "username": request.user.username,
+            "email": request.user.email,
             "role": profile.role,
             "school": {"id": profile.school.id, "name": profile.school.name},
         }
@@ -70,8 +78,8 @@ class RequestPasswordResetView(APIView):
         serializer = RequestPasswordResetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        # Always the same response, whether or not the username exists or
-        # has an email on file — this endpoint must not reveal that.
+        # Always the same response, whether or not that email is on file —
+        # this endpoint must not reveal that.
         return Response({"detail": "If that account exists, a reset link has been sent."})
 
 

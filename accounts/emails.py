@@ -12,7 +12,7 @@ def send_password_reset_email(reset_token):
     send_mail(
         subject="Reset your HouseMaster password",
         message=(
-            f"Hi {reset_token.user.username},\n\n"
+            f"Hi {reset_token.user.email},\n\n"
             "We received a request to reset your HouseMaster password. "
             f"Click the link below to choose a new one:\n\n{reset_link}\n\n"
             "This link expires in 1 hour. If you didn't request this, you "

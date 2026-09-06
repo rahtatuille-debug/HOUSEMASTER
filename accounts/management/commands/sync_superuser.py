@@ -43,3 +43,11 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f"Synced superuser {username!r} (created={created}).")
         )
+        if not email:
+            self.stdout.write(
+                self.style.WARNING(
+                    "DJANGO_SUPERUSER_EMAIL isn't set — this superuser can still use "
+                    "/admin/ (username-based login), but can't log into the app itself, "
+                    "since that now authenticates by email."
+                )
+            )

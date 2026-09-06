@@ -138,6 +138,15 @@ DATABASES = {
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
+# Staff log in by email, not username — see accounts.auth_backends.EmailBackend
+# for details. ModelBackend stays listed so /admin/'s username-based login
+# form (which Django's admin hardcodes) keeps working unchanged.
+AUTHENTICATION_BACKENDS = [
+    "accounts.auth_backends.EmailBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',

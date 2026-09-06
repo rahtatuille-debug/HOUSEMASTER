@@ -2,17 +2,18 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .emails import send_password_reset_email
-from .models import Invite, PasswordResetToken, Profile
+from .models import Invite, PasswordResetToken, Profile, username_for_email
 
 
 class InviteSerializer(serializers.ModelSerializer):
     """Used by admins to create/list/manage invites for their own school."""
 
-    invited_by_username = serializers.CharField(source="invited_by.username", read_only=True)
-    accepted_by_username = serializers.CharField(
-        source="accepted_by.username", read_only=True, default=None
+    invited_by_email = serializers.CharField(source="invited_by.email", read_only=True)
+    accepted_by_email = serializers.CharField(
+        source="accepted_by.email", read_only=True, default=None
     )
     status = serializers.CharField(read_only=True)
 
@@ -20,8 +21,8 @@ class InviteSerializer(serializers.ModelSerializer):
         model = Invite
         fields = [
             "id", "school", "role", "name", "email", "token",
-            "invited_by_username", "created_at", "expires_at",
-            "accepted_at", "accepted_by_username", "status",
+            "invited_by_email", "created_at", "expires_at",
+            "accepted_at", "accepted_by_email", "status",
         ]
         extra_kwargs = {
             "school": {"read_only": True},
@@ -30,18 +31,30 @@ class InviteSerializer(serializers.ModelSerializer):
             "accepted_at": {"read_only": True},
         }
 
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("An account with that email already exists.")
+        if Invite.objects.filter(email__iexact=value, accepted_at__isnull=True).exists():
+            raise serializers.ValidationError("There's already a pending invite for that email.")
+        return value
+
 
 class InvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
 
     class Meta:
         model = Invite
-        fields = ["school_name", "role", "status"]
+        fields = ["school_name", "role", "email", "status"]
 
 
 class AcceptInviteSerializer(serializers.Serializer):
+    """
+    The invitee only ever sets their own password — the account's email
+    (and school and role) were already fixed by the admin when the invite
+    was created, so there's nothing else to choose here.
+    """
+
     token = serializers.CharField()
-    username = serializers.CharField(max_length=150)
     password = serializers.CharField(write_only=True)
 
     def validate_token(self, value):
@@ -53,12 +66,15 @@ class AcceptInviteSerializer(serializers.Serializer):
             raise serializers.ValidationError("This invite has already been used.")
         if invite.is_expired:
             raise serializers.ValidationError("This invite has expired. Ask your admin for a new one.")
+        if not invite.email:
+            raise serializers.ValidationError(
+                "This invite is missing an email address — ask your admin to create a new one."
+            )
+        if User.objects.filter(email__iexact=invite.email).exists():
+            raise serializers.ValidationError(
+                "An account with this invite's email already exists. Ask your admin for help."
+            )
         self._invite = invite
-        return value
-
-    def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("That username is already taken.")
         return value
 
     def validate_password(self, value):
@@ -68,7 +84,8 @@ class AcceptInviteSerializer(serializers.Serializer):
     def save(self):
         invite = self._invite
         user = User.objects.create_user(
-            username=self.validated_data["username"],
+            username=username_for_email(invite.email),
+            email=invite.email,
             password=self.validated_data["password"],
         )
         Profile.objects.create(user=user, school=invite.school, role=invite.role)
@@ -80,24 +97,23 @@ class AcceptInviteSerializer(serializers.Serializer):
 
 class RequestPasswordResetSerializer(serializers.Serializer):
     """
-    Accepts a username (rather than an email — User.email isn't guaranteed
-    to be populated for staff created via the invite flow). Always
-    succeeds from the caller's point of view, whether or not the username
-    exists, so this endpoint can't be used to probe which usernames are
-    registered.
+    Accepts an email address rather than a username. Always succeeds from
+    the caller's point of view, whether or not that email is registered,
+    so this endpoint can't be used to probe which accounts exist.
+
+    Django's User model doesn't enforce email uniqueness, so more than one
+    account can share an address — if so, every matching active account
+    gets its own reset link in the same email round-trip, same as most
+    real-world "forgot password" flows handle shared inboxes.
     """
 
-    username = serializers.CharField()
+    email = serializers.EmailField()
 
     def save(self):
-        try:
-            user = User.objects.get(username=self.validated_data["username"], is_active=True)
-        except User.DoesNotExist:
-            return
-        if not user.email:
-            return
-        reset_token = PasswordResetToken.objects.create(user=user)
-        send_password_reset_email(reset_token)
+        users = User.objects.filter(email__iexact=self.validated_data["email"], is_active=True)
+        for user in users:
+            reset_token = PasswordResetToken.objects.create(user=user)
+            send_password_reset_email(reset_token)
 
 
 class ConfirmPasswordResetSerializer(serializers.Serializer):
@@ -128,3 +144,13 @@ class ConfirmPasswordResetSerializer(serializers.Serializer):
         reset_token.used_at = timezone.now()
         reset_token.save(update_fields=["used_at"])
         return user
+
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Same as simplejwt's TokenObtainPairSerializer, but the login field is
+    called `email` instead of `username` — matching accounts.auth_backends
+    .EmailBackend, which is what actually does the authenticating.
+    """
+
+    username_field = "email"

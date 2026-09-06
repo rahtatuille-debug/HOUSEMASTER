@@ -4,7 +4,7 @@ URL configuration for housemaster project.
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, StudentViewSet
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
@@ -14,6 +14,7 @@ from accounts.views import (
     me,
     AcceptInviteView,
     ConfirmPasswordResetView,
+    EmailTokenObtainPairView,
     InvitePreviewView,
     InviteViewSet,
     RequestPasswordResetView,
@@ -33,7 +34,7 @@ router.register(r"invites", InviteViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/me/', me, name='me'),
     path('api/invites/preview/<str:token>/', InvitePreviewView.as_view(), name='invite_preview'),
