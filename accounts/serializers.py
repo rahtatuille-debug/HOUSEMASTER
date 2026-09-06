@@ -38,6 +38,22 @@ class InviteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("There's already a pending invite for that email.")
         return value
 
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("A staff member's name is required.")
+        return name
+
+
+class ProfileNameSerializer(serializers.Serializer):
+    name = serializers.CharField(min_length=2, max_length=255, trim_whitespace=True)
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Your name cannot be blank.")
+        return name
+
 
 class InvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
@@ -83,12 +99,21 @@ class AcceptInviteSerializer(serializers.Serializer):
 
     def save(self):
         invite = self._invite
+        display_name = invite.name.strip()
+        first_name, _, last_name = display_name.partition(" ")
         user = User.objects.create_user(
             username=username_for_email(invite.email),
             email=invite.email,
             password=self.validated_data["password"],
+            first_name=first_name[:150],
+            last_name=last_name[:150],
         )
-        Profile.objects.create(user=user, school=invite.school, role=invite.role)
+        Profile.objects.create(
+            user=user,
+            school=invite.school,
+            role=invite.role,
+            display_name=display_name,
+        )
         invite.accepted_at = timezone.now()
         invite.accepted_by = user
         invite.save(update_fields=["accepted_at", "accepted_by"])

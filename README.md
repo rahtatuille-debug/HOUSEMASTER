@@ -67,6 +67,12 @@ announcement. It needs `GEMINI_API_KEY`, like report generation:
 The response contains a suggested `title` and `body`; an admin must review it,
 save it as a draft, and publish it separately.
 
+Staff are shown by their profile display name and role, never their login email.
+Newly accepted staff invitations carry the invitee's name into their profile.
+Existing staff names can be populated from the Profile section of Django admin.
+They may also update their own display name with `PATCH /api/me/` and
+`{"name": "Their Name"}`.
+
 ## Importing a school's Excel workbook
 
 Per the agreed template (one workbook, three sheets):

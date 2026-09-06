@@ -5,6 +5,7 @@ from .models import Announcement
 
 class AnnouncementSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField(read_only=True)
+    created_by_role = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Announcement
@@ -19,6 +20,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             "status",
             "created_by",
             "created_by_name",
+            "created_by_role",
             "created_at",
             "published_at",
             "archived_at",
@@ -33,9 +35,16 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         ]
 
     def get_created_by_name(self, obj):
-        if not obj.created_by:
+        profile = getattr(obj.created_by, "profile", None) if obj.created_by else None
+        if profile is None:
             return None
-        return obj.created_by.get_full_name() or obj.created_by.email or obj.created_by.username
+        return profile.name
+
+    def get_created_by_role(self, obj):
+        profile = getattr(obj.created_by, "profile", None) if obj.created_by else None
+        if profile is None:
+            return None
+        return profile.get_role_display()
 
     def validate(self, attrs):
         audience = attrs.get("audience", getattr(self.instance, "audience", None))

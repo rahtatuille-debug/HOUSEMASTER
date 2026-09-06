@@ -48,9 +48,19 @@ class Profile(models.Model):
     )
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="staff_profiles")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.TEACHER)
+    display_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="The staff member's name shown throughout HouseMaster. Never use their login email as a display name.",
+    )
+
+    @property
+    def name(self):
+        """Return a safe human-facing identity without falling back to email."""
+        return self.display_name.strip() or self.user.get_full_name().strip() or self.get_role_display()
 
     def __str__(self):
-        return f"{self.user.email} ({self.school})"
+        return f"{self.name} ({self.school})"
 
 
 class Invite(models.Model):

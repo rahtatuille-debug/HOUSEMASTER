@@ -5,8 +5,9 @@ from .models import Invite, PasswordResetToken, Profile
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "school", "role")
+    list_display = ("display_name", "user", "school", "role")
     list_filter = ("school", "role")
+    search_fields = ("display_name", "user__first_name", "user__last_name")
 
 
 @admin.register(Invite)

@@ -89,10 +89,13 @@ class HasSchoolProfilePermissionTests(SchoolScopedAPITestCase):
 
 
 class MeEndpointTests(SchoolScopedAPITestCase):
-    def test_me_returns_own_email_role_and_school(self):
+    def test_me_returns_own_name_role_and_school(self):
+        self.user_a.profile.display_name = "Amina Otieno"
+        self.user_a.profile.save(update_fields=["display_name"])
         response = self.client_a.get("/api/me/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["email"], "teacher.a@alpha.test")
+        self.assertEqual(response.data["name"], "Amina Otieno")
+        self.assertNotIn("email", response.data)
         self.assertEqual(response.data["role"], "teacher")
         self.assertEqual(response.data["school"]["id"], self.school_a.id)
         self.assertEqual(response.data["school"]["name"], "Alpha Academy")
@@ -100,6 +103,13 @@ class MeEndpointTests(SchoolScopedAPITestCase):
     def test_me_never_leaks_other_schools_data(self):
         response = self.client_a.get("/api/me/")
         self.assertNotEqual(response.data["school"]["id"], self.school_b.id)
+
+    def test_me_allows_staff_to_update_their_display_name(self):
+        response = self.client_a.patch("/api/me/", {"name": "Amina Otieno"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Amina Otieno")
+        self.user_a.profile.refresh_from_db()
+        self.assertEqual(self.user_a.profile.display_name, "Amina Otieno")
 
 
 class SchoolViewSetScopingTests(SchoolScopedAPITestCase):

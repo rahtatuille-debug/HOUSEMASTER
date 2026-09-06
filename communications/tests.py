@@ -24,10 +24,14 @@ class AnnouncementAPITests(SchoolScopedAPITestCase):
         return self.admin_client.post("/api/announcements/", payload)
 
     def test_admin_can_create_and_publish_all_staff_announcement(self):
+        self.admin_a.profile.display_name = "Jaden Opil"
+        self.admin_a.profile.save(update_fields=["display_name"])
         response = self.create_draft()
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["status"], Announcement.Status.DRAFT)
         self.assertEqual(response.data["created_by"], self.admin_a.id)
+        self.assertEqual(response.data["created_by_name"], "Jaden Opil")
+        self.assertEqual(response.data["created_by_role"], "Admin")
 
         response = self.admin_client.post(f"/api/announcements/{response.data['id']}/publish/")
         self.assertEqual(response.status_code, 200)

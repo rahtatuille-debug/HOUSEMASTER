@@ -16,6 +16,7 @@ from .serializers import (
     EmailTokenObtainPairSerializer,
     InvitePreviewSerializer,
     InviteSerializer,
+    ProfileNameSerializer,
     RequestPasswordResetSerializer,
 )
 
@@ -26,13 +27,18 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def me(request):
     profile = request.user.profile
+    if request.method == "PATCH":
+        serializer = ProfileNameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile.display_name = serializer.validated_data["name"]
+        profile.save(update_fields=["display_name"])
     return Response(
         {
-            "email": request.user.email,
+            "name": profile.name,
             "role": profile.role,
             "school": {"id": profile.school.id, "name": profile.school.name},
         }
