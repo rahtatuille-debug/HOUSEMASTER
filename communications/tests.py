@@ -1,5 +1,6 @@
 from accounts.tests import SchoolScopedAPITestCase
 from students.models import SchoolClass, YearGroup
+from unittest.mock import patch
 
 from .models import Announcement
 
@@ -107,3 +108,36 @@ class AnnouncementAPITests(SchoolScopedAPITestCase):
         response = self.admin_client.post(f"/api/announcements/{announcement_id}/archive/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], Announcement.Status.ARCHIVED)
+
+    @patch("communications.views.generate_announcement_text")
+    def test_admin_can_generate_editable_text_without_creating_announcement(self, mock_generate):
+        mock_generate.return_value = ("Closure notice", "School will close early on Friday.")
+        response = self.admin_client.post(
+            "/api/announcements/generate-text/",
+            {"summary": "Tell staff that school closes early Friday", "audience": "all_staff"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["title"], "Closure notice")
+        self.assertEqual(Announcement.objects.count(), 0)
+        mock_generate.assert_called_once()
+
+    @patch("communications.views.generate_announcement_text")
+    def test_teacher_can_generate_text_but_cannot_create_announcement(self, mock_generate):
+        mock_generate.return_value = ("Update", "A generated update.")
+        response = self.client_a.post(
+            "/api/announcements/generate-text/",
+            {"summary": "Explain that the assembly starts later", "audience": "all_staff"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["body"], "A generated update.")
+
+    def test_generate_text_returns_503_when_ai_is_not_configured(self):
+        with patch(
+            "communications.views.generate_announcement_text",
+            side_effect=RuntimeError("GEMINI_API_KEY is not set."),
+        ):
+            response = self.admin_client.post(
+                "/api/announcements/generate-text/",
+                {"summary": "Let staff know the meeting is at three", "audience": "all_staff"},
+            )
+        self.assertEqual(response.status_code, 503)

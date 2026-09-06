@@ -53,6 +53,20 @@ accounts only, so non-admin staff can see published `all_staff` notices.
 Parent accounts and teacher-to-class memberships will be needed before the
 other delivery audiences can be shown to their recipients.
 
+Admins and teachers can generate editable wording from a short brief with
+`POST /api/announcements/generate-text/`. This does not create or publish an
+announcement. It needs `GEMINI_API_KEY`, like report generation:
+
+```json
+{
+  "summary": "Tell staff that school closes at 12:30 on Friday for staff training.",
+  "audience": "all_staff"
+}
+```
+
+The response contains a suggested `title` and `body`; an admin must review it,
+save it as a draft, and publish it separately.
+
 ## Importing a school's Excel workbook
 
 Per the agreed template (one workbook, three sheets):

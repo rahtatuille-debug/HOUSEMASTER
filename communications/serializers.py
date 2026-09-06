@@ -57,3 +57,14 @@ class AnnouncementSerializer(serializers.ModelSerializer):
                 "All-staff and all-parent announcements cannot include a class or year_group."
             )
         return attrs
+
+
+class GenerateAnnouncementTextSerializer(serializers.Serializer):
+    """A short staff brief used to generate an editable announcement draft."""
+
+    summary = serializers.CharField(min_length=10, max_length=2000, trim_whitespace=True)
+    audience = serializers.ChoiceField(
+        choices=Announcement.Audience.choices, required=False, default=Announcement.Audience.ALL_STAFF
+    )
+    year_group = serializers.IntegerField(required=False, allow_null=True)
+    school_class = serializers.IntegerField(required=False, allow_null=True)

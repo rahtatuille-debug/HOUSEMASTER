@@ -5,8 +5,11 @@ from rest_framework.response import Response
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 
+from students.models import SchoolClass, YearGroup
+
 from .models import Announcement
-from .serializers import AnnouncementSerializer
+from .serializers import AnnouncementSerializer, GenerateAnnouncementTextSerializer
+from .services import generate_announcement_text
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
@@ -20,7 +23,7 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_permissions(self):
-        if self.action in {"list", "retrieve"}:
+        if self.action in {"list", "retrieve", "generate_text"}:
             return [HasSchoolProfile()]
         return [IsSchoolAdmin()]
 
@@ -71,3 +74,43 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             raise ValidationError("Only published announcements can be archived.")
         announcement.archive()
         return Response(self.get_serializer(announcement).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="generate-text")
+    def generate_text(self, request):
+        """Generate editable announcement wording from a staff member's brief.
+
+        This action is deliberately available to both teachers and admins.
+        It returns text only; it neither saves nor publishes an announcement.
+        """
+        input_serializer = GenerateAnnouncementTextSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        data = input_serializer.validated_data
+        school = request.user.profile.school
+        target_label = None
+
+        if data.get("year_group"):
+            try:
+                target_label = YearGroup.objects.get(pk=data["year_group"], school=school).name
+            except YearGroup.DoesNotExist:
+                return Response({"detail": "Year group not found."}, status=status.HTTP_404_NOT_FOUND)
+        if data.get("school_class"):
+            try:
+                school_class = SchoolClass.objects.select_related("year_group").get(
+                    pk=data["school_class"], year_group__school=school
+                )
+                target_label = f"{school_class.year_group.name} — {school_class.name}"
+            except SchoolClass.DoesNotExist:
+                return Response({"detail": "School class not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        audience_label = Announcement.Audience(data["audience"]).label
+        try:
+            title, body = generate_announcement_text(
+                school=school,
+                summary=data["summary"],
+                audience_label=audience_label,
+                target_label=target_label,
+            )
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        return Response({"title": title, "body": body}, status=status.HTTP_200_OK)
