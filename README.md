@@ -15,7 +15,7 @@ python3 -m venv venv
 
 Admin: http://localhost:8000/admin/
 API root: http://localhost:8000/api/ (schools, school-classes, students, subjects,
-terms, grades, attendance)
+terms, grades, attendance, announcements)
 
 ## Apps
 
@@ -27,6 +27,31 @@ terms, grades, attendance)
   student's `Grade`/`AttendanceRecord` data for a term, calls the Gemini API,
   and stores an AI-generated progress summary + draft report comment respecting
   the school's `report_tone`.
+- **communications** — admin-authored, one-way `Announcement`s. They can
+  target all staff, all parents, a year group, or a class; use drafts plus the
+  publish/archive actions to control their lifecycle.
+
+## Announcements
+
+Only school admins can create, edit, publish, or archive announcements. Create
+a draft with `POST /api/announcements/`, then publish it with
+`POST /api/announcements/<id>/publish/`. Published announcements can be retired
+with `POST /api/announcements/<id>/archive/`.
+
+```json
+{
+  "title": "Year 7 trip consent forms",
+  "body": "Please return signed consent forms by Friday.",
+  "audience": "school_class",
+  "school_class": 12
+}
+```
+
+The API also accepts `all_staff`, `all_parents`, and `year_group` audiences
+(`year_group` requires a `year_group` ID). At this stage the app has staff
+accounts only, so non-admin staff can see published `all_staff` notices.
+Parent accounts and teacher-to-class memberships will be needed before the
+other delivery audiences can be shown to their recipients.
 
 ## Importing a school's Excel workbook
 

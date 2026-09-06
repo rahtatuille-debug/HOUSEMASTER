@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'gradebook',
     'attendance',
     'reporting',
+    'communications',
 ]
 
 MIDDLEWARE = [
