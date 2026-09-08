@@ -5,6 +5,8 @@ from rest_framework import serializers
 
 from accounts.models import username_for_email
 from students.models import Student
+from gradebook.models import Grade
+from reporting.models import StudentReport
 
 from .models import Guardian, GuardianInvite
 
@@ -111,9 +113,39 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
 
 
 class GuardianStudentSerializer(serializers.ModelSerializer):
+    school_class_name = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Student
-        fields = ["id", "first_name", "last_name", "school_class"]
+        fields = [
+            "id", "first_name", "last_name", "school_class", "school_class_name",
+            "house", "enrolled_on", "is_active",
+        ]
+
+    def get_school_class_name(self, obj):
+        if not obj.school_class:
+            return None
+        return f"{obj.school_class.year_group.name} — {obj.school_class.name}"
+
+
+class GuardianGradeSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
+    term_name = serializers.CharField(source="term.name", read_only=True)
+
+    class Meta:
+        model = Grade
+        fields = ["id", "subject", "subject_name", "term", "term_name", "score", "max_score", "recorded_at"]
+
+
+class GuardianReportSerializer(serializers.ModelSerializer):
+    term_name = serializers.CharField(source="term.name", read_only=True)
+
+    class Meta:
+        model = StudentReport
+        fields = [
+            "id", "term", "term_name", "progress_summary", "report_comment",
+            "status", "generated_at", "edited_at",
+        ]
 
 
 class GuardianNameSerializer(serializers.Serializer):

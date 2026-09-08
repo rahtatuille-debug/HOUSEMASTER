@@ -1,13 +1,16 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.db.models import Q
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 
 from students.models import SchoolClass, YearGroup
 
 from .models import Announcement
+from .permissions import CanViewAnnouncements
 from .serializers import AnnouncementSerializer, GenerateAnnouncementTextSerializer
 from .services import generate_announcement_text
 
@@ -23,11 +26,29 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_permissions(self):
-        if self.action in {"list", "retrieve", "generate_text"}:
-            return [HasSchoolProfile()]
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated(), CanViewAnnouncements()]
+        if self.action == "generate_text":
+            return [IsAuthenticated(), HasSchoolProfile()]
         return [IsSchoolAdmin()]
 
     def get_queryset(self):
+        if hasattr(self.request.user, "guardian"):
+            guardian = self.request.user.guardian
+            return super().get_queryset().filter(school=guardian.school).filter(
+                Q(status=Announcement.Status.PUBLISHED, audience=Announcement.Audience.ALL_PARENTS)
+                | Q(
+                    status=Announcement.Status.PUBLISHED,
+                    audience=Announcement.Audience.YEAR_GROUP,
+                    year_group__classes__students__guardians=guardian,
+                )
+                | Q(
+                    status=Announcement.Status.PUBLISHED,
+                    audience=Announcement.Audience.SCHOOL_CLASS,
+                    school_class__students__guardians=guardian,
+                )
+            ).distinct()
+
         school = self.request.user.profile.school
         queryset = super().get_queryset().filter(school=school)
         if self.request.user.profile.role == "admin":

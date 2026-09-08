@@ -15,6 +15,7 @@ from guardians.views import (
     AcceptGuardianInviteView,
     GuardianInvitePreviewView,
     GuardianInviteViewSet,
+    GuardianStudentViewSet,
     guardian_me,
 )
 from messaging.views import ConversationViewSet
@@ -41,6 +42,7 @@ router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"invites", InviteViewSet)
 router.register(r"guardian-invites", GuardianInviteViewSet)
+router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")
 router.register(r"conversations", ConversationViewSet, basename="conversation")
 
 urlpatterns = [

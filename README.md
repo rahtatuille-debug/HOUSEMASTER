@@ -73,6 +73,24 @@ Existing staff names can be populated from the Profile section of Django admin.
 They may also update their own display name with `PATCH /api/me/` and
 `{"name": "Their Name"}`.
 
+## Guardian (parent) portal
+
+Guardians are invited by an admin through `POST /api/guardian-invites/`, with
+their child or children selected by the school. A guardian has read-only access
+to children linked to their account:
+
+```text
+GET /api/guardian-students/
+GET /api/guardian-students/<student_id>/
+GET /api/guardian-students/<student_id>/grades/
+GET /api/guardian-students/<student_id>/reports/
+```
+
+Grade data includes subject and term names; reports include the term name.
+Guardians also use `GET /api/announcements/` to receive published notices for
+all parents or for a linked child's year group/class. Staff-only, draft,
+archived, and unrelated class/year-group notices are never returned.
+
 ## Importing a school's Excel workbook
 
 Per the agreed template (one workbook, three sheets):

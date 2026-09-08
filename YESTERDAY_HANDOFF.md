@@ -16,6 +16,7 @@ fdd14b5 Name display fix
 9923c2d Major changes
 ```
 
+
 ## Summary
 
 Yesterday's work delivered the first backend slice of Communications: school-scoped, one-way announcements; optional AI text generation; and a shift from email-based in-app identity to names and roles.
