@@ -68,6 +68,8 @@ INSTALLED_APPS = [
     'attendance',
     'reporting',
     'communications',
+    'guardians',
+    'messaging',
 ]
 
 MIDDLEWARE = [

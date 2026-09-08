@@ -11,6 +11,13 @@ from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
 from communications.views import AnnouncementViewSet
+from guardians.views import (
+    AcceptGuardianInviteView,
+    GuardianInvitePreviewView,
+    GuardianInviteViewSet,
+    guardian_me,
+)
+from messaging.views import ConversationViewSet
 from accounts.views import (
     me,
     AcceptInviteView,
@@ -33,6 +40,8 @@ router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"invites", InviteViewSet)
+router.register(r"guardian-invites", GuardianInviteViewSet)
+router.register(r"conversations", ConversationViewSet, basename="conversation")
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -43,5 +52,8 @@ urlpatterns = [
     path('api/invites/accept/', AcceptInviteView.as_view(), name='invite_accept'),
     path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),
     path('api/password-reset/confirm/', ConfirmPasswordResetView.as_view(), name='password_reset_confirm'),
+    path('api/guardian-invites/preview/<str:token>/', GuardianInvitePreviewView.as_view(), name='guardian_invite_preview'),
+    path('api/guardian-invites/accept/', AcceptGuardianInviteView.as_view(), name='guardian_invite_accept'),
+    path('api/guardian-me/', guardian_me, name='guardian_me'),
     path('api/', include(router.urls)),
 ]
