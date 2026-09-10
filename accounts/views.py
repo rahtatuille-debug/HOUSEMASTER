@@ -38,6 +38,7 @@ def me(request):
         profile.save(update_fields=["display_name"])
     return Response(
         {
+            "id": request.user.id,
             "name": profile.name,
             "role": profile.role,
             "school": {"id": profile.school.id, "name": profile.school.name},

@@ -1,0 +1,24 @@
+diff --git a/accounts/views.py b/accounts/views.py
+index 82c276d..b825510 100644
+--- a/accounts/views.py
++++ b/accounts/views.py
+@@ -38,6 +38,7 @@ def me(request):
+         profile.save(update_fields=["display_name"])
+     return Response(
+         {
++            "id": request.user.id,
+             "name": profile.name,
+             "role": profile.role,
+             "school": {"id": profile.school.id, "name": profile.school.name},
+diff --git a/guardians/views.py b/guardians/views.py
+index 8c31ae9..ef7b422 100644
+--- a/guardians/views.py
++++ b/guardians/views.py
+@@ -95,6 +95,7 @@ def guardian_me(request):
+         guardian.display_name = serializer.validated_data["name"]
+         guardian.save(update_fields=["display_name"])
+     return Response({
++        "id": request.user.id,
+         "name": guardian.name,
+         "school": {"id": guardian.school_id, "name": guardian.school.name},
+         "students": GuardianStudentSerializer(guardian.students.all(), many=True).data,

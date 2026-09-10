@@ -95,6 +95,7 @@ def guardian_me(request):
         guardian.display_name = serializer.validated_data["name"]
         guardian.save(update_fields=["display_name"])
     return Response({
+        "id": request.user.id,
         "name": guardian.name,
         "school": {"id": guardian.school_id, "name": guardian.school.name},
         "students": GuardianStudentSerializer(guardian.students.all(), many=True).data,
