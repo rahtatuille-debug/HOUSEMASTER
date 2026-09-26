@@ -93,22 +93,31 @@ archived, and unrelated class/year-group notices are never returned.
 
 ## Importing a school's Excel workbook
 
-Per the agreed template (one workbook, three sheets):
+Admins import from the app: **Setup → Import from Excel**. They can download
+a template, upload their workbook, and see a preview of exactly what will
+happen (new students, updates, new classes/subjects/terms, and every row
+with a problem) before anything is saved.
 
-- **Students**: `id, first_name, last_name, class, house`
+One workbook, three sheets. Only Students is required; the first row is
+the header and column order doesn't matter:
+
+- **Students**: `id, first_name, last_name, class, year_group, house, gender, date_of_birth`
 - **Grades**: `student_id, subject, term, score, max_score`
 - **Attendance**: `student_id, date, status, notes`
 
-```bash
-./venv/bin/python manage.py import_school_workbook path/to/workbook.xlsx --school "School Name"
-```
+- `id` / `student_id` is the school's own admission number. Re-importing the
+  same workbook updates those students instead of duplicating them.
+- A class that doesn't exist yet is created under its `year_group` (or a
+  year group called "Imported" if that column is empty).
+- Rows with problems (unknown student, score over the maximum, unknown
+  attendance status, bad date...) are skipped and listed; the rest import.
+- Everything is imported into the admin's own school only.
 
-- Creates the `School` if it doesn't exist.
-- `student_id` in Grades/Attendance must match a student's `id` from the Students
-  sheet (stored as `external_id`) — rows for unknown students are skipped, not
-  fatal to the whole import.
-- Re-running the import with the same workbook updates existing records
-  (`update_or_create`) rather than duplicating them.
+The same import is available as a command, e.g. for a brand-new school:
+
+```bash
+./venv/bin/python manage.py import_school_workbook path/to/workbook.xlsx --school "School Name" [--preview]
+```
 
 ## Generating reports (Phase 2)
 

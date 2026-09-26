@@ -233,6 +233,10 @@ if DEBUG:
     ]
 
 # Exact-origin allowlist — this is what actually matters in production.
+# Let the frontend read the file name of downloads (exports, the import
+# template); browsers hide this header from other origins otherwise.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
 # Set CORS_ALLOWED_ORIGINS in Render to the real Vercel URL(s), e.g.
 # "https://housemaster.vercel.app,https://housemaster-git-main-yourteam.vercel.app"
 CORS_ALLOWED_ORIGINS = [

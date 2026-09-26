@@ -20,6 +20,8 @@ from guardians.views import (
     guardian_me,
 )
 from messaging.views import ConversationViewSet
+from students.import_views import import_school_workbook, import_template
+from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
 from accounts.views import (
@@ -63,6 +65,12 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/me/', me, name='me'),
     path('api/dashboard/', dashboard, name='dashboard'),
+    path('api/import/', import_school_workbook, name='import_workbook'),
+    path('api/import/template/', import_template, name='import_template'),
+    path('api/exports/class-list/', export_class_list, name='export_class_list'),
+    path('api/exports/grades/', export_grades, name='export_grades'),
+    path('api/exports/attendance/', export_attendance, name='export_attendance'),
+    path('api/exports/reports/', export_reports, name='export_reports'),
     path('api/invites/preview/<str:token>/', InvitePreviewView.as_view(), name='invite_preview'),
     path('api/invites/accept/', AcceptInviteView.as_view(), name='invite_accept'),
     path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),
