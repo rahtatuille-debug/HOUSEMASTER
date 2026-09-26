@@ -21,6 +21,7 @@ from guardians.views import (
 )
 from messaging.views import ConversationViewSet
 from activity.views import ActivityLogViewSet
+from approvals.views import ChangeRequestViewSet
 from accounts.views import (
     me,
     AcceptInviteView,
@@ -52,6 +53,7 @@ router.register(r"parents", ParentViewSet)
 router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")
 router.register(r"conversations", ConversationViewSet, basename="conversation")
 router.register(r"activity", ActivityLogViewSet)
+router.register(r"change-requests", ChangeRequestViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

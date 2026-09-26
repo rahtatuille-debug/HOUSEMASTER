@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
 
@@ -8,10 +9,12 @@ from .models import Subject, Term, Grade
 from .serializers import SubjectSerializer, TermSerializer, GradeSerializer
 
 
-class SubjectViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class SubjectViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     school_lookup = "school"
+    approval_kind = "subject"
+    approval_label = "subject"
 
     def perform_create(self, serializer):
         serializer.save(school=self.get_school())
@@ -20,10 +23,12 @@ class SubjectViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         serializer.save(school=self.get_school())
 
 
-class TermViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class TermViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Term.objects.all()
     serializer_class = TermSerializer
     school_lookup = "school"
+    approval_kind = "term"
+    approval_label = "term"
 
     def perform_create(self, serializer):
         serializer.save(school=self.get_school())

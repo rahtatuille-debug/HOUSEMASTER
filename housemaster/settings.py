@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'guardians',
     'messaging',
     'activity',
+    'approvals',
 ]
 
 MIDDLEWARE = [

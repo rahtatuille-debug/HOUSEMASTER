@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import assigned_class_ids, check_can_use_class, is_admin
 from activity.services import log_activity, student_name
 
@@ -8,7 +9,7 @@ from .models import School, YearGroup, SchoolClass, Student
 from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
 
 
-class SchoolViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class SchoolViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     """
     A school can only ever see/edit its own record (e.g. updating
     report_tone). Schools are provisioned separately (Django admin), not
@@ -17,6 +18,9 @@ class SchoolViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = School.objects.all()
     serializer_class = SchoolSerializer
     http_method_names = ["get", "put", "patch", "head", "options"]
+    approval_kind = "school"
+    approval_label = "school settings"
+    approval_operations = {"update"}
 
     def get_queryset(self):
         # School IS the tenant here, not a related object one hop away, so
@@ -24,10 +28,12 @@ class SchoolViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         return School.objects.filter(id=self.get_school().id)
 
 
-class YearGroupViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class YearGroupViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = YearGroup.objects.all()
     serializer_class = YearGroupSerializer
     school_lookup = "school"
+    approval_kind = "year_group"
+    approval_label = "year group"
 
     def perform_create(self, serializer):
         serializer.save(school=self.get_school())
@@ -36,10 +42,16 @@ class YearGroupViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         serializer.save(school=self.get_school())
 
 
-class SchoolClassViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class SchoolClassViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = SchoolClass.objects.all()
     serializer_class = SchoolClassSerializer
     school_lookup = "year_group__school"
+    approval_kind = "school_class"
+    approval_label = "class"
+
+    def check_change_request(self, serializer):
+        if "year_group" in serializer.validated_data:
+            self.check_belongs_to_school(serializer.validated_data["year_group"], "year_group")
 
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["year_group"], "year_group")
@@ -51,11 +63,23 @@ class SchoolClassViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         serializer.save()
 
 
-class StudentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+    """
+    Permanently deleting a student also deletes their grades, attendance
+    and reports, so a teacher's delete needs an admin's approval.
+    Deactivating (is_active=False) is the everyday way to remove a student.
+    """
+
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
     filterset_fields = ["school", "school_class", "is_active"]
     school_lookup = "school"
+    approval_kind = "student"
+    approval_label = "student"
+    approval_operations = {"delete"}
+
+    def describe(self, obj):
+        return student_name(obj)
 
     def get_queryset(self):
         # Teachers only see students in the classes they teach.

@@ -144,6 +144,10 @@ class SchoolViewSetScopingTests(SchoolScopedAPITestCase):
     explicit coverage rather than relying on the generic mixin tests below.
     """
 
+    def setUp(self):
+        super().setUp()
+        self.make_admin(self.user_a, self.user_b)
+
     def test_list_only_returns_own_school(self):
         response = self.client_a.get("/api/schools/")
         self.assertEqual(response.status_code, 200)
