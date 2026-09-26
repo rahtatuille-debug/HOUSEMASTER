@@ -9,6 +9,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import IsSchoolAdmin
 from accounts.scoping import check_can_see_student, limit_to_visible_students
 from activity.services import log_activity, student_name
+from gradebook.locks import check_term_open
 
 from students.models import Student
 from gradebook.models import Term
@@ -45,6 +46,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
         self.check_belongs_to_school(serializer.validated_data["term"], "term")
+        check_term_open(serializer.validated_data["term"])
         check_can_see_student(self.request.user, serializer.validated_data["student"])
         serializer.save()
 
@@ -55,11 +57,14 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         student = serializer.validated_data.get("student", report.student)
         self.check_belongs_to_school(student.school, "student")
         self.check_belongs_to_school(serializer.validated_data.get("term", report.term), "term")
+        check_term_open(report.term)
+        check_term_open(serializer.validated_data.get("term", report.term))
         check_can_see_student(self.request.user, student)
         report = serializer.save()
         self._log(report, "report.edited", "Edited")
 
     def perform_destroy(self, instance):
+        check_term_open(instance.term)
         if instance.status == "finalized":
             raise ValidationError("A finalized report can't be deleted. An admin must send it back first.")
         self._log(instance, "report.deleted", "Deleted")
@@ -74,6 +79,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
         report = self.get_object()
+        check_term_open(report.term)
         if report.status != "draft":
             raise ValidationError("Only draft reports can be submitted for approval.")
         report.status = "submitted"
@@ -86,6 +92,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsSchoolAdmin])
     def finalize(self, request, pk=None):
         report = self.get_object()
+        check_term_open(report.term)
         if report.status == "finalized":
             raise ValidationError("This report is already finalized.")
         report.status = "finalized"
@@ -99,6 +106,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send-back", permission_classes=[IsSchoolAdmin])
     def send_back(self, request, pk=None):
         report = self.get_object()
+        check_term_open(report.term)
         if report.status == "draft":
             raise ValidationError("This report is already a draft.")
         note = str(request.data.get("note", "")).strip()
@@ -132,6 +140,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         except (Student.DoesNotExist, Term.DoesNotExist):
             return Response({"detail": "Student or term not found."}, status=status.HTTP_404_NOT_FOUND)
         check_can_see_student(request.user, student)
+        check_term_open(term)
         existing = StudentReport.objects.filter(student=student, term=term).first()
         if existing is not None and existing.status != "draft":
             raise ValidationError(

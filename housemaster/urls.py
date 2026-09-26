@@ -6,7 +6,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, StudentViewSet
+from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, StudentViewSet, promote_students
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
@@ -66,6 +66,7 @@ urlpatterns = [
     path('api/me/', me, name='me'),
     path('api/dashboard/', dashboard, name='dashboard'),
     path('api/import/', import_school_workbook, name='import_workbook'),
+    path('api/promotion/', promote_students, name='promote_students'),
     path('api/import/template/', import_template, name='import_template'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),

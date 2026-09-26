@@ -3,6 +3,7 @@ from rest_framework import viewsets
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.scoping import check_can_see_student, limit_to_visible_students
 from activity.services import log_activity, student_name
+from gradebook.locks import check_date_open
 
 from .models import AttendanceRecord
 from .serializers import AttendanceRecordSerializer
@@ -20,6 +21,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
         check_can_see_student(self.request.user, serializer.validated_data["student"])
+        check_date_open(self.get_school(), serializer.validated_data["date"])
         record = serializer.save()
         log_activity(
             school=self.get_school(), actor=self.request.user, action="attendance.created", target=record,
@@ -31,6 +33,8 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         student = serializer.validated_data.get("student", serializer.instance.student)
         self.check_belongs_to_school(student.school, "student")
         check_can_see_student(self.request.user, student)
+        check_date_open(self.get_school(), serializer.instance.date)
+        check_date_open(self.get_school(), serializer.validated_data.get("date", serializer.instance.date))
         old = serializer.instance.status
         record = serializer.save()
         if old != record.status:
@@ -43,6 +47,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             )
 
     def perform_destroy(self, instance):
+        check_date_open(self.get_school(), instance.date)
         log_activity(
             school=self.get_school(), actor=self.request.user, action="attendance.deleted",
             target=instance,

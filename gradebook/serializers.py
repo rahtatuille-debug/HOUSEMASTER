@@ -13,8 +13,9 @@ class SubjectSerializer(serializers.ModelSerializer):
 class TermSerializer(serializers.ModelSerializer):
     class Meta:
         model = Term
-        fields = ["id", "school", "name", "start_date", "end_date"]
-        extra_kwargs = {"school": {"read_only": True}}
+        fields = ["id", "school", "name", "start_date", "end_date", "is_locked", "locked_at"]
+        extra_kwargs = {"school": {"read_only": True}, "is_locked": {"read_only": True},
+                        "locked_at": {"read_only": True}}
 
 
 class GradeSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):

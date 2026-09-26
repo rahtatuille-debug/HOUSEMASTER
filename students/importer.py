@@ -193,6 +193,12 @@ class _Import:
                 continue
             if student is None:
                 continue
+            from gradebook.locks import locked_term_for_date
+
+            locked = locked_term_for_date(self.school, day)
+            if locked is not None:
+                self.error("Attendance", number, f"{day} is in {locked.name}, which is locked")
+                continue
             AttendanceRecord.objects.update_or_create(
                 student=student, date=day, defaults={"status": status, "notes": _text(row.get("notes"))[:255]}
             )

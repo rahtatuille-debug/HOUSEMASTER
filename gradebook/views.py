@@ -1,9 +1,14 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
+
+from .locks import check_term_open
 
 from .models import Subject, Term, Grade
 from .serializers import SubjectSerializer, TermSerializer, GradeSerializer
@@ -29,6 +34,38 @@ class TermViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.Mode
     school_lookup = "school"
     approval_kind = "term"
     approval_label = "term"
+
+    def check_change_request(self, serializer):
+        if serializer.instance is not None:
+            check_term_open(serializer.instance)
+
+    def perform_destroy(self, instance):
+        check_term_open(instance)
+        instance.delete()
+
+    def _set_locked(self, request, locked):
+        from django.utils import timezone
+
+        if not (hasattr(request.user, "profile") and request.user.profile.is_admin):
+            raise PermissionDenied("Only admins can lock or unlock terms.")
+        term = self.get_object()
+        if term.is_locked != locked:
+            term.is_locked = locked
+            term.locked_at = timezone.now() if locked else None
+            term.save(update_fields=["is_locked", "locked_at"])
+            log_activity(
+                school=term.school, actor=request.user, action="term.locked" if locked else "term.unlocked",
+                target=term, summary=f"{'Locked' if locked else 'Unlocked'} {term.name}",
+            )
+        return Response(self.get_serializer(term).data)
+
+    @action(detail=True, methods=["post"])
+    def lock(self, request, pk=None):
+        return self._set_locked(request, True)
+
+    @action(detail=True, methods=["post"])
+    def unlock(self, request, pk=None):
+        return self._set_locked(request, False)
 
     def perform_create(self, serializer):
         serializer.save(school=self.get_school())
@@ -59,6 +96,7 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         self._validate_related(serializer.validated_data)
+        check_term_open(serializer.validated_data["term"])
         check_can_grade(self.request.user, serializer.validated_data["student"],
                         serializer.validated_data["subject"])
         grade = serializer.save()
@@ -77,6 +115,8 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         self.check_belongs_to_school(term.school, "term")
         check_can_grade(self.request.user, serializer.instance.student, serializer.instance.subject)
         check_can_grade(self.request.user, student, subject)
+        check_term_open(serializer.instance.term)
+        check_term_open(term)
         old = f"{serializer.instance.score}/{serializer.instance.max_score}"
         grade = serializer.save()
         new = f"{grade.score}/{grade.max_score}"
@@ -88,6 +128,7 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         check_can_grade(self.request.user, instance.student, instance.subject)
+        check_term_open(instance.term)
         log_activity(
             school=self.get_school(), actor=self.request.user, action="grade.deleted", target=instance,
             summary=f"Deleted {self._describe(instance)} ({instance.score}/{instance.max_score})",

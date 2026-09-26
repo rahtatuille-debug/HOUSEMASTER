@@ -18,6 +18,10 @@ class Term(models.Model):
     name = models.CharField(max_length=100)  # e.g. "Term 1 2026"
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
+    # A locked term is finished: its grades, reports and attendance (by date)
+    # can't be changed by anyone until an admin unlocks it. See gradebook.locks.
+    is_locked = models.BooleanField(default=False)
+    locked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ("school", "name")

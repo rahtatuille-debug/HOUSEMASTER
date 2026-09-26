@@ -1,7 +1,8 @@
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotFound
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
@@ -12,7 +13,10 @@ from accounts.scoping import assigned_class_ids, check_can_use_class, is_admin
 from activity.services import log_activity, student_name
 
 from .models import School, YearGroup, SchoolClass, Student
+from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+
 from .photos import process_photo
+from .promotion import apply_promotion, plan_promotion, summarize
 from .profile import build_profile
 from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
 
@@ -166,4 +170,24 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             summary=f"{verb} {student_name(student)}'s photo",
         )
         return Response(self.get_serializer(student).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+def promote_students(request):
+    """
+    End of year (admins). Body: {"moves": [{"from_class": id, "to_class": id or null}],
+    "commit": true/false}. Without commit it's a preview of how many students each
+    move affects; with commit it moves everyone in one step.
+    """
+    school = request.user.profile.school
+    plan = plan_promotion(school, request.data.get("moves") or [])
+    if not plan:
+        from rest_framework.exceptions import ValidationError
+
+        raise ValidationError("Choose where at least one class moves to.")
+    commit = request.data.get("commit") is True
+    if commit:
+        apply_promotion(school, request.user, plan)
+    return Response({"committed": commit, "moves": summarize(plan)})
 
