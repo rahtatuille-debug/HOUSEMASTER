@@ -74,14 +74,19 @@ class StaffMemberSerializer(serializers.ModelSerializer):
 class TeachingAssignmentSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source="teacher.name", read_only=True)
     class_name = serializers.CharField(source="school_class.name", read_only=True)
-    subject_name = serializers.CharField(source="subject.name", read_only=True)
+    subject_name = serializers.SerializerMethodField()
 
     class Meta:
         model = TeachingAssignment
         fields = ["id", "teacher", "teacher_name", "school_class", "class_name", "subject", "subject_name"]
         validators = []  # duplicate check done in validate() with a readable message
+        extra_kwargs = {"subject": {"required": False, "allow_null": True}}
+
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else "All subjects"
 
     def validate(self, attrs):
+        attrs.setdefault("subject", None)
         if TeachingAssignment.objects.filter(
             teacher=attrs["teacher"], school_class=attrs["school_class"], subject=attrs["subject"]
         ).exists():

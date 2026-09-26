@@ -2,6 +2,15 @@ from django.conf import settings
 from django.core.mail import send_mail
 
 
+def send_admin_password_reset(user):
+    """Email a user a password reset link on an admin's behalf. Returns the token."""
+    from .models import PasswordResetToken
+
+    reset_token = PasswordResetToken.objects.create(user=user)
+    send_password_reset_email(reset_token)
+    return reset_token
+
+
 def send_password_reset_email(reset_token):
     """
     Sends the password reset link to the token's user. In dev, EMAIL_BACKEND

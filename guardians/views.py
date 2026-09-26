@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.emails import send_admin_password_reset
 from activity.services import log_activity, student_name
 
 from .models import Guardian, GuardianInvite
@@ -43,6 +44,18 @@ class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             summary=f"Invited parent {invite.name} ({invite.email}) for {children}",
             email=invite.email, students=[s.id for s in invite.students.all()],
         )
+
+    @action(detail=True, methods=["post"])
+    def renew(self, request, pk=None):
+        invite = self.get_object()
+        if invite.is_accepted:
+            raise ValidationError("This invite has already been accepted.")
+        invite.renew()
+        log_activity(
+            school=invite.school, actor=request.user, action="parent_invite.renewed", target=invite,
+            summary=f"Renewed the parent invite for {invite.name} ({invite.email}) with a new link",
+        )
+        return Response(self.get_serializer(invite).data)
 
     def perform_destroy(self, instance):
         log_activity(
@@ -121,6 +134,20 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def reactivate(self, request, pk=None):
         return self._set_active(request, True)
+
+    @action(detail=True, methods=["post"], url_path="send-password-reset")
+    def send_password_reset(self, request, pk=None):
+        guardian = self.get_object()
+        if not guardian.user.is_active:
+            raise ValidationError("Reactivate this account before sending a password reset.")
+        if not guardian.user.email:
+            raise ValidationError("This account has no email address to send a reset link to.")
+        send_admin_password_reset(guardian.user)
+        log_activity(
+            school=guardian.school, actor=request.user, action="password.reset_sent", target=guardian,
+            summary=f"Sent parent {guardian.name} a password reset email",
+        )
+        return Response({"detail": f"A password reset link was emailed to {guardian.user.email}."})
 
 
 class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):

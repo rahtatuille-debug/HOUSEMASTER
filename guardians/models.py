@@ -73,6 +73,12 @@ class GuardianInvite(models.Model):
         related_name="guardian_invite_accepted",
     )
 
+    def renew(self):
+        """Give an unaccepted invite a new link and a fresh 7 days. The old link stops working."""
+        self.token = _generate_token()
+        self.expires_at = _default_expiry()
+        self.save(update_fields=["token", "expires_at"])
+
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at

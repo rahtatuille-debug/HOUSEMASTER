@@ -7,6 +7,7 @@ and only add or change grades for the subjects they teach in that class.
 Every view that exposes student data goes through these helpers so the
 rule lives in one place.
 """
+from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied
 
 from students.models import Student
@@ -60,7 +61,9 @@ def check_can_use_class(user, school_class):
 def check_can_grade(user, student, subject):
     if is_admin(user):
         return
+    # An assignment with no subject covers every subject in that class.
     if student.school_class_id is None or not TeachingAssignment.objects.filter(
-        teacher=user.profile, school_class_id=student.school_class_id, subject=subject
+        Q(subject=subject) | Q(subject__isnull=True),
+        teacher=user.profile, school_class_id=student.school_class_id,
     ).exists():
         raise PermissionDenied(f"You don't teach {subject.name} to this student's class.")

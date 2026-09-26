@@ -278,3 +278,32 @@ class ParentManagementTests(SchoolScopedAPITestCase):
         self.admin_client_a.post(f"/api/parents/{self.parent.id}/reactivate/")
         login = self.client.post("/api/token/", {"email": "parent@alpha.test", "password": "pass1234"})
         self.assertEqual(login.status_code, 200)
+
+
+class ParentInviteRenewalAndResetTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.admin_client_a = self.authed_client(self.admin_a)
+        self.child = Student.objects.create(school=self.school_a, first_name="Kid", last_name="One")
+
+    def test_admin_renews_parent_invite(self):
+        from .models import GuardianInvite
+
+        invite = GuardianInvite.objects.create(school=self.school_a, name="P", email="p@x.test", invited_by=self.admin_a)
+        invite.students.add(self.child)
+        old = invite.token
+        response = self.admin_client_a.post(f"/api/guardian-invites/{invite.id}/renew/")
+        self.assertEqual(response.status_code, 200)
+        invite.refresh_from_db()
+        self.assertNotEqual(invite.token, old)
+        self.assertEqual(self.client_a.post(f"/api/guardian-invites/{invite.id}/renew/").status_code, 403)
+
+    def test_admin_sends_parent_a_password_reset_email(self):
+        from django.core import mail
+
+        user = User.objects.create_user(username="pp@x.test", email="pp@x.test", password="pass1234")
+        parent = Guardian.objects.create(user=user, school=self.school_a, display_name="Pat")
+        response = self.admin_client_a.post(f"/api/parents/{parent.id}/send-password-reset/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mail.outbox[0].to, ["pp@x.test"])
+        self.assertEqual(self.client_a.post(f"/api/parents/{parent.id}/send-password-reset/").status_code, 403)

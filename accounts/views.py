@@ -11,6 +11,8 @@ from accounts.mixins import SchoolScopedViewSetMixin
 
 from activity.services import log_activity
 
+from .emails import send_admin_password_reset
+
 from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
 from .serializers import (
@@ -67,6 +69,18 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             summary=f"Invited {invite.name} ({invite.email}) to join as {invite.get_role_display().lower()}",
             email=invite.email, role=invite.role,
         )
+
+    @action(detail=True, methods=["post"])
+    def renew(self, request, pk=None):
+        invite = self.get_object()
+        if invite.is_accepted:
+            raise ValidationError("This invite has already been accepted.")
+        invite.renew()
+        log_activity(
+            school=invite.school, actor=request.user, action="staff_invite.renewed", target=invite,
+            summary=f"Renewed the staff invite for {invite.name} ({invite.email}) with a new link",
+        )
+        return Response(self.get_serializer(invite).data)
 
     def perform_destroy(self, instance):
         log_activity(
@@ -141,6 +155,20 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             )
         return Response(self.get_serializer(profile).data)
 
+    @action(detail=True, methods=["post"], url_path="send-password-reset")
+    def send_password_reset(self, request, pk=None):
+        profile = self.get_object()
+        if not profile.user.is_active:
+            raise ValidationError("Reactivate this account before sending a password reset.")
+        if not profile.user.email:
+            raise ValidationError("This account has no email address to send a reset link to.")
+        send_admin_password_reset(profile.user)
+        log_activity(
+            school=profile.school, actor=request.user, action="password.reset_sent", target=profile,
+            summary=f"Sent {profile.name} a password reset email",
+        )
+        return Response({"detail": f"A password reset link was emailed to {profile.user.email}."})
+
     @action(detail=True, methods=["post"])
     def reactivate(self, request, pk=None):
         profile = self.get_object()
@@ -166,13 +194,15 @@ class TeachingAssignmentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet)
 
     @staticmethod
     def _describe(assignment):
-        return f"{assignment.teacher.name} to {assignment.school_class.name} {assignment.subject.name}"
+        subject = assignment.subject.name if assignment.subject else "(all subjects)"
+        return f"{assignment.teacher.name} to {assignment.school_class.name} {subject}"
 
     def perform_create(self, serializer):
         data = serializer.validated_data
         self.check_belongs_to_school(data["teacher"], "teacher")
         self.check_belongs_to_school(data["school_class"].year_group.school, "school_class")
-        self.check_belongs_to_school(data["subject"], "subject")
+        if data.get("subject") is not None:
+            self.check_belongs_to_school(data["subject"], "subject")
         assignment = serializer.save()
         log_activity(
             school=self.get_school(), actor=self.request.user, action="assignment.created",

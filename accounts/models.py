@@ -69,7 +69,9 @@ class Profile(models.Model):
 
 class TeachingAssignment(models.Model):
     """
-    One class + subject a teacher teaches, e.g. "7A Maths". Set by admins.
+    One class + subject a teacher teaches, e.g. "7A Maths", or a whole
+    class with every subject (subject left empty), e.g. a primary class
+    teacher. Set by admins.
 
     Teachers only see the students in classes they're assigned to, and can
     only add or change grades for the subjects they teach in each class.
@@ -78,7 +80,10 @@ class TeachingAssignment(models.Model):
 
     teacher = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="assignments")
     school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE, related_name="assignments")
-    subject = models.ForeignKey("gradebook.Subject", on_delete=models.CASCADE, related_name="assignments")
+    subject = models.ForeignKey(
+        "gradebook.Subject", on_delete=models.CASCADE, related_name="assignments", null=True, blank=True,
+        help_text="Leave empty for every subject in the class.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -86,7 +91,7 @@ class TeachingAssignment(models.Model):
         ordering = ["school_class__name", "subject__name"]
 
     def __str__(self):
-        return f"{self.teacher.name}: {self.school_class.name} {self.subject.name}"
+        return f"{self.teacher.name}: {self.school_class.name} {self.subject.name if self.subject else 'all subjects'}"
 
 
 class Invite(models.Model):
@@ -116,6 +121,12 @@ class Invite(models.Model):
     accepted_by = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="invite_accepted"
     )
+
+    def renew(self):
+        """Give an unaccepted invite a new link and a fresh 7 days. The old link stops working."""
+        self.token = _generate_token()
+        self.expires_at = _default_expiry()
+        self.save(update_fields=["token", "expires_at"])
 
     @property
     def is_expired(self):
