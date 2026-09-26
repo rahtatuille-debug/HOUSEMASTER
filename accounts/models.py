@@ -4,7 +4,7 @@ from django.utils import timezone
 import hashlib
 import secrets
 
-from students.models import School
+from students.models import School, SchoolClass
 
 
 def _generate_token():
@@ -55,12 +55,38 @@ class Profile(models.Model):
     )
 
     @property
+    def is_admin(self):
+        return self.role == self.Role.ADMIN
+
+    @property
     def name(self):
         """Return a safe human-facing identity without falling back to email."""
         return self.display_name.strip() or self.user.get_full_name().strip() or self.get_role_display()
 
     def __str__(self):
         return f"{self.name} ({self.school})"
+
+
+class TeachingAssignment(models.Model):
+    """
+    One class + subject a teacher teaches, e.g. "7A Maths". Set by admins.
+
+    Teachers only see the students in classes they're assigned to, and can
+    only add or change grades for the subjects they teach in each class.
+    Admins aren't limited by assignments. See accounts.scoping.
+    """
+
+    teacher = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="assignments")
+    school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE, related_name="assignments")
+    subject = models.ForeignKey("gradebook.Subject", on_delete=models.CASCADE, related_name="assignments")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("teacher", "school_class", "subject")
+        ordering = ["school_class__name", "subject__name"]
+
+    def __str__(self):
+        return f"{self.teacher.name}: {self.school_class.name} {self.subject.name}"
 
 
 class Invite(models.Model):

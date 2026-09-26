@@ -27,6 +27,7 @@ from .models import StudentReport
 class StudentReportScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
@@ -90,6 +91,7 @@ class GenerateActionScopingTests(SchoolScopedAPITestCase):
 
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )

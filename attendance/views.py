@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from accounts.scoping import check_can_see_student, limit_to_visible_students
 from activity.services import log_activity, student_name
 
 from .models import AttendanceRecord
@@ -13,8 +14,12 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ["student", "date", "status"]
     school_lookup = "student__school"
 
+    def get_queryset(self):
+        return limit_to_visible_students(super().get_queryset(), self.request.user)
+
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
+        check_can_see_student(self.request.user, serializer.validated_data["student"])
         record = serializer.save()
         log_activity(
             school=self.get_school(), actor=self.request.user, action="attendance.created", target=record,
@@ -25,6 +30,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         student = serializer.validated_data.get("student", serializer.instance.student)
         self.check_belongs_to_school(student.school, "student")
+        check_can_see_student(self.request.user, student)
         old = serializer.instance.status
         record = serializer.save()
         if old != record.status:

@@ -11,7 +11,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 
 from activity.services import log_activity
 
-from .models import Invite, Profile
+from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
 from .serializers import (
     AcceptInviteSerializer,
@@ -22,6 +22,7 @@ from .serializers import (
     ProfileNameSerializer,
     RequestPasswordResetSerializer,
     StaffMemberSerializer,
+    TeachingAssignmentSerializer,
 )
 
 
@@ -46,6 +47,9 @@ def me(request):
             "name": profile.name,
             "role": profile.role,
             "school": {"id": profile.school.id, "name": profile.school.name},
+            "assignments": TeachingAssignmentSerializer(
+                profile.assignments.select_related("school_class", "subject"), many=True
+            ).data,
         }
     )
 
@@ -148,6 +152,39 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 summary=f"Reactivated {profile.name}'s account",
             )
         return Response(self.get_serializer(profile).data)
+
+
+class TeachingAssignmentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+    """Admin-only: which classes and subjects each teacher teaches. Filter with ?teacher=."""
+
+    queryset = TeachingAssignment.objects.select_related("teacher", "school_class", "subject")
+    serializer_class = TeachingAssignmentSerializer
+    permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+    filterset_fields = ["teacher", "school_class", "subject"]
+    school_lookup = "teacher__school"
+
+    @staticmethod
+    def _describe(assignment):
+        return f"{assignment.teacher.name} to {assignment.school_class.name} {assignment.subject.name}"
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        self.check_belongs_to_school(data["teacher"], "teacher")
+        self.check_belongs_to_school(data["school_class"].year_group.school, "school_class")
+        self.check_belongs_to_school(data["subject"], "subject")
+        assignment = serializer.save()
+        log_activity(
+            school=self.get_school(), actor=self.request.user, action="assignment.created",
+            target=assignment, summary=f"Assigned {self._describe(assignment)}",
+        )
+
+    def perform_destroy(self, instance):
+        log_activity(
+            school=self.get_school(), actor=self.request.user, action="assignment.deleted",
+            target=instance, summary=f"Removed {self._describe(instance)}",
+        )
+        instance.delete()
 
 
 class InvitePreviewView(APIView):

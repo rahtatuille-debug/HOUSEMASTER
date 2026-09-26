@@ -14,6 +14,7 @@ from .models import YearGroup, SchoolClass, Student
 class StudentScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
@@ -95,6 +96,7 @@ class StudentScopingTests(SchoolScopedAPITestCase):
 class SchoolClassScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.year_group_a = YearGroup.objects.create(school=self.school_a, name="Year 8")
         self.year_group_b = YearGroup.objects.create(school=self.school_b, name="Year 8")
         self.class_a = SchoolClass.objects.create(year_group=self.year_group_a, name="8A")

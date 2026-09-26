@@ -64,6 +64,26 @@ class SchoolScopedAPITestCase(APITestCase):
         self.client_b = self.authed_client(self.user_b)
 
     @staticmethod
+    def make_admin(*users):
+        """
+        Scoping tests that check one school can't reach another's data use
+        admins, who see everything at their own school, so that teacher
+        class assignments don't hide the rows under test.
+        """
+        for user in users:
+            user.profile.role = Profile.Role.ADMIN
+            user.profile.save(update_fields=["role"])
+
+    @staticmethod
+    def assign(user, school_class, subject):
+        """Assign a teacher to teach `subject` to `school_class`."""
+        from .models import TeachingAssignment
+
+        return TeachingAssignment.objects.create(
+            teacher=user.profile, school_class=school_class, subject=subject
+        )
+
+    @staticmethod
     def authed_client(user):
         from rest_framework.test import APIClient
 
@@ -427,3 +447,158 @@ class StaffManagementTests(SchoolScopedAPITestCase):
     def test_staff_cannot_be_created_directly(self):
         response = self.admin_client_a.post("/api/staff/", {"role": "admin"})
         self.assertEqual(response.status_code, 405)
+
+
+class TeacherAssignmentScopingTests(SchoolScopedAPITestCase):
+    """
+    Teachers only see students in classes they're assigned to, and only
+    add or change grades for the subjects they teach there. Admins see
+    everything at their school.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from gradebook.models import Grade, Subject, Term
+        from guardians.models import Guardian
+        from students.models import SchoolClass, Student, YearGroup
+
+        self.admin_client_a = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.class_7a = SchoolClass.objects.create(year_group=year, name="7A")
+        self.class_7b = SchoolClass.objects.create(year_group=year, name="7B")
+        self.maths = Subject.objects.create(school=self.school_a, name="Maths")
+        self.art = Subject.objects.create(school=self.school_a, name="Art")
+        self.term = Term.objects.create(school=self.school_a, name="Term 1")
+        self.mine = Student.objects.create(school=self.school_a, first_name="In", last_name="Seven-A",
+                                           school_class=self.class_7a)
+        self.not_mine = Student.objects.create(school=self.school_a, first_name="In", last_name="Seven-B",
+                                               school_class=self.class_7b)
+        self.art_grade = Grade.objects.create(student=self.mine, subject=self.art, term=self.term, score=50)
+        self.other_class_grade = Grade.objects.create(student=self.not_mine, subject=self.maths,
+                                                      term=self.term, score=50)
+        self.assign(self.user_a, self.class_7a, self.maths)
+
+        def parent(email, child):
+            user = User.objects.create_user(username=email, email=email, password="pass1234")
+            guardian = Guardian.objects.create(user=user, school=self.school_a, display_name=email)
+            guardian.students.add(child)
+            return user
+
+        self.my_parent = parent("mine@parent.test", self.mine)
+        self.other_parent = parent("other@parent.test", self.not_mine)
+
+    # --- assignments endpoint
+
+    def test_admin_creates_assignment_and_teacher_sees_it_in_me(self):
+        response = self.admin_client_a.post("/api/teaching-assignments/", {
+            "teacher": self.user_a.profile.id, "school_class": self.class_7b.id, "subject": self.art.id,
+        })
+        self.assertEqual(response.status_code, 201)
+        me = self.client_a.get("/api/me/").data
+        self.assertEqual({(a["class_name"], a["subject_name"]) for a in me["assignments"]},
+                         {("7A", "Maths"), ("7B", "Art")})
+        self.assertTrue(ActivityLog.objects.filter(action="assignment.created").exists())
+
+    def test_teacher_cannot_manage_assignments(self):
+        response = self.client_a.post("/api/teaching-assignments/", {
+            "teacher": self.user_a.profile.id, "school_class": self.class_7b.id, "subject": self.art.id,
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_duplicate_assignment_rejected(self):
+        response = self.admin_client_a.post("/api/teaching-assignments/", {
+            "teacher": self.user_a.profile.id, "school_class": self.class_7a.id, "subject": self.maths.id,
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_assign_another_schools_teacher(self):
+        response = self.admin_client_a.post("/api/teaching-assignments/", {
+            "teacher": self.user_b.profile.id, "school_class": self.class_7a.id, "subject": self.maths.id,
+        })
+        self.assertEqual(response.status_code, 403)
+
+    # --- students
+
+    def test_teacher_sees_only_students_in_own_classes(self):
+        ids = [s["id"] for s in self.client_a.get("/api/students/").data]
+        self.assertEqual(ids, [self.mine.id])
+        self.assertEqual(self.client_a.get(f"/api/students/{self.not_mine.id}/").status_code, 404)
+
+    def test_admin_sees_all_students(self):
+        ids = {s["id"] for s in self.admin_client_a.get("/api/students/").data}
+        self.assertEqual(ids, {self.mine.id, self.not_mine.id})
+
+    def test_teacher_with_no_assignments_sees_no_students(self):
+        from .models import TeachingAssignment
+
+        TeachingAssignment.objects.all().delete()
+        self.assertEqual(self.client_a.get("/api/students/").data, [])
+
+    def test_teacher_can_only_add_students_to_own_classes(self):
+        ok = self.client_a.post("/api/students/", {"first_name": "New", "last_name": "Kid",
+                                                   "school_class": self.class_7a.id})
+        self.assertEqual(ok.status_code, 201)
+        other = self.client_a.post("/api/students/", {"first_name": "New", "last_name": "Kid",
+                                                      "school_class": self.class_7b.id})
+        self.assertEqual(other.status_code, 403)
+        none = self.client_a.post("/api/students/", {"first_name": "New", "last_name": "Kid"})
+        self.assertEqual(none.status_code, 403)
+
+    def test_teacher_cannot_move_student_to_a_class_they_dont_teach(self):
+        response = self.client_a.patch(f"/api/students/{self.mine.id}/", {"school_class": self.class_7b.id})
+        self.assertEqual(response.status_code, 403)
+
+    # --- grades
+
+    def test_teacher_sees_all_subjects_for_own_class_only(self):
+        ids = {g["id"] for g in self.client_a.get("/api/grades/").data}
+        self.assertEqual(ids, {self.art_grade.id})
+
+    def test_teacher_can_grade_own_subject_only(self):
+        ok = self.client_a.post("/api/grades/", {"student": self.mine.id, "subject": self.maths.id,
+                                                 "term": self.term.id, "score": "70"})
+        self.assertEqual(ok.status_code, 201)
+        art = self.client_a.post("/api/grades/", {"student": self.mine.id, "subject": self.art.id,
+                                                  "term": self.term.id, "score": "70"})
+        self.assertEqual(art.status_code, 403)
+
+    def test_teacher_cannot_change_or_delete_another_subjects_grade(self):
+        self.assertEqual(self.client_a.patch(f"/api/grades/{self.art_grade.id}/", {"score": "99"}).status_code, 403)
+        self.assertEqual(self.client_a.delete(f"/api/grades/{self.art_grade.id}/").status_code, 403)
+
+    def test_teacher_cannot_move_a_grade_into_a_subject_they_dont_teach(self):
+        grade = self.client_a.post("/api/grades/", {"student": self.mine.id, "subject": self.maths.id,
+                                                    "term": self.term.id, "score": "70"}).data
+        response = self.client_a.patch(f"/api/grades/{grade['id']}/", {"subject": self.art.id})
+        self.assertEqual(response.status_code, 403)
+
+    # --- attendance
+
+    def test_teacher_takes_attendance_for_own_class_only(self):
+        ok = self.client_a.post("/api/attendance/", {"student": self.mine.id, "date": "2026-09-01",
+                                                     "status": "present"})
+        self.assertEqual(ok.status_code, 201)
+        other = self.client_a.post("/api/attendance/", {"student": self.not_mine.id, "date": "2026-09-01",
+                                                        "status": "present"})
+        self.assertEqual(other.status_code, 403)
+
+    # --- reports
+
+    def test_teacher_cannot_generate_report_for_another_class(self):
+        response = self.client_a.post("/api/reports/generate/", {"student": self.not_mine.id,
+                                                                 "term": self.term.id})
+        self.assertEqual(response.status_code, 403)
+
+    # --- messaging
+
+    def test_teacher_contacts_are_parents_of_own_students_only(self):
+        contacts = {c["id"] for c in self.client_a.get("/api/conversations/contacts/").data}
+        self.assertEqual(contacts, {self.my_parent.id})
+        admin_contacts = {c["id"] for c in self.admin_client_a.get("/api/conversations/contacts/").data}
+        self.assertEqual(admin_contacts, {self.my_parent.id, self.other_parent.id})
+
+    def test_teacher_cannot_message_parents_of_other_classes(self):
+        response = self.client_a.post("/api/conversations/", {
+            "participant_ids": [self.other_parent.id], "body": "Hello",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)

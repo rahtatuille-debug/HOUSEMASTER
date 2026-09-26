@@ -1,6 +1,8 @@
 from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from accounts.scoping import assigned_class_ids, check_can_use_class, is_admin
+from activity.services import log_activity, student_name
 
 from .models import School, YearGroup, SchoolClass, Student
 from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
@@ -55,16 +57,40 @@ class StudentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ["school", "school_class", "is_active"]
     school_lookup = "school"
 
+    def get_queryset(self):
+        # Teachers only see students in the classes they teach.
+        queryset = super().get_queryset()
+        if is_admin(self.request.user):
+            return queryset
+        return queryset.filter(school_class_id__in=assigned_class_ids(self.request.user))
+
     def perform_create(self, serializer):
         school_class = serializer.validated_data.get("school_class")
         if school_class is not None:
             self.check_belongs_to_school(school_class.year_group.school, "school_class")
+        check_can_use_class(self.request.user, school_class)
         # Force the school to the caller's own school regardless of what
         # (if anything) was supplied in the request body.
-        serializer.save(school=self.get_school())
+        student = serializer.save(school=self.get_school())
+        log_activity(
+            school=student.school, actor=self.request.user, action="student.created", target=student,
+            summary=f"Added student {student_name(student)}",
+        )
 
     def perform_update(self, serializer):
-        school_class = serializer.validated_data.get("school_class")
-        if school_class is not None:
-            self.check_belongs_to_school(school_class.year_group.school, "school_class")
-        serializer.save(school=self.get_school())
+        if "school_class" in serializer.validated_data:
+            school_class = serializer.validated_data["school_class"]
+            if school_class is not None:
+                self.check_belongs_to_school(school_class.year_group.school, "school_class")
+            if school_class != serializer.instance.school_class:
+                check_can_use_class(self.request.user, school_class)
+        was_active = serializer.instance.is_active
+        student = serializer.save(school=self.get_school())
+        if was_active != student.is_active:
+            verb = "Reactivated" if student.is_active else "Deactivated"
+            action = "student.reactivated" if student.is_active else "student.deactivated"
+            summary = f"{verb} student {student_name(student)}"
+        else:
+            action, summary = "student.updated", f"Updated student {student_name(student)}'s details"
+        log_activity(school=student.school, actor=self.request.user, action=action, target=student,
+                     summary=summary)

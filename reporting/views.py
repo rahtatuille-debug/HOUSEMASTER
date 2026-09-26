@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from accounts.scoping import check_can_see_student, limit_to_visible_students
 
 from students.models import Student
 from gradebook.models import Term
@@ -22,13 +23,18 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ["student", "term", "status"]
     school_lookup = "student__school"
 
+    def get_queryset(self):
+        return limit_to_visible_students(super().get_queryset(), self.request.user)
+
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
+        check_can_see_student(self.request.user, serializer.validated_data["student"])
         serializer.save()
 
     def perform_update(self, serializer):
         student = serializer.validated_data.get("student", serializer.instance.student)
         self.check_belongs_to_school(student.school, "student")
+        check_can_see_student(self.request.user, student)
         serializer.save()
 
     @action(detail=False, methods=["post"])
@@ -48,6 +54,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             )
         except (Student.DoesNotExist, Term.DoesNotExist):
             return Response({"detail": "Student or term not found."}, status=status.HTTP_404_NOT_FOUND)
+        check_can_see_student(request.user, student)
 
         try:
             report = generate_report(student, term)

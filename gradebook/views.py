@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from accounts.scoping import check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
 
 from .models import Subject, Term, Grade
@@ -37,6 +38,11 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ["student", "subject", "term"]
     school_lookup = "student__school"
 
+    def get_queryset(self):
+        # Teachers see every subject's grades for students in their classes,
+        # but can only add or change grades for the subjects they teach.
+        return limit_to_visible_students(super().get_queryset(), self.request.user)
+
     def _validate_related(self, validated_data):
         self.check_belongs_to_school(validated_data["student"].school, "student")
         self.check_belongs_to_school(validated_data["subject"].school, "subject")
@@ -48,6 +54,8 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         self._validate_related(serializer.validated_data)
+        check_can_grade(self.request.user, serializer.validated_data["student"],
+                        serializer.validated_data["subject"])
         grade = serializer.save()
         log_activity(
             school=self.get_school(), actor=self.request.user, action="grade.created", target=grade,
@@ -62,6 +70,8 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         self.check_belongs_to_school(student.school, "student")
         self.check_belongs_to_school(subject.school, "subject")
         self.check_belongs_to_school(term.school, "term")
+        check_can_grade(self.request.user, serializer.instance.student, serializer.instance.subject)
+        check_can_grade(self.request.user, student, subject)
         old = f"{serializer.instance.score}/{serializer.instance.max_score}"
         grade = serializer.save()
         new = f"{grade.score}/{grade.max_score}"
@@ -72,6 +82,7 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
+        check_can_grade(self.request.user, instance.student, instance.subject)
         log_activity(
             school=self.get_school(), actor=self.request.user, action="grade.deleted", target=instance,
             summary=f"Deleted {self._describe(instance)} ({instance.score}/{instance.max_score})",

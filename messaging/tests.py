@@ -4,15 +4,20 @@ messages, read tracking, contacts, and cross-school/permission isolation.
 """
 from accounts.tests import SchoolScopedAPITestCase
 from guardians.models import Guardian
-from students.models import Student
+from gradebook.models import Subject
+from students.models import SchoolClass, Student, YearGroup
 
 
 class MessagingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.school_class = SchoolClass.objects.create(year_group=year, name="7A")
         self.student = Student.objects.create(
-            school=self.school_a, first_name="Amina", last_name="Otieno"
+            school=self.school_a, first_name="Amina", last_name="Otieno", school_class=self.school_class
         )
+        # user_a teaches Amina's class, so may message her parent.
+        self.assign(self.user_a, self.school_class, Subject.objects.create(school=self.school_a, name="Maths"))
         self.guardian_user = self.user_a.__class__.objects.create_user(
             username="grace_g", email="grace@example.com", password="pass1234"
         )

@@ -7,7 +7,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from activity.services import log_activity
 
 from .emails import send_password_reset_email
-from .models import Invite, PasswordResetToken, Profile, username_for_email
+from .models import Invite, PasswordResetToken, Profile, TeachingAssignment, username_for_email
 
 
 def _log_for_user(user, action, what):
@@ -69,6 +69,24 @@ class StaffMemberSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login"]
+
+
+class TeachingAssignmentSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.CharField(source="teacher.name", read_only=True)
+    class_name = serializers.CharField(source="school_class.name", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
+
+    class Meta:
+        model = TeachingAssignment
+        fields = ["id", "teacher", "teacher_name", "school_class", "class_name", "subject", "subject_name"]
+        validators = []  # duplicate check done in validate() with a readable message
+
+    def validate(self, attrs):
+        if TeachingAssignment.objects.filter(
+            teacher=attrs["teacher"], school_class=attrs["school_class"], subject=attrs["subject"]
+        ).exists():
+            raise serializers.ValidationError("This teacher is already assigned to that class and subject.")
+        return attrs
 
 
 class ProfileNameSerializer(serializers.Serializer):

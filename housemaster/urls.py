@@ -30,6 +30,7 @@ from accounts.views import (
     InviteViewSet,
     RequestPasswordResetView,
     StaffViewSet,
+    TeachingAssignmentViewSet,
 )
 
 router = DefaultRouter()
@@ -45,6 +46,7 @@ router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"invites", InviteViewSet)
 router.register(r"staff", StaffViewSet)
+router.register(r"teaching-assignments", TeachingAssignmentViewSet)
 router.register(r"guardian-invites", GuardianInviteViewSet)
 router.register(r"parents", ParentViewSet)
 router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")

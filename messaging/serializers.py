@@ -120,6 +120,16 @@ class ConversationCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError("You don't need to add yourself as a participant.")
             if not user.is_active:
                 raise serializers.ValidationError("One or more participants' accounts are deactivated.")
+        if hasattr(request.user, "profile"):
+            from .contacts import messageable_guardian_users
+
+            parent_ids = {u.id for u in users if hasattr(u, "guardian")}
+            allowed = set(messageable_guardian_users(request.user).filter(id__in=parent_ids)
+                          .values_list("id", flat=True))
+            if parent_ids - allowed:
+                raise serializers.ValidationError(
+                    "You can only message parents of students in the classes you teach."
+                )
         return value
 
     def validate_student(self, value):
@@ -132,4 +142,9 @@ class ConversationCreateSerializer(serializers.Serializer):
             student = Student.objects.get(id=value, school=user_school(request.user))
         except Student.DoesNotExist:
             raise serializers.ValidationError("Student not found at your school.")
+        if hasattr(request.user, "profile"):
+            from accounts.scoping import visible_students
+
+            if not visible_students(request.user).filter(id=student.id).exists():
+                raise serializers.ValidationError("You don't teach this student's class.")
         return student.id

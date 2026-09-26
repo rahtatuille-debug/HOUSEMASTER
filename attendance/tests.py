@@ -10,6 +10,7 @@ from .models import AttendanceRecord
 class AttendanceScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )

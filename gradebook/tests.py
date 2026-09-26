@@ -16,6 +16,7 @@ from .models import Subject, Term, Grade
 class SubjectScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.subject_a = Subject.objects.create(school=self.school_a, name="Mathematics")
         self.subject_b = Subject.objects.create(school=self.school_b, name="Mathematics")
 
@@ -44,6 +45,7 @@ class SubjectScopingTests(SchoolScopedAPITestCase):
 class TermScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.term_a = Term.objects.create(school=self.school_a, name="Term 1 2026")
         self.term_b = Term.objects.create(school=self.school_b, name="Term 1 2026")
 
@@ -65,6 +67,7 @@ class TermScopingTests(SchoolScopedAPITestCase):
 class GradeScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
