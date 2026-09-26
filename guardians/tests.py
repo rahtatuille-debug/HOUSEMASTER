@@ -309,3 +309,45 @@ class ParentInviteRenewalAndResetTests(SchoolScopedAPITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mail.outbox[0].to, ["pp@x.test"])
         self.assertEqual(self.client_a.post(f"/api/parents/{parent.id}/send-password-reset/").status_code, 403)
+
+
+class GuardianStudentProfileTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+
+        from attendance.models import AttendanceRecord
+
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        klass = SchoolClass.objects.create(year_group=year, name="7A")
+        self.child = Student.objects.create(school=self.school_a, first_name="Kid", last_name="Mine",
+                                            school_class=klass, medical_notes="Asthma", photo=b"\xff\xd8jpeg")
+        Student.objects.filter(id=self.child.id).update(photo_updated_at="2026-01-01T00:00Z")
+        self.other = Student.objects.create(school=self.school_a, first_name="Not", last_name="Mine",
+                                            school_class=klass, photo=b"\xff\xd8other")
+        term = Term.objects.create(school=self.school_a, name="Term 1")
+        maths = Subject.objects.create(school=self.school_a, name="Maths")
+        Grade.objects.create(student=self.child, subject=maths, term=term, score=90)
+        Grade.objects.create(student=self.other, subject=maths, term=term, score=10)
+        AttendanceRecord.objects.create(student=self.child, date=date.today(), status="late")
+        user = User.objects.create_user(username="pm@x.test", email="pm@x.test", password="x")
+        Guardian.objects.create(user=user, school=self.school_a, display_name="Pat").students.add(self.child)
+        self.parent = self.authed_client(user)
+
+    def test_parent_sees_own_childs_profile(self):
+        data = self.parent.get(f"/api/guardian-students/{self.child.id}/profile/").data
+        self.assertEqual(data["student"]["medical_notes"], "Asthma")
+        self.assertTrue(data["student"]["has_photo"])
+        self.assertEqual(data["attendance"]["overall"]["late"], 1)
+        self.assertEqual(data["performance"], [{"term": "Term 1", "student": 90.0}])  # no class average
+        self.assertNotIn("parents", data)
+        self.assertNotIn("activity", data)
+
+    def test_parent_sees_own_childs_photo_only(self):
+        self.assertEqual(self.parent.get(f"/api/guardian-students/{self.child.id}/photo/").content, b"\xff\xd8jpeg")
+        self.assertEqual(self.parent.get(f"/api/guardian-students/{self.other.id}/photo/").status_code, 404)
+        self.assertEqual(self.parent.get(f"/api/guardian-students/{self.other.id}/profile/").status_code, 404)
+
+    def test_parent_cannot_use_staff_student_endpoints(self):
+        self.assertEqual(self.parent.get(f"/api/students/{self.child.id}/profile/").status_code, 403)
+        self.assertEqual(self.parent.patch(f"/api/students/{self.child.id}/", {"medical_notes": "x"}).status_code, 403)

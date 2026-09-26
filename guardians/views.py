@@ -168,6 +168,38 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(GuardianGradeSerializer(grades, many=True).data)
 
     @action(detail=True, methods=["get"])
+    def profile(self, request, pk=None):
+        """
+        A parent's view of their own child: details, teachers, attendance and
+        the child's own average each term. Class and year-group averages are
+        left out (they're built from other children's grades), as are other
+        parents' contact details and anything staff-only.
+        """
+        from students.profile import build_profile
+
+        student = self.get_object()
+        full = build_profile(student, request.user)
+        return Response({
+            "student": GuardianStudentSerializer(student).data,
+            "age": full["age"],
+            "teachers": full["teachers"],
+            "subjects": full["subjects"],
+            "attendance": full["attendance"],
+            "performance": [{"term": p["term"], "student": p["student"]} for p in full["performance"]],
+        })
+
+    @action(detail=True, methods=["get"])
+    def photo(self, request, pk=None):
+        from django.http import HttpResponse
+
+        student = self.get_object()
+        if not student.photo:
+            raise NotFound("No photo.")
+        response = HttpResponse(bytes(student.photo), content_type="image/jpeg")
+        response["Cache-Control"] = "private, max-age=300"
+        return response
+
+    @action(detail=True, methods=["get"])
     def reports(self, request, pk=None):
         student = self.get_object()
         # Draft and submitted reports are internal staff work. Guardians only see

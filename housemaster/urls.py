@@ -23,6 +23,7 @@ from messaging.views import ConversationViewSet
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
 from accounts.views import (
+    dashboard,
     me,
     AcceptInviteView,
     ConfirmPasswordResetView,
@@ -61,6 +62,7 @@ urlpatterns = [
     path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/me/', me, name='me'),
+    path('api/dashboard/', dashboard, name='dashboard'),
     path('api/invites/preview/<str:token>/', InvitePreviewView.as_view(), name='invite_preview'),
     path('api/invites/accept/', AcceptInviteView.as_view(), name='invite_accept'),
     path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),

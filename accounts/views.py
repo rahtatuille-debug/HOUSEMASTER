@@ -91,6 +91,15 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         instance.delete()
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+def dashboard(request):
+    """Admin home page: today's attendance and everything waiting on an admin."""
+    from .dashboard import build_dashboard
+
+    return Response(build_dashboard(request.user.profile.school))
+
+
 class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     """
     Admin-only list of the school's staff, with role changes (PATCH role)

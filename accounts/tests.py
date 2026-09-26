@@ -702,3 +702,58 @@ class WholeClassAssignmentTests(SchoolScopedAPITestCase):
         body = {"teacher": self.user_a.profile.id, "school_class": self.class_3a.id}
         self.assertEqual(self.admin_client_a.post("/api/teaching-assignments/", body).status_code, 201)
         self.assertEqual(self.admin_client_a.post("/api/teaching-assignments/", body).status_code, 400)
+
+
+class DashboardTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+
+        from attendance.models import AttendanceRecord
+        from gradebook.models import Term
+        from guardians.models import Guardian
+        from reporting.models import StudentReport
+        from students.models import SchoolClass, Student, YearGroup
+
+        self.admin_client_a = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        c7a = SchoolClass.objects.create(year_group=year, name="7A")
+        SchoolClass.objects.create(year_group=year, name="7B")  # no students: left out
+        c7c = SchoolClass.objects.create(year_group=year, name="7C")
+        self.ann = Student.objects.create(school=self.school_a, first_name="Ann", last_name="A", school_class=c7a)
+        self.ben = Student.objects.create(school=self.school_a, first_name="Ben", last_name="B", school_class=c7a)
+        Student.objects.create(school=self.school_a, first_name="Cy", last_name="C", school_class=c7c)
+        Student.objects.create(school=self.school_b, first_name="Other", last_name="School")
+        AttendanceRecord.objects.create(student=self.ann, date=date.today(), status="present")
+        AttendanceRecord.objects.create(student=self.ben, date=date.today(), status="absent")
+        parent = User.objects.create_user(username="p@x.test", email="p@x.test", password="x")
+        Guardian.objects.create(user=parent, school=self.school_a).students.add(self.ann)
+        term = Term.objects.create(school=self.school_a, name="T1")
+        StudentReport.objects.create(student=self.ann, term=term, progress_summary="s", report_comment="c",
+                                     status="submitted")
+        Invite.objects.create(school=self.school_a, email="new@a.test", name="New", invited_by=self.admin_a)
+
+    def test_admin_sees_todays_picture(self):
+        data = self.admin_client_a.get("/api/dashboard/").data
+        att = data["attendance_today"]
+        self.assertEqual((att["students"], att["marked"], att["absent"], att["rate"]), (3, 2, 1, 50.0))
+        self.assertEqual(att["classes_not_taken"], ["7C"])
+        self.assertEqual([c["name"] for c in att["classes"]], ["7A", "7C"])
+        self.assertEqual(data["reports_waiting"]["count"], 1)
+        self.assertEqual(data["invites"]["pending"], 1)
+        without = data["students_without_parent"]
+        self.assertEqual((without["count"], without["total_students"]), (2, 3))
+        self.assertNotIn("Ann A", [s["name"] for s in without["items"]])
+
+    def test_deactivated_parent_counts_as_no_parent(self):
+        User.objects.filter(email="p@x.test").update(is_active=False)
+        self.assertEqual(self.admin_client_a.get("/api/dashboard/").data["students_without_parent"]["count"], 3)
+
+    def test_teacher_cannot_see_dashboard(self):
+        self.assertEqual(self.client_a.get("/api/dashboard/").status_code, 403)
+
+    def test_only_own_school_is_counted(self):
+        self.make_admin(self.user_b)
+        data = self.client_b.get("/api/dashboard/").data
+        self.assertEqual(data["students_without_parent"]["total_students"], 1)
+        self.assertEqual(data["reports_waiting"]["count"], 0)

@@ -126,8 +126,14 @@ class GuardianStudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.Mode
         model = Student
         fields = [
             "id", "first_name", "last_name", "school_class", "school_class_name",
-            "house", "enrolled_on", "is_active",
+            "house", "enrolled_on", "is_active", "external_id", "gender", "date_of_birth",
+            "nationality", "mode_of_learning", "medical_notes", "has_photo",
         ]
+
+    has_photo = serializers.SerializerMethodField(read_only=True)
+
+    def get_has_photo(self, obj):
+        return obj.photo_updated_at is not None
 
     def get_school_class_name(self, obj):
         if not obj.school_class:
