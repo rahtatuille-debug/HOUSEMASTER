@@ -58,8 +58,31 @@ class Student(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     house = models.CharField(max_length=100, blank=True)
-    enrolled_on = models.DateField(null=True, blank=True)
+    enrolled_on = models.DateField(null=True, blank=True, verbose_name="admission date")
     is_active = models.BooleanField(default=True)
+
+    class Gender(models.TextChoices):
+        FEMALE = "female", "Female"
+        MALE = "male", "Male"
+        OTHER = "other", "Other"
+
+    class ModeOfLearning(models.TextChoices):
+        DAY = "day", "Day"
+        BOARDING = "boarding", "Boarding"
+
+    gender = models.CharField(max_length=10, choices=Gender.choices, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    nationality = models.CharField(max_length=60, blank=True)
+    mode_of_learning = models.CharField(max_length=10, choices=ModeOfLearning.choices, blank=True)
+    medical_notes = models.TextField(
+        blank=True, verbose_name="health notes",
+        help_text="Allergies, conditions or medication staff should know about.",
+    )
+    # Stored in the database rather than as a file: Render's free tier wipes
+    # uploaded files on every deploy. Resized to a small JPEG on upload
+    # (students.photos), so it stays small.
+    photo = models.BinaryField(null=True, blank=True, editable=False)
+    photo_updated_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         indexes = [models.Index(fields=["school", "external_id"])]

@@ -1,4 +1,10 @@
+from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
+from rest_framework.parsers import MultiPartParser
+from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from approvals.mixins import ApprovalRequiredMixin
@@ -6,6 +12,8 @@ from accounts.scoping import assigned_class_ids, check_can_use_class, is_admin
 from activity.services import log_activity, student_name
 
 from .models import School, YearGroup, SchoolClass, Student
+from .photos import process_photo
+from .profile import build_profile
 from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
 
 
@@ -118,3 +126,44 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             action, summary = "student.updated", f"Updated student {student_name(student)}'s details"
         log_activity(school=student.school, actor=self.request.user, action=action, target=student,
                      summary=summary)
+
+    @action(detail=True, methods=["get"])
+    def profile(self, request, pk=None):
+        """Everything the student profile page shows. Same visibility as the student itself."""
+        student = self.get_object()
+        return Response({"student": self.get_serializer(student).data, **build_profile(student, request.user)})
+
+    @action(detail=True, methods=["get", "post", "delete"], parser_classes=[MultiPartParser])
+    def photo(self, request, pk=None):
+        """
+        GET returns the photo as a JPEG (404 if there isn't one). POST a
+        multipart `photo` file to set it; DELETE removes it. Anyone who can
+        edit the student can change the photo.
+        """
+        student = self.get_object()
+        if request.method == "GET":
+            if not student.photo:
+                raise NotFound("This student has no photo.")
+            response = HttpResponse(bytes(student.photo), content_type="image/jpeg")
+            response["Cache-Control"] = "private, max-age=300"
+            return response
+        if request.method == "POST":
+            upload = request.FILES.get("photo")
+            if upload is None:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({"photo": "Choose a photo to upload."})
+            student.photo = process_photo(upload)
+            student.photo_updated_at = timezone.now()
+            verb = "Changed"
+        else:
+            student.photo = None
+            student.photo_updated_at = None
+            verb = "Removed"
+        student.save(update_fields=["photo", "photo_updated_at"])
+        log_activity(
+            school=student.school, actor=request.user, action="student.photo_changed", target=student,
+            summary=f"{verb} {student_name(student)}'s photo",
+        )
+        return Response(self.get_serializer(student).data)
+
