@@ -16,6 +16,7 @@ from .models import Subject, Term, Grade
 class SubjectScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.subject_a = Subject.objects.create(school=self.school_a, name="Mathematics")
         self.subject_b = Subject.objects.create(school=self.school_b, name="Mathematics")
 
@@ -44,6 +45,7 @@ class SubjectScopingTests(SchoolScopedAPITestCase):
 class TermScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.term_a = Term.objects.create(school=self.school_a, name="Term 1 2026")
         self.term_b = Term.objects.create(school=self.school_b, name="Term 1 2026")
 
@@ -65,6 +67,7 @@ class TermScopingTests(SchoolScopedAPITestCase):
 class GradeScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
@@ -103,7 +106,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_rejects_spoofed_subject(self):
         response = self.client_a.post(
@@ -115,7 +119,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_rejects_spoofed_term(self):
         response = self.client_a.post(
@@ -127,7 +132,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_succeeds_when_all_three_belong_to_caller(self):
         response = self.client_a.post(
@@ -145,7 +151,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
         response = self.client_a.patch(
             f"/api/grades/{self.grade_a.id}/", {"student": self.student_b.id}
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.grade_a.refresh_from_db()
         self.assertEqual(self.grade_a.student_id, self.student_a.id)
 

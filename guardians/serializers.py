@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 
 from accounts.models import username_for_email
 from students.models import Student
@@ -11,7 +12,7 @@ from reporting.models import StudentReport
 from .models import Guardian, GuardianInvite
 
 
-class GuardianInviteSerializer(serializers.ModelSerializer):
+class GuardianInviteSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     invited_by_email = serializers.CharField(source="invited_by.email", read_only=True)
     accepted_by_email = serializers.CharField(
         source="accepted_by.email", read_only=True, default=None
@@ -37,9 +38,15 @@ class GuardianInviteSerializer(serializers.ModelSerializer):
         return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with that email already exists.")
-        if GuardianInvite.objects.filter(email__iexact=value, accepted_at__isnull=True).exists():
+        # Same rule as staff invites: only this school is checked, so this
+        # can't reveal accounts at other schools. See accounts.serializers.
+        from accounts.mixins import requester_school
+        from accounts.serializers import email_in_use_at_school
+
+        school = requester_school(self.context.get("request"))
+        if email_in_use_at_school(value, school):
+            raise serializers.ValidationError("Someone at your school already has an account with that email.")
+        if GuardianInvite.objects.filter(school=school, email__iexact=value, accepted_at__isnull=True).exists():
             raise serializers.ValidationError("There's already a pending guardian invite for that email.")
         return value
 
@@ -112,7 +119,7 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
         return user
 
 
-class GuardianStudentSerializer(serializers.ModelSerializer):
+class GuardianStudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     school_class_name = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -128,7 +135,7 @@ class GuardianStudentSerializer(serializers.ModelSerializer):
         return f"{obj.school_class.year_group.name} — {obj.school_class.name}"
 
 
-class GuardianGradeSerializer(serializers.ModelSerializer):
+class GuardianGradeSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     subject_name = serializers.CharField(source="subject.name", read_only=True)
     term_name = serializers.CharField(source="term.name", read_only=True)
 
@@ -137,7 +144,7 @@ class GuardianGradeSerializer(serializers.ModelSerializer):
         fields = ["id", "subject", "subject_name", "term", "term_name", "score", "max_score", "recorded_at"]
 
 
-class GuardianReportSerializer(serializers.ModelSerializer):
+class GuardianReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     term_name = serializers.CharField(source="term.name", read_only=True)
 
     class Meta:
@@ -156,3 +163,25 @@ class GuardianNameSerializer(serializers.Serializer):
         if not name:
             raise serializers.ValidationError("Your name cannot be blank.")
         return name
+
+
+class ParentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
+    """An admin's view of one parent account, including which children it's linked to."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
+    last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+    student_names = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Guardian
+        fields = [
+            "id", "user_id", "name", "email", "is_active", "students", "student_names",
+            "date_joined", "last_login",
+        ]
+
+    def get_student_names(self, obj):
+        return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]

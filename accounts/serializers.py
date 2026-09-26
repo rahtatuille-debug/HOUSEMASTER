@@ -1,11 +1,31 @@
 from django.contrib.auth.models import User
+from django.db import models
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from activity.services import log_activity
+
 from .emails import send_password_reset_email
-from .models import Invite, PasswordResetToken, Profile, username_for_email
+from .mixins import SchoolScopedRelatedFieldsMixin, requester_school
+from .models import Invite, PasswordResetToken, Profile, TeachingAssignment, username_for_email
+
+
+def email_in_use_at_school(email, school):
+    """Whether a staff member or parent at this school already signs in with this email."""
+    return User.objects.filter(email__iexact=email).filter(
+        models.Q(profile__school=school) | models.Q(guardian__school=school)
+    ).exists()
+
+
+def _log_for_user(user, action, what):
+    """Log an event a user did to their own account, if they belong to a school."""
+    owner = getattr(user, "profile", None) or getattr(user, "guardian", None)
+    if owner is None:
+        return
+    log_activity(school=owner.school, actor=user, action=action, target=owner,
+                 summary=f"{owner.name} {what}")
 
 
 class InviteSerializer(serializers.ModelSerializer):
@@ -32,9 +52,14 @@ class InviteSerializer(serializers.ModelSerializer):
         }
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with that email already exists.")
-        if Invite.objects.filter(email__iexact=value, accepted_at__isnull=True).exists():
+        # Only this school's accounts and invites are checked, so an admin
+        # can't use this to find out whether an email is in use at another
+        # school. If it is, accepting the invite fails instead, and only the
+        # invitee (who owns that email) sees why.
+        school = requester_school(self.context.get("request"))
+        if email_in_use_at_school(value, school):
+            raise serializers.ValidationError("Someone at your school already has an account with that email.")
+        if Invite.objects.filter(school=school, email__iexact=value, accepted_at__isnull=True).exists():
             raise serializers.ValidationError("There's already a pending invite for that email.")
         return value
 
@@ -43,6 +68,44 @@ class InviteSerializer(serializers.ModelSerializer):
         if not name:
             raise serializers.ValidationError("A staff member's name is required.")
         return name
+
+
+class StaffMemberSerializer(serializers.ModelSerializer):
+    """An admin's view of one staff member at their school."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
+    last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login"]
+
+
+class TeachingAssignmentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
+    teacher_name = serializers.CharField(source="teacher.name", read_only=True)
+    class_name = serializers.CharField(source="school_class.name", read_only=True)
+    subject_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeachingAssignment
+        fields = ["id", "teacher", "teacher_name", "school_class", "class_name", "subject", "subject_name"]
+        validators = []  # duplicate check done in validate() with a readable message
+        extra_kwargs = {"subject": {"required": False, "allow_null": True}}
+
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else "All subjects"
+
+    def validate(self, attrs):
+        attrs.setdefault("subject", None)
+        if TeachingAssignment.objects.filter(
+            teacher=attrs["teacher"], school_class=attrs["school_class"], subject=attrs["subject"]
+        ).exists():
+            raise serializers.ValidationError("This teacher is already assigned to that class and subject.")
+        return attrs
 
 
 class ProfileNameSerializer(serializers.Serializer):
@@ -139,6 +202,7 @@ class RequestPasswordResetSerializer(serializers.Serializer):
         for user in users:
             reset_token = PasswordResetToken.objects.create(user=user)
             send_password_reset_email(reset_token)
+            _log_for_user(user, "password.reset_requested", "requested a password reset link")
 
 
 class ConfirmPasswordResetSerializer(serializers.Serializer):
@@ -168,6 +232,7 @@ class ConfirmPasswordResetSerializer(serializers.Serializer):
         user.save(update_fields=["password"])
         reset_token.used_at = timezone.now()
         reset_token.save(update_fields=["used_at"])
+        _log_for_user(user, "password.reset_completed", "reset their password")
         return user
 
 

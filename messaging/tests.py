@@ -4,15 +4,20 @@ messages, read tracking, contacts, and cross-school/permission isolation.
 """
 from accounts.tests import SchoolScopedAPITestCase
 from guardians.models import Guardian
-from students.models import Student
+from gradebook.models import Subject
+from students.models import SchoolClass, Student, YearGroup
 
 
 class MessagingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.school_class = SchoolClass.objects.create(year_group=year, name="7A")
         self.student = Student.objects.create(
-            school=self.school_a, first_name="Amina", last_name="Otieno"
+            school=self.school_a, first_name="Amina", last_name="Otieno", school_class=self.school_class
         )
+        # user_a teaches Amina's class, so may message her parent.
+        self.assign(self.user_a, self.school_class, Subject.objects.create(school=self.school_a, name="Maths"))
         self.guardian_user = self.user_a.__class__.objects.create_user(
             username="grace_g", email="grace@example.com", password="pass1234"
         )
@@ -128,3 +133,108 @@ class MessagingTests(SchoolScopedAPITestCase):
             {"participant_ids": [self.guardian_user.id], "body": "   "},
         )
         self.assertEqual(response.status_code, 400)
+
+
+class ClassMessageTests(SchoolScopedAPITestCase):
+    """A teacher messaging every parent of one class: one-way notices and discussions."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import User
+
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.class_7a = SchoolClass.objects.create(year_group=year, name="7A")
+        self.class_7b = SchoolClass.objects.create(year_group=year, name="7B")
+        self.assign(self.user_a, self.class_7a, Subject.objects.create(school=self.school_a, name="Maths"))
+
+        def parent(email, name, school_class):
+            student = Student.objects.create(school=self.school_a, first_name=name, last_name="Kid",
+                                             school_class=school_class)
+            user = User.objects.create_user(username=email, email=email, password="pass1234")
+            guardian = Guardian.objects.create(user=user, school=self.school_a, display_name=name + " Parent")
+            guardian.students.add(student)
+            return user, guardian, student
+
+        self.p1, self.g1, self.kid1 = parent("p1@x.test", "Ann", self.class_7a)
+        self.p2, self.g2, self.kid2 = parent("p2@x.test", "Ben", self.class_7a)
+        self.p3, self.g3, self.kid3 = parent("p3@x.test", "Cy", self.class_7b)
+        self.c1, self.c2, self.c3 = (self.authed_client(u) for u in (self.p1, self.p2, self.p3))
+
+    def send(self, kind, school_class=None, client=None):
+        return (client or self.client_a).post("/api/conversations/class/", {
+            "school_class": (school_class or self.class_7a).id, "kind": kind, "body": "Trip on Friday",
+        })
+
+    def ids(self, client):
+        return [c["id"] for c in client.get("/api/conversations/").data]
+
+    def test_notice_reaches_every_parent_in_the_class_only(self):
+        response = self.send("class_notice")
+        self.assertEqual(response.status_code, 201)
+        conv_id = response.data["id"]
+        self.assertIn(conv_id, self.ids(self.c1))
+        self.assertIn(conv_id, self.ids(self.c2))
+        self.assertNotIn(conv_id, self.ids(self.c3))
+        self.assertEqual(self.c1.get(f"/api/conversations/{conv_id}/messages/").data[0]["body"], "Trip on Friday")
+
+    def test_parents_cannot_reply_to_a_notice_or_see_other_recipients(self):
+        conv_id = self.send("class_notice").data["id"]
+        reply = self.c1.post(f"/api/conversations/{conv_id}/messages/", {"body": "Thanks"})
+        self.assertEqual(reply.status_code, 403)
+        detail = self.c1.get(f"/api/conversations/{conv_id}/").data
+        self.assertFalse(detail["can_reply"])
+        names = [p["name"] for p in detail["participants"]]
+        self.assertNotIn("Ben Parent", names)
+        # The teacher can still add to the notice.
+        self.assertEqual(self.client_a.post(f"/api/conversations/{conv_id}/messages/", {"body": "Update"}).status_code, 201)
+
+    def test_discussion_lets_everyone_reply_and_see_each_other(self):
+        conv_id = self.send("class_group").data["id"]
+        self.assertEqual(self.c1.post(f"/api/conversations/{conv_id}/messages/", {"body": "Can I help?"}).status_code, 201)
+        bodies = [m["body"] for m in self.c2.get(f"/api/conversations/{conv_id}/messages/").data]
+        self.assertEqual(bodies, ["Trip on Friday", "Can I help?"])
+        names = {p["name"] for p in self.c2.get(f"/api/conversations/{conv_id}/").data["participants"]}
+        self.assertTrue({"Ann Parent", "Ben Parent"} <= names)
+
+    def test_teacher_can_only_message_classes_they_teach(self):
+        self.assertEqual(self.send("class_notice", school_class=self.class_7b).status_code, 403)
+        admin = self.authed_client(self.admin_a)
+        self.assertEqual(self.send("class_notice", school_class=self.class_7b, client=admin).status_code, 201)
+
+    def test_parents_cannot_start_class_messages(self):
+        self.assertEqual(self.send("class_notice", client=self.c1).status_code, 403)
+
+    def test_parent_who_leaves_the_class_loses_access_at_once(self):
+        conv_id = self.send("class_group").data["id"]
+        self.kid2.school_class = self.class_7b
+        self.kid2.save()
+        self.assertNotIn(conv_id, self.ids(self.c2))
+        self.assertEqual(self.c2.get(f"/api/conversations/{conv_id}/messages/").status_code, 404)
+
+    def test_parent_who_joins_the_class_is_added_on_the_next_message(self):
+        conv_id = self.send("class_group").data["id"]
+        self.kid3.school_class = self.class_7a
+        self.kid3.save()
+        self.client_a.post(f"/api/conversations/{conv_id}/messages/", {"body": "Reminder"})
+        self.assertIn(conv_id, self.ids(self.c3))
+
+    def test_deactivated_parents_are_left_out(self):
+        self.p2.is_active = False
+        self.p2.save()
+        conv_id = self.send("class_notice").data["id"]
+        from .models import Conversation
+
+        self.assertFalse(Conversation.objects.get(id=conv_id).participant_rows.filter(user=self.p2).exists())
+
+    def test_class_with_no_parent_accounts_is_refused(self):
+        empty = SchoolClass.objects.create(year_group=self.class_7a.year_group, name="7C")
+        self.assign(self.user_a, empty, Subject.objects.get(name="Maths"))
+        self.assertEqual(self.send("class_notice", school_class=empty).status_code, 400)
+
+    def test_cannot_message_another_schools_class(self):
+        other_year = YearGroup.objects.create(school=self.school_b, name="Y")
+        other_class = SchoolClass.objects.create(year_group=other_year, name="Z")
+        admin = self.authed_client(self.admin_a)
+        response = self.send("class_notice", school_class=other_class, client=admin)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(str(response.data["school_class"]), "Class not found.")

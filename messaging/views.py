@@ -2,12 +2,25 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, PermissionDenied
+from django.db.models import Q
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from accounts.scoping import is_admin
+from activity.services import log_activity
+from students.models import SchoolClass
+
+from .classes import can_post, guardian_class_ids, start_class_conversation, sync_class_participants
 from .models import Conversation, ConversationParticipant, Message
+from .contacts import messageable_guardian_users
 from .permissions import CanMessage, user_school
-from .serializers import ConversationCreateSerializer, ConversationSerializer, MessageSerializer, _display_name
+from .serializers import (
+    ClassMessageSerializer,
+    ConversationCreateSerializer,
+    ConversationSerializer,
+    MessageSerializer,
+    _display_name,
+)
 
 
 class ConversationViewSet(viewsets.ModelViewSet):
@@ -24,7 +37,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
-        return Conversation.objects.filter(participants=self.request.user).distinct()
+        queryset = Conversation.objects.filter(participants=self.request.user).distinct()
+        guardian = getattr(self.request.user, "guardian", None)
+        if guardian is not None:
+            # A parent who has left a class loses its class conversations at
+            # once, even before the next message updates the member list.
+            queryset = queryset.filter(
+                Q(kind=Conversation.Kind.DIRECT) | Q(school_class_id__in=guardian_class_ids(guardian))
+            )
+        return queryset
 
     def get_object(self):
         conversation = super().get_object()
@@ -63,12 +84,54 @@ class ConversationViewSet(viewsets.ModelViewSet):
             messages = conversation.messages.select_related("sender")
             return Response(MessageSerializer(messages, many=True).data)
 
+        if not can_post(conversation, request.user):
+            raise PermissionDenied("Replies are turned off for this class notice. Message the teacher directly instead.")
         serializer = MessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        sync_class_participants(conversation)
         message = Message.objects.create(
             conversation=conversation, sender=request.user, body=serializer.validated_data["body"]
         )
         return Response(MessageSerializer(message).data, status=201)
+
+    @action(detail=False, methods=["post"], url_path="class")
+    def class_message(self, request):
+        """
+        Message every parent of one class at once, as a one-way notice
+        (kind=class_notice) or a discussion everyone can reply to
+        (kind=class_group). Teachers can only message classes they teach;
+        admins can message any class at their school.
+        """
+        if not hasattr(request.user, "profile"):
+            raise PermissionDenied("Only staff can message a whole class.")
+        serializer = ClassMessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            school_class = SchoolClass.objects.select_related("year_group").get(
+                pk=data["school_class"], year_group__school=request.user.profile.school
+            )
+        except SchoolClass.DoesNotExist:
+            raise ValidationError({"school_class": "Class not found."})
+        if not is_admin(request.user) and not request.user.profile.assignments.filter(
+            school_class=school_class
+        ).exists():
+            raise PermissionDenied("You can only message classes you teach.")
+
+        from .classes import class_parent_users
+
+        if not class_parent_users(school_class).exists():
+            raise ValidationError("No parents in this class have an account yet.")
+        conversation = start_class_conversation(
+            sender=request.user, school_class=school_class, kind=data["kind"], body=data["body"],
+        )
+        label = "a notice" if data["kind"] == Conversation.Kind.CLASS_NOTICE else "a discussion"
+        log_activity(
+            school=conversation.school, actor=request.user, action="class_message.created",
+            target=conversation,
+            summary=f"Started {label} with {conversation.participant_rows.count() - 1} parents of {school_class.name}",
+        )
+        return Response(ConversationSerializer(conversation, context={"request": request}).data, status=201)
 
     @action(detail=True, methods=["post"])
     def read(self, request, pk=None):
@@ -93,7 +156,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if hasattr(request.user, "guardian"):
             users = User.objects.filter(profile__school=school).exclude(id=request.user.id)
         else:
-            users = User.objects.filter(guardian__school=school).exclude(id=request.user.id)
+            users = messageable_guardian_users(request.user)
+        users = users.filter(is_active=True)
         return Response([
             {"id": u.id, "name": _display_name(u)[0], "kind": _display_name(u)[1]} for u in users
         ])

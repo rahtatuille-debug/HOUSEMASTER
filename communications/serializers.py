@@ -1,9 +1,12 @@
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 
-from .models import Announcement
+from activity.services import display_name
+
+from .models import AlertRecipient, Announcement, UrgentAlert
 
 
-class AnnouncementSerializer(serializers.ModelSerializer):
+class AnnouncementSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField(read_only=True)
     created_by_role = serializers.SerializerMethodField(read_only=True)
 
@@ -77,3 +80,90 @@ class GenerateAnnouncementTextSerializer(serializers.Serializer):
     )
     year_group = serializers.IntegerField(required=False, allow_null=True)
     school_class = serializers.IntegerField(required=False, allow_null=True)
+
+
+class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+    audience_label = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+    my_acknowledged_at = serializers.SerializerMethodField()
+    recipient_count = serializers.SerializerMethodField()
+    acknowledged_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UrgentAlert
+        fields = [
+            "id", "title", "body", "audience", "audience_label", "year_group", "school_class",
+            "created_by", "created_by_name", "created_at", "ended_at", "is_active",
+            "my_acknowledged_at", "recipient_count", "acknowledged_count",
+        ]
+        read_only_fields = ["created_by", "created_at", "ended_at"]
+
+    def get_created_by_name(self, obj):
+        return display_name(obj.created_by) if obj.created_by else None
+
+    def get_audience_label(self, obj):
+        target = obj.school_class or obj.year_group
+        label = obj.get_audience_display()
+        return f"{label}: {target.name}" if target else label
+
+    def _viewer(self):
+        request = self.context.get("request")
+        return request.user if request else None
+
+    def _can_see_counts(self, obj):
+        viewer = self._viewer()
+        if viewer is None:
+            return False
+        profile = getattr(viewer, "profile", None)
+        return obj.created_by_id == viewer.id or (profile is not None and profile.is_admin)
+
+    def get_my_acknowledged_at(self, obj):
+        viewer = self._viewer()
+        row = obj.recipients.filter(user=viewer).first() if viewer else None
+        return row.acknowledged_at if row else None
+
+    def get_recipient_count(self, obj):
+        return obj.recipients.count() if self._can_see_counts(obj) else None
+
+    def get_acknowledged_count(self, obj):
+        return obj.recipients.filter(acknowledged_at__isnull=False).count() if self._can_see_counts(obj) else None
+
+    def validate(self, attrs):
+        audience = attrs.get("audience")
+        if audience == UrgentAlert.Audience.YEAR_GROUP and not attrs.get("year_group"):
+            raise serializers.ValidationError({"year_group": "Choose a year group."})
+        if audience == UrgentAlert.Audience.SCHOOL_CLASS and not attrs.get("school_class"):
+            raise serializers.ValidationError({"school_class": "Choose a class."})
+        if audience != UrgentAlert.Audience.YEAR_GROUP:
+            attrs["year_group"] = None
+        if audience != UrgentAlert.Audience.SCHOOL_CLASS:
+            attrs["school_class"] = None
+        for field in ("title", "body"):
+            if not attrs.get(field, "").strip():
+                raise serializers.ValidationError({field: "This can't be empty."})
+        return attrs
+
+
+class AlertRecipientSerializer(serializers.ModelSerializer):
+    """Who an alert went to and whether they've seen it, for the sender and admins."""
+
+    name = serializers.SerializerMethodField()
+    kind = serializers.SerializerMethodField()
+    children = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AlertRecipient
+        fields = ["id", "user", "name", "kind", "children", "acknowledged_at"]
+
+    def get_name(self, obj):
+        return display_name(obj.user)
+
+    def get_kind(self, obj):
+        return "staff" if hasattr(obj.user, "profile") else "parent"
+
+    def get_children(self, obj):
+        guardian = getattr(obj.user, "guardian", None)
+        if guardian is None:
+            return []
+        return [f"{s.first_name} {s.last_name}" for s in guardian.students.all()]

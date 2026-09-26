@@ -1,13 +1,22 @@
+from django.conf import settings
 from django.db import models
 from students.models import Student
 from gradebook.models import Term
 
 
 class StudentReport(models.Model):
-    """An AI-generated progress summary + draft report comment for one student, one term."""
+    """
+    An AI-generated progress summary + draft report comment for one student, one term.
+
+    Goes draft -> submitted (by a teacher, when they're happy with it) ->
+    finalized (by an admin only). Parents only ever see finalized reports.
+    An admin can send a submitted or finalized report back to draft with a
+    note saying what to change. Finalized reports can't be edited or
+    regenerated until they're sent back.
+    """
     STATUS_CHOICES = [
         ("draft", "Draft"),
-        ("reviewed", "Reviewed / edited by teacher"),
+        ("submitted", "Submitted for approval"),
         ("finalized", "Finalized"),
     ]
 
@@ -25,6 +34,19 @@ class StudentReport(models.Model):
         help_text="The School.report_tone value in effect when this was generated.",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    review_note = models.TextField(
+        blank=True, help_text="An admin's note on what to change, set when a report is sent back."
+    )
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="submitted_reports",
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="finalized_reports",
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True)
 
     generated_at = models.DateTimeField(auto_now_add=True)
     edited_at = models.DateTimeField(auto_now=True)

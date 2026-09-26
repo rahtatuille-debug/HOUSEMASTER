@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
+
 from .models import Conversation, ConversationParticipant, Message
 from .permissions import user_school
 
@@ -57,22 +59,43 @@ class ParticipantSerializer(serializers.Serializer):
         return _display_name(row.user)[1]
 
 
-class ConversationSerializer(serializers.ModelSerializer):
+class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     participants = serializers.SerializerMethodField(read_only=True)
     student_name = serializers.SerializerMethodField(read_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
     unread_count = serializers.SerializerMethodField(read_only=True)
+    class_name = serializers.CharField(source="school_class.name", read_only=True, default=None)
+    can_reply = serializers.SerializerMethodField(read_only=True)
+    member_count = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Conversation
         fields = [
-            "id", "school", "student", "student_name", "participants",
-            "created_at", "last_message", "unread_count",
+            "id", "school", "kind", "school_class", "class_name", "student", "student_name",
+            "participants", "member_count", "can_reply", "created_at", "last_message", "unread_count",
         ]
-        extra_kwargs = {"school": {"read_only": True}}
+        extra_kwargs = {"school": {"read_only": True}, "kind": {"read_only": True},
+                        "school_class": {"read_only": True}}
+
+    def _viewer(self):
+        request = self.context.get("request")
+        return request.user if request else None
+
+    def get_can_reply(self, obj):
+        from .classes import can_post
+
+        viewer = self._viewer()
+        return bool(viewer) and can_post(obj, viewer)
+
+    def get_member_count(self, obj):
+        return obj.participant_rows.count()
 
     def get_participants(self, obj):
         rows = obj.participant_rows.select_related("user__profile", "user__guardian")
+        viewer = self._viewer()
+        if obj.kind == Conversation.Kind.CLASS_NOTICE and viewer is not None and not hasattr(viewer, "profile"):
+            # Parents don't see who else received a one-way class notice.
+            rows = rows.filter(user__profile__isnull=False)
         return ParticipantSerializer(rows, many=True).data
 
     def get_student_name(self, obj):
@@ -110,14 +133,26 @@ class ConversationCreateSerializer(serializers.Serializer):
     def validate_participant_ids(self, value):
         request = self.context["request"]
         caller_school = user_school(request.user)
-        users = User.objects.filter(id__in=value)
-        if users.count() != len(set(value)):
+        # People at other schools are treated exactly like people who don't
+        # exist, so this can't be used to find out who has an account.
+        users = [u for u in User.objects.filter(id__in=value) if user_school(u) == caller_school]
+        if len(users) != len(set(value)):
             raise serializers.ValidationError("One or more participants could not be found.")
         for user in users:
-            if user_school(user) != caller_school:
-                raise serializers.ValidationError("All participants must be at your own school.")
             if user.id == request.user.id:
                 raise serializers.ValidationError("You don't need to add yourself as a participant.")
+            if not user.is_active:
+                raise serializers.ValidationError("One or more participants' accounts are deactivated.")
+        if hasattr(request.user, "profile"):
+            from .contacts import messageable_guardian_users
+
+            parent_ids = {u.id for u in users if hasattr(u, "guardian")}
+            allowed = set(messageable_guardian_users(request.user).filter(id__in=parent_ids)
+                          .values_list("id", flat=True))
+            if parent_ids - allowed:
+                raise serializers.ValidationError(
+                    "You can only message parents of students in the classes you teach."
+                )
         return value
 
     def validate_student(self, value):
@@ -130,4 +165,22 @@ class ConversationCreateSerializer(serializers.Serializer):
             student = Student.objects.get(id=value, school=user_school(request.user))
         except Student.DoesNotExist:
             raise serializers.ValidationError("Student not found at your school.")
+        if hasattr(request.user, "profile"):
+            from accounts.scoping import visible_students
+
+            if not visible_students(request.user).filter(id=student.id).exists():
+                raise serializers.ValidationError("You don't teach this student's class.")
         return student.id
+
+
+class ClassMessageSerializer(serializers.Serializer):
+    """Input for a teacher's message to every parent of one class."""
+
+    school_class = serializers.IntegerField()
+    kind = serializers.ChoiceField(choices=[Conversation.Kind.CLASS_NOTICE, Conversation.Kind.CLASS_GROUP])
+    body = serializers.CharField(trim_whitespace=True)
+
+    def validate_body(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Message can't be empty.")
+        return value

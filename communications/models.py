@@ -65,3 +65,61 @@ class Announcement(models.Model):
 
     def __str__(self):
         return f"{self.school}: {self.title} ({self.get_status_display()})"
+
+
+class UrgentAlert(models.Model):
+    """
+    An emergency or time-critical message (school closed, lockdown, bus
+    delayed). Unlike an announcement it goes out immediately, shows as a red
+    banner on every screen until each recipient taps "I've seen this", and
+    records who has and hasn't seen it.
+
+    Admins can alert any audience. Teachers can only alert the parents of a
+    class they teach. The recipient list is fixed when the alert is sent
+    (AlertRecipient rows), so "who hasn't seen it" is exact even if people
+    join or leave afterwards.
+    """
+
+    class Audience(models.TextChoices):
+        EVERYONE = "everyone", "Everyone (staff and parents)"
+        ALL_STAFF = "all_staff", "All staff"
+        ALL_PARENTS = "all_parents", "All parents"
+        YEAR_GROUP = "year_group", "Parents of a year group"
+        SCHOOL_CLASS = "school_class", "Parents of a class"
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="urgent_alerts")
+    title = models.CharField(max_length=180)
+    body = models.TextField()
+    audience = models.CharField(max_length=20, choices=Audience.choices)
+    year_group = models.ForeignKey(
+        YearGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="urgent_alerts"
+    )
+    school_class = models.ForeignKey(
+        SchoolClass, on_delete=models.SET_NULL, null=True, blank=True, related_name="urgent_alerts"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="urgent_alerts_sent"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the sender or an admin ended the alert; its banner then disappears."
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def is_active(self):
+        return self.ended_at is None
+
+    def __str__(self):
+        return f"{self.school}: URGENT {self.title}"
+
+
+class AlertRecipient(models.Model):
+    alert = models.ForeignKey(UrgentAlert, on_delete=models.CASCADE, related_name="recipients")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="urgent_alerts")
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ("alert", "user")

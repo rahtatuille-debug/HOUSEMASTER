@@ -23,6 +23,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from students.models import Student
 from gradebook.models import Term
 from accounts.tests import SchoolScopedAPITestCase
+from activity.models import ActivityLog
 
 from .models import StudentReport
 
@@ -30,6 +31,7 @@ from .models import StudentReport
 class StudentReportScopingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
@@ -80,7 +82,8 @@ class StudentReportScopingTests(SchoolScopedAPITestCase):
                 "report_comment": "x",
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
 
 class GenerateActionScopingTests(SchoolScopedAPITestCase):
@@ -93,6 +96,7 @@ class GenerateActionScopingTests(SchoolScopedAPITestCase):
 
     def setUp(self):
         super().setUp()
+        self.make_admin(self.user_a, self.user_b)
         self.student_a = Student.objects.create(
             school=self.school_a, first_name="Amina", last_name="Otieno"
         )
@@ -169,6 +173,96 @@ class GenerateActionScopingTests(SchoolScopedAPITestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class ReportApprovalTests(SchoolScopedAPITestCase):
+    """Teachers submit reports; only admins finalize them or send them back."""
+
+    def setUp(self):
+        super().setUp()
+        from gradebook.models import Subject
+        from students.models import SchoolClass, YearGroup
+
+        self.admin_client_a = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        school_class = SchoolClass.objects.create(year_group=year, name="7A")
+        self.student = Student.objects.create(school=self.school_a, first_name="Ann", last_name="One",
+                                              school_class=school_class)
+        self.term = Term.objects.create(school=self.school_a, name="Term 1")
+        self.assign(self.user_a, school_class, Subject.objects.create(school=self.school_a, name="Maths"))
+        self.report = StudentReport.objects.create(
+            student=self.student, term=self.term, progress_summary="S", report_comment="C"
+        )
+
+    def url(self, action=""):
+        return f"/api/reports/{self.report.id}/" + (f"{action}/" if action else "")
+
+    def test_teacher_submits_and_admin_finalizes(self):
+        response = self.client_a.post(self.url("submit"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "submitted")
+        self.assertIsNotNone(response.data["submitted_by_name"])
+
+        response = self.admin_client_a.post(self.url("finalize"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "finalized")
+        actions = set(ActivityLog.objects.values_list("action", flat=True))
+        self.assertTrue({"report.submitted", "report.finalized"} <= actions)
+
+    def test_teacher_cannot_finalize(self):
+        self.client_a.post(self.url("submit"))
+        self.assertEqual(self.client_a.post(self.url("finalize")).status_code, 403)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, "submitted")
+
+    def test_status_cannot_be_changed_by_editing(self):
+        response = self.client_a.patch(self.url(), {"status": "finalized", "report_comment": "New"})
+        self.assertEqual(response.status_code, 200)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, "draft")
+        self.assertEqual(self.report.report_comment, "New")
+
+    def test_new_report_cannot_be_created_already_finalized(self):
+        self.report.delete()
+        response = self.client_a.post("/api/reports/", {
+            "student": self.student.id, "term": self.term.id, "progress_summary": "S",
+            "report_comment": "C", "status": "finalized",
+        })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], "draft")
+
+    def test_admin_sends_back_with_a_note(self):
+        self.client_a.post(self.url("submit"))
+        self.assertEqual(self.admin_client_a.post(self.url("send-back")).status_code, 400)  # note required
+        response = self.admin_client_a.post(self.url("send-back"), {"note": "Mention her reading"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "draft")
+        self.assertEqual(response.data["review_note"], "Mention her reading")
+        self.assertEqual(self.client_a.post(self.url("send-back"), {"note": "x"}).status_code, 403)
+
+    def test_sending_back_a_finalized_report_hides_it_from_parents(self):
+        self.admin_client_a.post(self.url("finalize"))
+        self.admin_client_a.post(self.url("send-back"), {"note": "Typo"})
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, "draft")
+        self.assertIsNone(self.report.finalized_at)
+
+    def test_finalized_report_is_locked(self):
+        self.admin_client_a.post(self.url("finalize"))
+        self.assertEqual(self.admin_client_a.patch(self.url(), {"report_comment": "X"}).status_code, 400)
+        self.assertEqual(self.admin_client_a.delete(self.url()).status_code, 400)
+
+    @patch("reporting.views.generate_report")
+    def test_submitted_or_finalized_report_cannot_be_regenerated(self, mock_generate):
+        self.client_a.post(self.url("submit"))
+        response = self.client_a.post("/api/reports/generate/", {"student": self.student.id,
+                                                                 "term": self.term.id})
+        self.assertEqual(response.status_code, 400)
+        mock_generate.assert_not_called()
+
+    def test_only_drafts_can_be_submitted(self):
+        self.client_a.post(self.url("submit"))
+        self.assertEqual(self.client_a.post(self.url("submit")).status_code, 400)
+
+
 class GenerateActionRateLimitTests(SchoolScopedAPITestCase):
     """
     Dedicated, isolated coverage for the rate limit on `generate`.
@@ -192,6 +286,9 @@ class GenerateActionRateLimitTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
         cache.clear()
+        # Admins aren't limited to assigned classes, so generation isn't
+        # refused for reasons unrelated to the rate limit.
+        self.make_admin(self.user_a)
         self.student = Student.objects.create(school=self.school_a, first_name="Amina", last_name="Otieno")
         self.term = Term.objects.create(school=self.school_a, name="Term 1 2026")
 

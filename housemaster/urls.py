@@ -10,15 +10,18 @@ from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, 
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
-from communications.views import AnnouncementViewSet
+from communications.views import AnnouncementViewSet, UrgentAlertViewSet
 from guardians.views import (
     AcceptGuardianInviteView,
     GuardianInvitePreviewView,
     GuardianInviteViewSet,
     GuardianStudentViewSet,
+    ParentViewSet,
     guardian_me,
 )
 from messaging.views import ConversationViewSet
+from activity.views import ActivityLogViewSet
+from approvals.views import ChangeRequestViewSet
 from accounts.views import (
     me,
     AcceptInviteView,
@@ -27,6 +30,8 @@ from accounts.views import (
     InvitePreviewView,
     InviteViewSet,
     RequestPasswordResetView,
+    StaffViewSet,
+    TeachingAssignmentViewSet,
 )
 
 router = DefaultRouter()
@@ -40,10 +45,16 @@ router.register(r"grades", GradeViewSet)
 router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
+router.register(r"alerts", UrgentAlertViewSet, basename="alert")
 router.register(r"invites", InviteViewSet)
+router.register(r"staff", StaffViewSet)
+router.register(r"teaching-assignments", TeachingAssignmentViewSet)
 router.register(r"guardian-invites", GuardianInviteViewSet)
+router.register(r"parents", ParentViewSet)
 router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")
 router.register(r"conversations", ConversationViewSet, basename="conversation")
+router.register(r"activity", ActivityLogViewSet)
+router.register(r"change-requests", ChangeRequestViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

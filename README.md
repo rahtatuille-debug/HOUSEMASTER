@@ -136,6 +136,43 @@ Teachers review/edit the `report_comment` before finalizing — `StudentReport`
 supports normal CRUD (`PATCH /api/reports/<id>/`) for that, and `status` moves
 from `draft` → `reviewed` → `finalized` as they work through it.
 
+## Checking for duplicate emails
+
+Login is by email (case-insensitive), but `User.email` isn't unique at the
+database level yet. Before adding `unique=True`, run:
+
+    python manage.py check_duplicate_emails
+
+It changes nothing and only reports two kinds of account: emails shared by
+several accounts, which can't log into the app until they're fixed, and
+accounts with no email. On Render's free tier there's no shell, so append it
+to the build command once and read the output in the build log.
+
+## Keeping schools separate
+
+Schools must never see, change, or learn anything about each other's data.
+Every new feature has to follow these rules:
+
+- Views: use `accounts.mixins.SchoolScopedViewSetMixin`, so lists and
+  lookups only ever contain the requester's school. Another school's record
+  answers 404, the same as one that doesn't exist.
+- Serializers: add `SchoolScopedRelatedFieldsMixin` to any serializer with
+  links to other records (student, subject, term, class, teacher...). It
+  only accepts records from the requester's school, and rejects others with
+  the same "does not exist" error as a missing ID. It raises an error for a
+  linked model it has no rule for, so a new model can't slip through
+  unscoped. Keep calling `check_belongs_to_school()` in the view as well.
+- Filters on linked records are plain ID filters (`accounts/filters.py`), so
+  they can't be used to check whether an ID exists at another school.
+- The API returns JSON only. DRF's HTML pages are turned off because their
+  forms list whole database tables.
+- Invites only check the inviting school for existing accounts. An email
+  already used at another school fails when the invite is accepted, and only
+  the invitee sees why.
+
+`accounts/test_isolation.py` tries each of these from one school against
+another. Add a case there for any new endpoint.
+
 ## Design notes carried over from the plan
 
 - Report comment tone (`School.report_tone`) is configurable per school, not per
