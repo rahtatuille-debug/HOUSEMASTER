@@ -21,6 +21,7 @@ from guardians.views import (
 )
 from messaging.views import ConversationViewSet
 from students.import_views import import_school_workbook, import_template
+from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
@@ -67,6 +68,7 @@ urlpatterns = [
     path('api/dashboard/', dashboard, name='dashboard'),
     path('api/import/', import_school_workbook, name='import_workbook'),
     path('api/promotion/', promote_students, name='promote_students'),
+    path('api/analytics/performance/', performance, name='performance'),
     path('api/import/template/', import_template, name='import_template'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),
