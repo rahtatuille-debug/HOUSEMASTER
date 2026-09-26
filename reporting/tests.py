@@ -17,6 +17,9 @@ explicitly-marked "hits a real API key" test later if ever needed).
 """
 from unittest.mock import patch
 
+from django.core.cache import cache
+from rest_framework.throttling import ScopedRateThrottle
+
 from students.models import Student
 from gradebook.models import Term
 from accounts.tests import SchoolScopedAPITestCase
@@ -164,3 +167,70 @@ class GenerateActionScopingTests(SchoolScopedAPITestCase):
             "/api/reports/generate/", {"student": self.student_a.id, "term": self.term_a.id}
         )
         self.assertEqual(response.status_code, 401)
+
+
+class GenerateActionRateLimitTests(SchoolScopedAPITestCase):
+    """
+    Dedicated, isolated coverage for the rate limit on `generate`.
+
+    Directly patches ScopedRateThrottle.THROTTLE_RATES (a dict) rather than
+    using Django's override_settings on REST_FRAMEWORK: DRF binds that dict
+    onto the throttle class once, at import time, from api_settings —
+    override_settings updates api_settings itself (via DRF's setting_changed
+    signal receiver) but does not retroactively rewrite the class attribute
+    an already-imported throttle class is holding, so a settings-based
+    override here would silently have no effect on the *rate actually used*
+    even though it looks like it should. Patching the dict in place is what
+    actually reaches the code path that matters.
+
+    Also explicitly cache.clear()s — DRF's throttle counters live in
+    Django's cache, which isn't reset between test methods automatically,
+    so without this a test could be flaky depending on how many times
+    other tests in the suite already hit this endpoint.
+    """
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.student = Student.objects.create(school=self.school_a, first_name="Amina", last_name="Otieno")
+        self.term = Term.objects.create(school=self.school_a, name="Term 1 2026")
+
+    @patch("reporting.views.generate_report")
+    def test_exceeding_the_rate_returns_429(self, mock_generate):
+        mock_generate.return_value = StudentReport.objects.create(
+            student=self.student, term=self.term, progress_summary="x", report_comment="x"
+        )
+        payload = {"student": self.student.id, "term": self.term.id}
+
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_report_generation": "2/min"}):
+            first = self.client_a.post("/api/reports/generate/", payload)
+            second = self.client_a.post("/api/reports/generate/", payload)
+            third = self.client_a.post("/api/reports/generate/", payload)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(third.status_code, 429)
+        self.assertEqual(mock_generate.call_count, 2)  # the throttled request never reached the AI call
+
+    @patch("reporting.views.generate_report")
+    def test_rate_limit_is_per_user_not_global(self, mock_generate):
+        mock_generate.return_value = StudentReport.objects.create(
+            student=self.student, term=self.term, progress_summary="x", report_comment="x"
+        )
+        payload = {"student": self.student.id, "term": self.term.id}
+
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_report_generation": "1/min"}):
+            first_user = self.client_a.post("/api/reports/generate/", payload)
+            self.assertEqual(first_user.status_code, 200)
+
+            second_user_client = self.authed_client(self.admin_a)
+            second_user = second_user_client.post("/api/reports/generate/", payload)
+            self.assertEqual(second_user.status_code, 200)  # a different user isn't affected by user_a's limit
+
+    def test_other_report_endpoints_are_not_throttled(self):
+        # throttle_scope is a class attribute (shared across every action on
+        # this viewset), but get_throttles() only actually engages it for
+        # `generate` — plain list/CRUD must be unaffected even at rate 0.
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_report_generation": "0/min"}):
+            response = self.client_a.get("/api/reports/")
+        self.assertEqual(response.status_code, 200)

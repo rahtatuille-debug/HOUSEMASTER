@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.mixins import SchoolScopedViewSetMixin
 
@@ -21,6 +22,14 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     serializer_class = StudentReportSerializer
     filterset_fields = ["student", "term", "status"]
     school_lookup = "student__school"
+    # Only ever actually applied to `generate` (see get_throttles) — the
+    # scope name just has to match a key in DEFAULT_THROTTLE_RATES.
+    throttle_scope = "ai_report_generation"
+
+    def get_throttles(self):
+        if self.action == "generate":
+            return [ScopedRateThrottle()]
+        return []
 
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")

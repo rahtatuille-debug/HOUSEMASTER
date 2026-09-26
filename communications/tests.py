@@ -145,3 +145,38 @@ class AnnouncementAPITests(SchoolScopedAPITestCase):
                 {"summary": "Let staff know the meeting is at three", "audience": "all_staff"},
             )
         self.assertEqual(response.status_code, 503)
+
+
+class GenerateTextRateLimitTests(SchoolScopedAPITestCase):
+    """Same approach as reporting.tests.GenerateActionRateLimitTests — see that class's docstring."""
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+
+        cache.clear()
+        self.admin_client_a = self.authed_client(self.admin_a)
+
+    @patch("communications.views.generate_announcement_text")
+    def test_exceeding_the_rate_returns_429(self, mock_generate):
+        from rest_framework.throttling import ScopedRateThrottle
+
+        mock_generate.return_value = ("Title", "Body")
+        payload = {"summary": "School closes early on Friday."}
+
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_announcement_drafting": "2/min"}):
+            first = self.admin_client_a.post("/api/announcements/generate-text/", payload)
+            second = self.admin_client_a.post("/api/announcements/generate-text/", payload)
+            third = self.admin_client_a.post("/api/announcements/generate-text/", payload)
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(third.status_code, 429)
+        self.assertEqual(mock_generate.call_count, 2)
+
+    def test_plain_announcement_list_is_not_throttled(self):
+        from rest_framework.throttling import ScopedRateThrottle
+
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_announcement_drafting": "0/min"}):
+            response = self.admin_client_a.get("/api/announcements/")
+        self.assertEqual(response.status_code, 200)
