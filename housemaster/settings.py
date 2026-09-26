@@ -108,6 +108,24 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    # ScopedRateThrottle is a no-op for any view that doesn't set
+    # `throttle_scope` (see DRF internals), so enabling it globally here is
+    # safe — it only actually throttles the two Gemini-backed endpoints
+    # that explicitly opt in (StudentReportViewSet.generate,
+    # AnnouncementViewSet.generate_text), not every endpoint in the app.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        # Per-user, per-hour caps on the two AI-generation endpoints —
+        # generous for real usage (a teacher generating reports for a
+        # whole class in one sitting) while stopping a runaway
+        # script/loop from running up a real Gemini bill. Overridable via
+        # env var without a redeploy-worthy code change if these turn out
+        # to be too tight or too loose in practice.
+        'ai_report_generation': os.environ.get('AI_REPORT_GENERATION_RATE', '30/hour'),
+        'ai_announcement_drafting': os.environ.get('AI_ANNOUNCEMENT_DRAFTING_RATE', '30/hour'),
+    },
 }
 
 ROOT_URLCONF = 'housemaster.urls'

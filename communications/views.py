@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from django.db.models import Q
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
@@ -25,6 +26,12 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     serializer_class = AnnouncementSerializer
     filterset_fields = ["audience", "status", "year_group", "school_class"]
     http_method_names = ["get", "post", "patch", "head", "options"]
+    throttle_scope = "ai_announcement_drafting"
+
+    def get_throttles(self):
+        if self.action == "generate_text":
+            return [ScopedRateThrottle()]
+        return []
 
     def get_permissions(self):
         if self.action in {"list", "retrieve"}:
