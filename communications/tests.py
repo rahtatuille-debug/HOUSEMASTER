@@ -82,7 +82,8 @@ class AnnouncementAPITests(SchoolScopedAPITestCase):
         response = self.create_draft(
             audience=Announcement.Audience.SCHOOL_CLASS, school_class=self.class_b.id
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_rejects_target_mismatched_to_audience(self):
         response = self.create_draft(year_group=self.year_a.id)

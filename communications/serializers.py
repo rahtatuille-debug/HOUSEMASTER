@@ -1,9 +1,10 @@
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 
 from .models import Announcement
 
 
-class AnnouncementSerializer(serializers.ModelSerializer):
+class AnnouncementSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField(read_only=True)
     created_by_role = serializers.SerializerMethodField(read_only=True)
 

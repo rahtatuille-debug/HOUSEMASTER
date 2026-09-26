@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 from .models import Subject, Term, Grade
 
 
@@ -16,7 +17,7 @@ class TermSerializer(serializers.ModelSerializer):
         extra_kwargs = {"school": {"read_only": True}}
 
 
-class GradeSerializer(serializers.ModelSerializer):
+class GradeSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Grade
         fields = ["id", "student", "subject", "term", "score", "max_score", "recorded_at"]

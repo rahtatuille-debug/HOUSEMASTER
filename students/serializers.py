@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 from .models import School, YearGroup, SchoolClass, Student
 
 
@@ -15,13 +16,13 @@ class YearGroupSerializer(serializers.ModelSerializer):
         extra_kwargs = {"school": {"read_only": True}}
 
 
-class SchoolClassSerializer(serializers.ModelSerializer):
+class SchoolClassSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = SchoolClass
         fields = ["id", "year_group", "name", "house"]
 
 
-class StudentSerializer(serializers.ModelSerializer):
+class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = [

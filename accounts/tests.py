@@ -519,7 +519,8 @@ class TeacherAssignmentScopingTests(SchoolScopedAPITestCase):
         response = self.admin_client_a.post("/api/teaching-assignments/", {
             "teacher": self.user_b.profile.id, "school_class": self.class_7a.id, "subject": self.maths.id,
         })
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     # --- students
 

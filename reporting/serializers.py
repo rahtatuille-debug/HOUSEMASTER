@@ -1,11 +1,12 @@
 from rest_framework import serializers
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
 
 from activity.services import display_name
 
 from .models import StudentReport
 
 
-class StudentReportSerializer(serializers.ModelSerializer):
+class StudentReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     """
     `status` is read-only here: it only changes through the submit,
     finalize and send-back actions, so the approval step can't be skipped

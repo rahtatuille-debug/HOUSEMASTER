@@ -106,7 +106,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_rejects_spoofed_subject(self):
         response = self.client_a.post(
@@ -118,7 +119,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_rejects_spoofed_term(self):
         response = self.client_a.post(
@@ -130,7 +132,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
                 "score": 90,
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_create_succeeds_when_all_three_belong_to_caller(self):
         response = self.client_a.post(
@@ -148,7 +151,8 @@ class GradeScopingTests(SchoolScopedAPITestCase):
         response = self.client_a.patch(
             f"/api/grades/{self.grade_a.id}/", {"student": self.student_b.id}
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.grade_a.refresh_from_db()
         self.assertEqual(self.grade_a.student_id, self.student_a.id)
 

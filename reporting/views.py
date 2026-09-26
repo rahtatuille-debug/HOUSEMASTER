@@ -35,6 +35,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
+        self.check_belongs_to_school(serializer.validated_data["term"], "term")
         check_can_see_student(self.request.user, serializer.validated_data["student"])
         serializer.save()
 
@@ -44,6 +45,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             raise ValidationError("A finalized report can't be edited. An admin must send it back first.")
         student = serializer.validated_data.get("student", report.student)
         self.check_belongs_to_school(student.school, "student")
+        self.check_belongs_to_school(serializer.validated_data.get("term", report.term), "term")
         check_can_see_student(self.request.user, student)
         report = serializer.save()
         self._log(report, "report.edited", "Edited")

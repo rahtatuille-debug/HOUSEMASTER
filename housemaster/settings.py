@@ -98,7 +98,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
+        # Filters on linked records never reveal whether an ID exists at
+        # another school. See accounts/filters.py.
+        'accounts.filters.SchoolSafeFilterBackend',
+    ],
+    # JSON only. DRF's HTML "browsable API" builds its forms from whole
+    # database tables, which would list other schools' records, and the
+    # app never uses it.
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
     ],
 }
 

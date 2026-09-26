@@ -79,7 +79,8 @@ class StudentReportScopingTests(SchoolScopedAPITestCase):
                 "report_comment": "x",
             },
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
 
 class GenerateActionScopingTests(SchoolScopedAPITestCase):

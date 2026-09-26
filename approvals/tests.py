@@ -101,7 +101,8 @@ class ApprovalFlowTests(SchoolScopedAPITestCase):
     def test_teacher_cannot_request_a_class_in_another_schools_year_group(self):
         other_year = YearGroup.objects.create(school=self.school_b, name="Year 9")
         response = self.client_a.post("/api/school-classes/", {"year_group": other_year.id, "name": "9Z"})
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.assertFalse(ChangeRequest.objects.exists())
 
     def test_request_with_no_change_is_rejected(self):

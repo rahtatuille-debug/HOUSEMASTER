@@ -1,9 +1,11 @@
 from rest_framework import serializers
 
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
+
 from .models import ActivityLog
 
 
-class ActivityLogSerializer(serializers.ModelSerializer):
+class ActivityLogSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = ActivityLog
         fields = [

@@ -46,7 +46,8 @@ class GuardianInviteFlowTests(SchoolScopedAPITestCase):
             "/api/guardian-invites/",
             {"name": "Paul Kiptoo", "email": "paul@example.com", "students": [other_student.id]},
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
 
     def test_requires_at_least_one_student(self):
         response = self.admin_client_a.post(
@@ -257,7 +258,8 @@ class ParentManagementTests(SchoolScopedAPITestCase):
         response = self.admin_client_a.patch(
             f"/api/parents/{self.parent.id}/", {"students": [self.other_school_child.id]}, format="json"
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(list(self.parent.students.all()), [self.child1])
 
     def test_deactivated_parent_is_locked_out_and_hidden_from_contacts(self):

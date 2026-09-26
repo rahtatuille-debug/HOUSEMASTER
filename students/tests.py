@@ -80,7 +80,8 @@ class StudentScopingTests(SchoolScopedAPITestCase):
             "/api/students/",
             {"first_name": "Eve", "last_name": "Achieng", "school_class": class_b.id},
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.assertFalse(Student.objects.filter(first_name="Eve").exists())
 
     def test_filter_by_is_active_only_touches_own_school(self):
@@ -113,7 +114,8 @@ class SchoolClassScopingTests(SchoolScopedAPITestCase):
         response = self.client_a.post(
             "/api/school-classes/", {"year_group": self.year_group_b.id, "name": "8B"}
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.assertFalse(SchoolClass.objects.filter(name="8B").exists())
 
     def test_cannot_repoint_existing_class_to_another_schools_year_group(self):
@@ -124,6 +126,7 @@ class SchoolClassScopingTests(SchoolScopedAPITestCase):
             f"/api/school-classes/{self.class_a.id}/",
             {"year_group": self.year_group_b.id, "name": "8A-moved"},
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.class_a.refresh_from_db()
         self.assertEqual(self.class_a.year_group_id, self.year_group_a.id)

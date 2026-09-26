@@ -39,7 +39,8 @@ class AttendanceScopingTests(SchoolScopedAPITestCase):
             "/api/attendance/",
             {"student": self.student_b.id, "date": "2026-02-02", "status": "absent"},
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.assertFalse(
             AttendanceRecord.objects.filter(student=self.student_b, date="2026-02-02").exists()
         )
@@ -59,7 +60,8 @@ class AttendanceScopingTests(SchoolScopedAPITestCase):
             f"/api/attendance/{self.record_a.id}/",
             {"student": self.student_b.id, "date": "2026-03-15"},
         )
-        self.assertEqual(response.status_code, 403)
+        # Another school's record is rejected exactly like one that doesn't exist.
+        self.assertEqual(response.status_code, 400)
         self.record_a.refresh_from_db()
         self.assertEqual(self.record_a.student_id, self.student_a.id)
 

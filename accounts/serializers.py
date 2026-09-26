@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db import models
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
@@ -7,7 +8,15 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from activity.services import log_activity
 
 from .emails import send_password_reset_email
+from .mixins import SchoolScopedRelatedFieldsMixin, requester_school
 from .models import Invite, PasswordResetToken, Profile, TeachingAssignment, username_for_email
+
+
+def email_in_use_at_school(email, school):
+    """Whether a staff member or parent at this school already signs in with this email."""
+    return User.objects.filter(email__iexact=email).filter(
+        models.Q(profile__school=school) | models.Q(guardian__school=school)
+    ).exists()
 
 
 def _log_for_user(user, action, what):
@@ -43,9 +52,14 @@ class InviteSerializer(serializers.ModelSerializer):
         }
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with that email already exists.")
-        if Invite.objects.filter(email__iexact=value, accepted_at__isnull=True).exists():
+        # Only this school's accounts and invites are checked, so an admin
+        # can't use this to find out whether an email is in use at another
+        # school. If it is, accepting the invite fails instead, and only the
+        # invitee (who owns that email) sees why.
+        school = requester_school(self.context.get("request"))
+        if email_in_use_at_school(value, school):
+            raise serializers.ValidationError("Someone at your school already has an account with that email.")
+        if Invite.objects.filter(school=school, email__iexact=value, accepted_at__isnull=True).exists():
             raise serializers.ValidationError("There's already a pending invite for that email.")
         return value
 
@@ -71,7 +85,7 @@ class StaffMemberSerializer(serializers.ModelSerializer):
         fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login"]
 
 
-class TeachingAssignmentSerializer(serializers.ModelSerializer):
+class TeachingAssignmentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     teacher_name = serializers.CharField(source="teacher.name", read_only=True)
     class_name = serializers.CharField(source="school_class.name", read_only=True)
     subject_name = serializers.SerializerMethodField()

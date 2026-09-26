@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from accounts.mixins import SchoolScopedRelatedFieldsMixin
+
 from .models import Conversation, ConversationParticipant, Message
 from .permissions import user_school
 
@@ -57,7 +59,7 @@ class ParticipantSerializer(serializers.Serializer):
         return _display_name(row.user)[1]
 
 
-class ConversationSerializer(serializers.ModelSerializer):
+class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     participants = serializers.SerializerMethodField(read_only=True)
     student_name = serializers.SerializerMethodField(read_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
@@ -110,12 +112,12 @@ class ConversationCreateSerializer(serializers.Serializer):
     def validate_participant_ids(self, value):
         request = self.context["request"]
         caller_school = user_school(request.user)
-        users = User.objects.filter(id__in=value)
-        if users.count() != len(set(value)):
+        # People at other schools are treated exactly like people who don't
+        # exist, so this can't be used to find out who has an account.
+        users = [u for u in User.objects.filter(id__in=value) if user_school(u) == caller_school]
+        if len(users) != len(set(value)):
             raise serializers.ValidationError("One or more participants could not be found.")
         for user in users:
-            if user_school(user) != caller_school:
-                raise serializers.ValidationError("All participants must be at your own school.")
             if user.id == request.user.id:
                 raise serializers.ValidationError("You don't need to add yourself as a participant.")
             if not user.is_active:
