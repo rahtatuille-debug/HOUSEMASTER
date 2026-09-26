@@ -304,3 +304,41 @@ class UrgentAlertTests(SchoolScopedAPITestCase):
 
         self.send()
         self.assertTrue(ActivityLog.objects.filter(action="alert.sent").exists())
+
+
+class UrgentAlertEmailTests(UrgentAlertTests):
+    """Reuses UrgentAlertTests' school: an admin, a teacher, parents in 7A and 7B."""
+
+    def test_no_email_unless_ticked(self):
+        from django.core import mail
+
+        self.send()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_ticked_emails_each_recipient_separately(self):
+        from django.core import mail
+
+        response = self.send(send_email=True)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["emailed_count"], 3)
+        self.assertEqual(sorted(m.to[0] for m in mail.outbox),
+                         sorted([self.user_a.email, self.p7a.email, self.p7b.email]))
+        self.assertTrue(all(len(m.to) == 1 and not m.cc and not m.bcc for m in mail.outbox))
+        self.assertTrue(mail.outbox[0].subject.startswith("URGENT: School closed"))
+        self.assertIn("Burst pipe", mail.outbox[0].body)
+
+    def test_class_alert_emails_only_that_class(self):
+        from django.core import mail
+
+        self.send(send_email=True, audience="school_class", school_class=self.class_7a.id)
+        self.assertEqual([m.to[0] for m in mail.outbox], [self.p7a.email])
+
+    def test_email_failure_still_sends_the_alert(self):
+        from unittest.mock import patch
+
+        with patch("django.core.mail.backends.locmem.EmailBackend.send_messages", side_effect=OSError("down")):
+            response = self.send(send_email=True)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual((response.data["emailed_count"], response.data["email_failed_count"]), (0, 3))
+        parent = self.authed_client(self.p7a)
+        self.assertEqual(len(parent.get("/api/alerts/active/").data), 1)

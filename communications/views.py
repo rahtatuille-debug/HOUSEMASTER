@@ -12,7 +12,7 @@ from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
 
-from .alerts import alert_recipient_users
+from .alerts import alert_recipient_users, email_alert
 from .models import AlertRecipient, Announcement, UrgentAlert
 from .permissions import CanViewAnnouncements
 from .serializers import (
@@ -206,7 +206,8 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         profile = getattr(self.request.user, "profile", None)
         if profile is None:
             raise PermissionDenied("Only staff can send urgent alerts.")
-        data = serializer.validated_data
+        data = dict(serializer.validated_data)
+        send_email = data.pop("send_email", False)
         if not profile.is_admin:
             if data["audience"] != UrgentAlert.Audience.SCHOOL_CLASS:
                 raise PermissionDenied("Teachers can only send urgent alerts to the parents of a class they teach.")
@@ -218,11 +219,17 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
             raise ValidationError("Nobody with an account would receive this alert.")
         alert.save()
         AlertRecipient.objects.bulk_create([AlertRecipient(alert=alert, user=u) for u in users])
+        if send_email:
+            sent, failed = email_alert(alert, users)
+            alert.emailed_at = timezone.now()
+            alert.emailed_count, alert.email_failed_count = sent, failed
+            alert.save(update_fields=["emailed_at", "emailed_count", "email_failed_count"])
         serializer.instance = alert
+        emailed = f", and emailed {alert.emailed_count}" if send_email else ""
         log_activity(
             school=alert.school, actor=self.request.user, action="alert.sent", target=alert,
             summary=f'Sent the urgent alert "{alert.title}" to {len(users)} '
-            f'{"person" if len(users) == 1 else "people"} ({alert.get_audience_display().lower()})',
+            f'{"person" if len(users) == 1 else "people"} ({alert.get_audience_display().lower()}){emailed}',
         )
 
     @action(detail=False, methods=["get"])

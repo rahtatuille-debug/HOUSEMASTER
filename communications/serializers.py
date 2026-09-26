@@ -89,15 +89,18 @@ class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSer
     my_acknowledged_at = serializers.SerializerMethodField()
     recipient_count = serializers.SerializerMethodField()
     acknowledged_count = serializers.SerializerMethodField()
+    send_email = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = UrgentAlert
         fields = [
             "id", "title", "body", "audience", "audience_label", "year_group", "school_class",
             "created_by", "created_by_name", "created_at", "ended_at", "is_active",
-            "my_acknowledged_at", "recipient_count", "acknowledged_count",
+            "my_acknowledged_at", "recipient_count", "acknowledged_count", "send_email",
+            "emailed_at", "emailed_count", "email_failed_count",
         ]
-        read_only_fields = ["created_by", "created_at", "ended_at"]
+        read_only_fields = ["created_by", "created_at", "ended_at", "emailed_at", "emailed_count",
+                            "email_failed_count"]
 
     def get_created_by_name(self, obj):
         return display_name(obj.created_by) if obj.created_by else None

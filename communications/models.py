@@ -104,6 +104,10 @@ class UrgentAlert(models.Model):
     ended_at = models.DateTimeField(
         null=True, blank=True, help_text="When the sender or an admin ended the alert; its banner then disappears."
     )
+    # Set when the sender ticked "also email everyone".
+    emailed_at = models.DateTimeField(null=True, blank=True)
+    emailed_count = models.PositiveIntegerField(default=0)
+    email_failed_count = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["-created_at"]
