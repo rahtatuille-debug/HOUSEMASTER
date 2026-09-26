@@ -156,3 +156,25 @@ class GuardianNameSerializer(serializers.Serializer):
         if not name:
             raise serializers.ValidationError("Your name cannot be blank.")
         return name
+
+
+class ParentSerializer(serializers.ModelSerializer):
+    """An admin's view of one parent account, including which children it's linked to."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
+    last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+    student_names = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Guardian
+        fields = [
+            "id", "user_id", "name", "email", "is_active", "students", "student_names",
+            "date_joined", "last_login",
+        ]
+
+    def get_student_names(self, obj):
+        return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]

@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'communications',
     'guardians',
     'messaging',
+    'activity',
 ]
 
 MIDDLEWARE = [
@@ -219,6 +220,9 @@ from datetime import timedelta  # noqa: E402
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # Record each login on User.last_login, shown on the admin's staff and
+    # parent lists.
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # Staff invite emails (accounts.Invite).

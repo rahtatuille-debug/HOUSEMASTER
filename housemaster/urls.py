@@ -16,9 +16,11 @@ from guardians.views import (
     GuardianInvitePreviewView,
     GuardianInviteViewSet,
     GuardianStudentViewSet,
+    ParentViewSet,
     guardian_me,
 )
 from messaging.views import ConversationViewSet
+from activity.views import ActivityLogViewSet
 from accounts.views import (
     me,
     AcceptInviteView,
@@ -27,6 +29,7 @@ from accounts.views import (
     InvitePreviewView,
     InviteViewSet,
     RequestPasswordResetView,
+    StaffViewSet,
 )
 
 router = DefaultRouter()
@@ -41,9 +44,12 @@ router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"invites", InviteViewSet)
+router.register(r"staff", StaffViewSet)
 router.register(r"guardian-invites", GuardianInviteViewSet)
+router.register(r"parents", ParentViewSet)
 router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")
 router.register(r"conversations", ConversationViewSet, basename="conversation")
+router.register(r"activity", ActivityLogViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

@@ -118,6 +118,8 @@ class ConversationCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError("All participants must be at your own school.")
             if user.id == request.user.id:
                 raise serializers.ValidationError("You don't need to add yourself as a participant.")
+            if not user.is_active:
+                raise serializers.ValidationError("One or more participants' accounts are deactivated.")
         return value
 
     def validate_student(self, value):

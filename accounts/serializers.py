@@ -4,8 +4,19 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from activity.services import log_activity
+
 from .emails import send_password_reset_email
 from .models import Invite, PasswordResetToken, Profile, username_for_email
+
+
+def _log_for_user(user, action, what):
+    """Log an event a user did to their own account, if they belong to a school."""
+    owner = getattr(user, "profile", None) or getattr(user, "guardian", None)
+    if owner is None:
+        return
+    log_activity(school=owner.school, actor=user, action=action, target=owner,
+                 summary=f"{owner.name} {what}")
 
 
 class InviteSerializer(serializers.ModelSerializer):
@@ -43,6 +54,21 @@ class InviteSerializer(serializers.ModelSerializer):
         if not name:
             raise serializers.ValidationError("A staff member's name is required.")
         return name
+
+
+class StaffMemberSerializer(serializers.ModelSerializer):
+    """An admin's view of one staff member at their school."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
+    last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login"]
 
 
 class ProfileNameSerializer(serializers.Serializer):
@@ -139,6 +165,7 @@ class RequestPasswordResetSerializer(serializers.Serializer):
         for user in users:
             reset_token = PasswordResetToken.objects.create(user=user)
             send_password_reset_email(reset_token)
+            _log_for_user(user, "password.reset_requested", "requested a password reset link")
 
 
 class ConfirmPasswordResetSerializer(serializers.Serializer):
@@ -168,6 +195,7 @@ class ConfirmPasswordResetSerializer(serializers.Serializer):
         user.save(update_fields=["password"])
         reset_token.used_at = timezone.now()
         reset_token.save(update_fields=["used_at"])
+        _log_for_user(user, "password.reset_completed", "reset their password")
         return user
 
 

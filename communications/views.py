@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
 
@@ -72,7 +73,11 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         self._validate_targets(serializer)
-        serializer.save(school=self.request.user.profile.school, created_by=self.request.user)
+        announcement = serializer.save(school=self.request.user.profile.school, created_by=self.request.user)
+        log_activity(
+            school=announcement.school, actor=self.request.user, action="announcement.created",
+            target=announcement, summary=f'Drafted the announcement "{announcement.title}"',
+        )
 
     def perform_update(self, serializer):
         if serializer.instance.status != Announcement.Status.DRAFT:
@@ -86,6 +91,11 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         if announcement.status != Announcement.Status.DRAFT:
             raise ValidationError("Only draft announcements can be published.")
         announcement.publish()
+        log_activity(
+            school=announcement.school, actor=request.user, action="announcement.published",
+            target=announcement,
+            summary=f'Published the announcement "{announcement.title}" to {announcement.get_audience_display().lower()}',
+        )
         return Response(self.get_serializer(announcement).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
@@ -94,6 +104,10 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         if announcement.status != Announcement.Status.PUBLISHED:
             raise ValidationError("Only published announcements can be archived.")
         announcement.archive()
+        log_activity(
+            school=announcement.school, actor=request.user, action="announcement.archived",
+            target=announcement, summary=f'Archived the announcement "{announcement.title}"',
+        )
         return Response(self.get_serializer(announcement).data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="generate-text")

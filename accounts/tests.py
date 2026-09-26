@@ -25,6 +25,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from activity.models import ActivityLog
 from students.models import School
 from .models import PasswordResetToken, Profile
 
@@ -354,3 +355,75 @@ class CheckDuplicateEmailsCommandTests(TestCase):
 
         after = list(User.objects.order_by("id").values_list("id", "username", "email"))
         self.assertEqual(before, after)
+
+
+class StaffManagementTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.admin_client_a = self.authed_client(self.admin_a)
+        self.profile_a = self.user_a.profile
+
+    def test_admin_lists_only_own_schools_staff(self):
+        response = self.admin_client_a.get("/api/staff/")
+        self.assertEqual(response.status_code, 200)
+        emails = {row["email"] for row in response.data}
+        self.assertEqual(emails, {"teacher.a@alpha.test", "admin.a@alpha.test"})
+
+    def test_teacher_cannot_list_or_change_staff(self):
+        self.assertEqual(self.client_a.get("/api/staff/").status_code, 403)
+        response = self.client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "admin"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_touch_another_schools_staff(self):
+        other = self.user_b.profile
+        self.assertEqual(self.admin_client_a.patch(f"/api/staff/{other.id}/", {"role": "admin"}).status_code, 404)
+        self.assertEqual(self.admin_client_a.post(f"/api/staff/{other.id}/deactivate/").status_code, 404)
+
+    def test_admin_changes_role_and_it_is_logged(self):
+        response = self.admin_client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "admin"})
+        self.assertEqual(response.status_code, 200)
+        self.profile_a.refresh_from_db()
+        self.assertEqual(self.profile_a.role, "admin")
+        self.assertTrue(ActivityLog.objects.filter(action="staff.role_changed", target_id=self.profile_a.id).exists())
+
+    def test_invalid_role_rejected(self):
+        response = self.admin_client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "owner"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_only_admin_cannot_demote_or_deactivate_themselves(self):
+        own = self.admin_a.profile
+        self.assertEqual(self.admin_client_a.patch(f"/api/staff/{own.id}/", {"role": "teacher"}).status_code, 400)
+        self.assertEqual(self.admin_client_a.post(f"/api/staff/{own.id}/deactivate/").status_code, 400)
+
+    def test_admin_can_remove_another_admin(self):
+        # There's always at least one active admin left: the one acting.
+        self.admin_client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "admin"})
+        response = self.admin_client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "teacher"})
+        self.assertEqual(response.status_code, 200)
+        self.admin_client_a.patch(f"/api/staff/{self.profile_a.id}/", {"role": "admin"})
+        response = self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/deactivate/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_deactivated_staff_are_locked_out_immediately(self):
+        response = self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/deactivate/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_active"])
+        # Their existing login token stops working...
+        self.assertEqual(self.client_a.get("/api/me/").status_code, 401)
+        # ...they can't log in again...
+        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234"})
+        self.assertEqual(login.status_code, 401)
+        # ...and their refresh token can't mint a new access token.
+        refresh = RefreshToken.for_user(self.user_a)
+        self.assertEqual(self.client.post("/api/token/refresh/", {"refresh": str(refresh)}).status_code, 401)
+        self.assertTrue(ActivityLog.objects.filter(action="staff.deactivated").exists())
+
+    def test_reactivated_staff_can_log_in_again(self):
+        self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/deactivate/")
+        self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/reactivate/")
+        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234"})
+        self.assertEqual(login.status_code, 200)
+
+    def test_staff_cannot_be_created_directly(self):
+        response = self.admin_client_a.post("/api/staff/", {"role": "admin"})
+        self.assertEqual(response.status_code, 405)

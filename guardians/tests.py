@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from accounts.tests import SchoolScopedAPITestCase
 from django.contrib.auth.models import User
 
+from activity.models import ActivityLog
 from communications.models import Announcement
 from gradebook.models import Grade, Subject, Term
 from reporting.models import StudentReport
@@ -204,3 +205,76 @@ class GuardianStudentPortalTests(SchoolScopedAPITestCase):
         ids = [item["id"] for item in response.data]
         self.assertCountEqual(ids, [all_parents.id, year_notice.id, class_notice.id])
         self.assertNotIn(staff_notice.id, ids)
+
+
+class ParentManagementTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.admin_client_a = self.authed_client(self.admin_a)
+        self.child1 = Student.objects.create(school=self.school_a, first_name="Ann", last_name="One")
+        self.child2 = Student.objects.create(school=self.school_a, first_name="Ben", last_name="Two")
+        self.other_school_child = Student.objects.create(school=self.school_b, first_name="Cy", last_name="Three")
+        parent_user = User.objects.create_user(
+            username="parent@alpha.test", email="parent@alpha.test", password="pass1234"
+        )
+        self.parent = Guardian.objects.create(user=parent_user, school=self.school_a, display_name="Pat Parent")
+        self.parent.students.set([self.child1])
+        other_user = User.objects.create_user(username="p@beta.test", email="p@beta.test", password="pass1234")
+        self.parent_b = Guardian.objects.create(user=other_user, school=self.school_b, display_name="Other")
+
+    def test_admin_lists_only_own_schools_parents(self):
+        response = self.admin_client_a.get("/api/parents/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["name"] for row in response.data], ["Pat Parent"])
+        self.assertEqual(response.data[0]["student_names"], ["Ann One"])
+
+    def test_teacher_cannot_manage_parents(self):
+        self.assertEqual(self.client_a.get("/api/parents/").status_code, 403)
+        response = self.client_a.post(f"/api/parents/{self.parent.id}/deactivate/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_touch_another_schools_parent(self):
+        response = self.admin_client_a.post(f"/api/parents/{self.parent_b.id}/deactivate/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_changes_linked_children_and_it_is_logged(self):
+        response = self.admin_client_a.patch(
+            f"/api/parents/{self.parent.id}/", {"students": [self.child2.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(self.parent.students.all()), [self.child2])
+        entry = ActivityLog.objects.get(action="parent.children_changed")
+        self.assertIn("linked Ben Two", entry.summary)
+        self.assertIn("unlinked Ann One", entry.summary)
+
+    def test_unlinked_parent_loses_access_to_that_child(self):
+        parent_client = self.authed_client(self.parent.user)
+        self.assertEqual(parent_client.get(f"/api/guardian-students/{self.child1.id}/").status_code, 200)
+        self.admin_client_a.patch(f"/api/parents/{self.parent.id}/", {"students": []}, format="json")
+        self.assertEqual(parent_client.get(f"/api/guardian-students/{self.child1.id}/").status_code, 404)
+
+    def test_cannot_link_another_schools_student(self):
+        response = self.admin_client_a.patch(
+            f"/api/parents/{self.parent.id}/", {"students": [self.other_school_child.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(list(self.parent.students.all()), [self.child1])
+
+    def test_deactivated_parent_is_locked_out_and_hidden_from_contacts(self):
+        parent_client = self.authed_client(self.parent.user)
+        response = self.admin_client_a.post(f"/api/parents/{self.parent.id}/deactivate/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(parent_client.get("/api/guardian-me/").status_code, 401)
+        contacts = self.client_a.get("/api/conversations/contacts/").data
+        self.assertNotIn(self.parent.user.id, [c["id"] for c in contacts])
+        response = self.client_a.post(
+            "/api/conversations/", {"participant_ids": [self.parent.user.id], "body": "Hi"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(ActivityLog.objects.filter(action="parent.deactivated").exists())
+
+    def test_reactivated_parent_can_log_in(self):
+        self.admin_client_a.post(f"/api/parents/{self.parent.id}/deactivate/")
+        self.admin_client_a.post(f"/api/parents/{self.parent.id}/reactivate/")
+        login = self.client.post("/api/token/", {"email": "parent@alpha.test", "password": "pass1234"})
+        self.assertEqual(login.status_code, 200)

@@ -94,6 +94,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             users = User.objects.filter(profile__school=school).exclude(id=request.user.id)
         else:
             users = User.objects.filter(guardian__school=school).exclude(id=request.user.id)
+        users = users.filter(is_active=True)
         return Response([
             {"id": u.id, "name": _display_name(u)[0], "kind": _display_name(u)[1]} for u in users
         ])
