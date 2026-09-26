@@ -1,0 +1,72 @@
+# Nightly encrypted database backup, with a restore test every time.
+# Setup and restore steps: docs/BACKUPS.md
+name: Database backup
+
+on:
+  schedule:
+    - cron: "17 0 * * *"   # every day at 00:17 UTC (03:17 in Nairobi)
+  workflow_dispatch:        # "Run workflow" button, for a backup on demand
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      # Throwaway database the backup is restored into, to prove it works.
+      restore-test:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore-test
+          POSTGRES_DB: restore_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secrets are set
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          missing=0
+          [ -n "$DATABASE_URL" ] || { echo "::error::The BACKUP_DATABASE_URL secret isn't set. See docs/BACKUPS.md."; missing=1; }
+          [ -n "$BACKUP_PASSPHRASE" ] || { echo "::error::The BACKUP_PASSPHRASE secret isn't set. See docs/BACKUPS.md."; missing=1; }
+          exit $missing
+
+      - name: Install PostgreSQL 17 client tools
+        # pg_dump must be at least as new as the Neon server; 17 handles 14 to 17.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Back up the database
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: scripts/backup_db.sh backups
+
+      - name: Prove the backup restores
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: scripts/verify_backup.sh backups/*.tar.gpg "postgresql://postgres:restore-test@localhost:5432/restore_test"
+
+      - name: Keep the encrypted backup for 90 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: housemaster-backup-${{ github.run_number }}
+          path: backups/*.tar.gpg
+          retention-days: 90
+          if-no-files-found: error

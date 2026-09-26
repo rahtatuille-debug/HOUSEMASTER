@@ -148,6 +148,12 @@ several accounts, which can't log into the app until they're fixed, and
 accounts with no email. On Render's free tier there's no shell, so append it
 to the build command once and read the output in the build log.
 
+## Backups
+
+Nightly encrypted database backups run on GitHub Actions, and each one is
+restored into a throwaway database to prove it works. Setup (two repository
+secrets) and restore steps are in [docs/BACKUPS.md](docs/BACKUPS.md).
+
 ## Keeping schools separate
 
 Schools must never see, change, or learn anything about each other's data.
