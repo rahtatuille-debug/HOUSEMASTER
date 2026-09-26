@@ -84,7 +84,7 @@ class GenerateAnnouncementTextSerializer(serializers.Serializer):
 
 class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
-    audience_label = serializers.CharField(source="get_audience_display", read_only=True)
+    audience_label = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(read_only=True)
     my_acknowledged_at = serializers.SerializerMethodField()
     recipient_count = serializers.SerializerMethodField()
@@ -101,6 +101,11 @@ class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSer
 
     def get_created_by_name(self, obj):
         return display_name(obj.created_by) if obj.created_by else None
+
+    def get_audience_label(self, obj):
+        target = obj.school_class or obj.year_group
+        label = obj.get_audience_display()
+        return f"{label}: {target.name}" if target else label
 
     def _viewer(self):
         request = self.context.get("request")

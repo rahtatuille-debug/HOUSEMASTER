@@ -221,8 +221,8 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         serializer.instance = alert
         log_activity(
             school=alert.school, actor=self.request.user, action="alert.sent", target=alert,
-            summary=f'Sent the urgent alert "{alert.title}" to {len(users)} people '
-            f"({alert.get_audience_display().lower()})",
+            summary=f'Sent the urgent alert "{alert.title}" to {len(users)} '
+            f'{"person" if len(users) == 1 else "people"} ({alert.get_audience_display().lower()})',
         )
 
     @action(detail=False, methods=["get"])
