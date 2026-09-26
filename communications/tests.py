@@ -181,3 +181,126 @@ class GenerateTextRateLimitTests(SchoolScopedAPITestCase):
         with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {"ai_announcement_drafting": "0/min"}):
             response = self.admin_client_a.get("/api/announcements/")
         self.assertEqual(response.status_code, 200)
+
+
+class UrgentAlertTests(SchoolScopedAPITestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import User
+
+        from gradebook.models import Subject
+        from guardians.models import Guardian
+        from students.models import SchoolClass, Student, YearGroup
+
+        self.admin_client_a = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.year = year
+        self.class_7a = SchoolClass.objects.create(year_group=year, name="7A")
+        self.class_7b = SchoolClass.objects.create(year_group=year, name="7B")
+        self.assign(self.user_a, self.class_7a, Subject.objects.create(school=self.school_a, name="Maths"))
+
+        def parent(email, school_class, school=None):
+            school = school or self.school_a
+            student = Student.objects.create(school=school, first_name="Kid", last_name=email[:2],
+                                             school_class=school_class)
+            user = User.objects.create_user(username=email, email=email, password="pass1234")
+            guardian = Guardian.objects.create(user=user, school=school, display_name=email)
+            guardian.students.add(student)
+            return user
+
+        self.p7a = parent("a@x.test", self.class_7a)
+        self.p7b = parent("b@x.test", self.class_7b)
+        self.p_other_school = parent("c@x.test", None, school=self.school_b)
+
+    def send(self, client=None, **body):
+        body = {"title": "School closed", "body": "Burst pipe, stay home.", "audience": "everyone", **body}
+        return (client or self.admin_client_a).post("/api/alerts/", body)
+
+    def recipients(self, alert_id):
+        return {r["user"] for r in self.admin_client_a.get(f"/api/alerts/{alert_id}/recipients/").data}
+
+    def test_admin_alerts_everyone_at_their_school_only(self):
+        response = self.send()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.recipients(response.data["id"]),
+                         {self.user_a.id, self.p7a.id, self.p7b.id})  # not the sender, not school B
+
+    def test_audiences(self):
+        staff = self.send(audience="all_staff").data["id"]
+        self.assertEqual(self.recipients(staff), {self.user_a.id})
+        parents = self.send(audience="all_parents").data["id"]
+        self.assertEqual(self.recipients(parents), {self.p7a.id, self.p7b.id})
+        klass = self.send(audience="school_class", school_class=self.class_7a.id).data["id"]
+        self.assertEqual(self.recipients(klass), {self.p7a.id})
+        year = self.send(audience="year_group", year_group=self.year.id).data["id"]
+        self.assertEqual(self.recipients(year), {self.p7a.id, self.p7b.id})
+
+    def test_teacher_can_only_alert_parents_of_own_class(self):
+        ok = self.send(client=self.client_a, audience="school_class", school_class=self.class_7a.id)
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(self.send(client=self.client_a, audience="school_class",
+                                   school_class=self.class_7b.id).status_code, 403)
+        self.assertEqual(self.send(client=self.client_a, audience="everyone").status_code, 403)
+
+    def test_parents_cannot_send_alerts(self):
+        self.assertEqual(self.send(client=self.authed_client(self.p7a)).status_code, 403)
+
+    def test_banner_shows_until_acknowledged(self):
+        alert_id = self.send().data["id"]
+        parent = self.authed_client(self.p7a)
+        self.assertEqual([a["id"] for a in parent.get("/api/alerts/active/").data], [alert_id])
+        self.assertEqual(parent.post(f"/api/alerts/{alert_id}/acknowledge/").status_code, 200)
+        self.assertEqual(parent.get("/api/alerts/active/").data, [])
+        seen = {r["user"]: r["acknowledged_at"] for r in
+                self.admin_client_a.get(f"/api/alerts/{alert_id}/recipients/").data}
+        self.assertIsNotNone(seen[self.p7a.id])
+        self.assertIsNone(seen[self.p7b.id])
+        listed = self.admin_client_a.get("/api/alerts/").data[0]
+        self.assertEqual((listed["recipient_count"], listed["acknowledged_count"]), (3, 1))
+
+    def test_ending_an_alert_removes_the_banner_for_everyone(self):
+        alert_id = self.send().data["id"]
+        self.assertEqual(self.admin_client_a.post(f"/api/alerts/{alert_id}/end/").status_code, 200)
+        self.assertEqual(self.authed_client(self.p7b).get("/api/alerts/active/").data, [])
+
+    def test_only_sender_or_admin_see_who_has_seen_it_or_end_it(self):
+        alert_id = self.send().data["id"]
+        parent = self.authed_client(self.p7a)
+        self.assertEqual(parent.get(f"/api/alerts/{alert_id}/recipients/").status_code, 403)
+        self.assertEqual(parent.post(f"/api/alerts/{alert_id}/end/").status_code, 403)
+        self.assertEqual(self.client_a.get(f"/api/alerts/{alert_id}/recipients/").status_code, 403)
+        # Recipients don't get the counts either.
+        self.assertIsNone(parent.get(f"/api/alerts/{alert_id}/").data["recipient_count"])
+
+    def test_people_only_see_alerts_sent_to_them(self):
+        alert_id = self.send(audience="school_class", school_class=self.class_7b.id).data["id"]
+        self.assertEqual(self.authed_client(self.p7a).get(f"/api/alerts/{alert_id}/").status_code, 404)
+        self.assertEqual(self.client_a.get("/api/alerts/").data, [])
+
+    def test_other_school_cannot_see_alerts(self):
+        alert_id = self.send().data["id"]
+        self.make_admin(self.user_b)
+        self.assertEqual(self.client_b.get("/api/alerts/").data, [])
+        self.assertEqual(self.client_b.get(f"/api/alerts/{alert_id}/recipients/").status_code, 404)
+        self.assertEqual(self.authed_client(self.p_other_school).get("/api/alerts/active/").data, [])
+
+    def test_cannot_target_another_schools_class(self):
+        from students.models import SchoolClass, YearGroup
+
+        other_class = SchoolClass.objects.create(
+            year_group=YearGroup.objects.create(school=self.school_b, name="Y"), name="Z"
+        )
+        response = self.send(audience="school_class", school_class=other_class.id)
+        self.assertEqual(response.status_code, 400)
+
+    def test_alert_with_no_recipients_is_refused(self):
+        from students.models import SchoolClass
+
+        empty = SchoolClass.objects.create(year_group=self.year, name="7C")
+        self.assertEqual(self.send(audience="school_class", school_class=empty.id).status_code, 400)
+
+    def test_sending_is_logged(self):
+        from activity.models import ActivityLog
+
+        self.send()
+        self.assertTrue(ActivityLog.objects.filter(action="alert.sent").exists())

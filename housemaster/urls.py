@@ -10,7 +10,7 @@ from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, 
 from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
-from communications.views import AnnouncementViewSet
+from communications.views import AnnouncementViewSet, UrgentAlertViewSet
 from guardians.views import (
     AcceptGuardianInviteView,
     GuardianInvitePreviewView,
@@ -45,6 +45,7 @@ router.register(r"grades", GradeViewSet)
 router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
+router.register(r"alerts", UrgentAlertViewSet, basename="alert")
 router.register(r"invites", InviteViewSet)
 router.register(r"staff", StaffViewSet)
 router.register(r"teaching-assignments", TeachingAssignmentViewSet)

@@ -5,15 +5,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from django.db.models import Q
+from django.utils import timezone
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
 
-from .models import Announcement
+from .alerts import alert_recipient_users
+from .models import AlertRecipient, Announcement, UrgentAlert
 from .permissions import CanViewAnnouncements
-from .serializers import AnnouncementSerializer, GenerateAnnouncementTextSerializer
+from .serializers import (
+    AlertRecipientSerializer,
+    AnnouncementSerializer,
+    GenerateAnnouncementTextSerializer,
+    UrgentAlertSerializer,
+)
 from .services import generate_announcement_text
 
 
@@ -156,3 +163,109 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         return Response({"title": title, "body": body}, status=status.HTTP_200_OK)
+
+
+class UrgentAlertViewSet(viewsets.ModelViewSet):
+    """
+    Urgent alerts. Admins can send to any audience; teachers only to the
+    parents of a class they teach. Everyone at the school sees alerts sent
+    to them; admins see every alert, teachers also see the ones they sent.
+
+    - GET /api/alerts/active/: alerts still waiting for me to tap "I've
+      seen this" (drives the red banner).
+    - POST /api/alerts/{id}/acknowledge/: "I've seen this".
+    - GET /api/alerts/{id}/recipients/: who has and hasn't seen it (sender
+      and admins).
+    - POST /api/alerts/{id}/end/: end the alert so its banner disappears
+      for everyone (sender and admins).
+    """
+
+    serializer_class = UrgentAlertSerializer
+    permission_classes = [IsAuthenticated, CanViewAnnouncements]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def _school(self):
+        owner = getattr(self.request.user, "profile", None) or self.request.user.guardian
+        return owner.school
+
+    def _is_admin(self):
+        profile = getattr(self.request.user, "profile", None)
+        return profile is not None and profile.is_admin
+
+    def get_queryset(self):
+        alerts = UrgentAlert.objects.filter(school=self._school()).select_related("created_by")
+        if self._is_admin():
+            return alerts
+        return alerts.filter(Q(created_by=self.request.user) | Q(recipients__user=self.request.user)).distinct()
+
+    def _check_can_manage(self, alert):
+        if not (self._is_admin() or alert.created_by_id == self.request.user.id):
+            raise PermissionDenied("Only the sender or an admin can do this.")
+
+    def perform_create(self, serializer):
+        profile = getattr(self.request.user, "profile", None)
+        if profile is None:
+            raise PermissionDenied("Only staff can send urgent alerts.")
+        data = serializer.validated_data
+        if not profile.is_admin:
+            if data["audience"] != UrgentAlert.Audience.SCHOOL_CLASS:
+                raise PermissionDenied("Teachers can only send urgent alerts to the parents of a class they teach.")
+            if not profile.assignments.filter(school_class=data["school_class"]).exists():
+                raise PermissionDenied("You can only send urgent alerts to classes you teach.")
+        alert = UrgentAlert(school=profile.school, created_by=self.request.user, **data)
+        users = list(alert_recipient_users(alert))
+        if not users:
+            raise ValidationError("Nobody with an account would receive this alert.")
+        alert.save()
+        AlertRecipient.objects.bulk_create([AlertRecipient(alert=alert, user=u) for u in users])
+        serializer.instance = alert
+        log_activity(
+            school=alert.school, actor=self.request.user, action="alert.sent", target=alert,
+            summary=f'Sent the urgent alert "{alert.title}" to {len(users)} people '
+            f"({alert.get_audience_display().lower()})",
+        )
+
+    @action(detail=False, methods=["get"])
+    def active(self, request):
+        alerts = UrgentAlert.objects.filter(
+            school=self._school(), ended_at__isnull=True,
+            recipients__user=request.user, recipients__acknowledged_at__isnull=True,
+        ).distinct()
+        return Response(self.get_serializer(alerts, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def acknowledge(self, request, pk=None):
+        alert = self.get_object()
+        updated = alert.recipients.filter(user=request.user, acknowledged_at__isnull=True).update(
+            acknowledged_at=timezone.now()
+        )
+        if not alert.recipients.filter(user=request.user).exists():
+            raise ValidationError("This alert wasn't sent to you.")
+        if updated:
+            log_activity(
+                school=alert.school, actor=request.user, action="alert.acknowledged", target=alert,
+                summary=f'Saw the urgent alert "{alert.title}"',
+            )
+        return Response(self.get_serializer(alert).data)
+
+    @action(detail=True, methods=["get"])
+    def recipients(self, request, pk=None):
+        alert = self.get_object()
+        self._check_can_manage(alert)
+        rows = alert.recipients.select_related("user__profile", "user__guardian").prefetch_related(
+            "user__guardian__students"
+        ).order_by("acknowledged_at", "id")
+        return Response(AlertRecipientSerializer(rows, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def end(self, request, pk=None):
+        alert = self.get_object()
+        self._check_can_manage(alert)
+        if alert.ended_at is None:
+            alert.ended_at = timezone.now()
+            alert.save(update_fields=["ended_at"])
+            log_activity(
+                school=alert.school, actor=request.user, action="alert.ended", target=alert,
+                summary=f'Ended the urgent alert "{alert.title}"',
+            )
+        return Response(self.get_serializer(alert).data)
