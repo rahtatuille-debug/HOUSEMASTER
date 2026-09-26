@@ -40,6 +40,13 @@ class ActivityLogAccessTests(SchoolScopedAPITestCase):
         response = self.admin_client_a.get("/api/activity/", {"action": "test.other"})
         self.assertEqual([row["summary"] for row in response.data["results"]], ["Other"])
 
+    def test_filter_by_category(self):
+        log_activity(school=self.school_a, actor=self.admin_a, action="grade.updated", summary="G")
+        log_activity(school=self.school_a, actor=self.admin_a, action="staff.deactivated", summary="S")
+        log_activity(school=self.school_a, actor=self.admin_a, action="staff_invite.created", summary="I")
+        response = self.admin_client_a.get("/api/activity/", {"category": "staff,staff_invite"})
+        self.assertEqual({row["summary"] for row in response.data["results"]}, {"S", "I"})
+
     def test_actor_name_is_display_name_not_email(self):
         entry = ActivityLog.objects.get(action="test.a")
         self.assertNotIn("@", entry.actor_name)
