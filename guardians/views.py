@@ -143,7 +143,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def reports(self, request, pk=None):
         student = self.get_object()
-        # Draft/reviewed reports are internal staff work. Guardians only see
+        # Draft and submitted reports are internal staff work. Guardians only see
         # a report once the school has explicitly finalized it.
         reports = student.reports.filter(status="finalized").select_related("term").order_by("-generated_at")
         return Response(GuardianReportSerializer(reports, many=True).data)
