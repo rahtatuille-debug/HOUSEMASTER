@@ -136,6 +136,18 @@ Teachers review/edit the `report_comment` before finalizing — `StudentReport`
 supports normal CRUD (`PATCH /api/reports/<id>/`) for that, and `status` moves
 from `draft` → `reviewed` → `finalized` as they work through it.
 
+## Checking for duplicate emails
+
+Login is by email (case-insensitive), but `User.email` isn't unique at the
+database level yet. Before adding `unique=True`, run:
+
+    python manage.py check_duplicate_emails
+
+It changes nothing and only reports two kinds of account: emails shared by
+several accounts, which can't log into the app until they're fixed, and
+accounts with no email. On Render's free tier there's no shell, so append it
+to the build command once and read the output in the build log.
+
 ## Design notes carried over from the plan
 
 - Report comment tone (`School.report_tone`) is configurable per school, not per

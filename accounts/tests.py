@@ -16,8 +16,12 @@ Run the whole suite with:
 Run just this file with:
     python manage.py test accounts
 """
+from io import StringIO
+
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.management import call_command
+from django.test import TestCase
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -300,3 +304,53 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
             "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"}
         )
         self.assertEqual(response.status_code, 400)
+
+
+class CheckDuplicateEmailsCommandTests(TestCase):
+    """The pre-flight report for adding unique=True to User.email."""
+
+    def run_command(self):
+        out = StringIO()
+        call_command("check_duplicate_emails", stdout=out)
+        return out.getvalue()
+
+    def test_clean_data_reports_nothing(self):
+        User.objects.create_user(username="a", email="a@x.test")
+        User.objects.create_user(username="b", email="b@x.test")
+
+        output = self.run_command()
+
+        self.assertIn("No duplicate emails.", output)
+        self.assertIn("No accounts without an email.", output)
+
+    def test_reports_case_insensitive_duplicates(self):
+        # EmailBackend matches with email__iexact, so these two collide.
+        u1 = User.objects.create_user(username="first", email="Same@X.test")
+        u2 = User.objects.create_user(username="second", email="same@x.test")
+        User.objects.create_user(username="other", email="other@x.test")
+
+        output = self.run_command()
+
+        self.assertIn("1 email(s) shared by multiple accounts", output)
+        self.assertIn("same@x.test", output)
+        self.assertIn(f"id={u1.pk}", output)
+        self.assertIn(f"id={u2.pk}", output)
+        self.assertNotIn("other@x.test", output)
+
+    def test_reports_accounts_without_email(self):
+        u = User.objects.create_user(username="no_email", email="")
+
+        output = self.run_command()
+
+        self.assertIn("1 account(s) with no email", output)
+        self.assertIn(f"id={u.pk} username='no_email'", output)
+
+    def test_changes_nothing(self):
+        User.objects.create_user(username="first", email="dup@x.test")
+        User.objects.create_user(username="second", email="dup@x.test")
+        before = list(User.objects.order_by("id").values_list("id", "username", "email"))
+
+        self.run_command()
+
+        after = list(User.objects.order_by("id").values_list("id", "username", "email"))
+        self.assertEqual(before, after)
