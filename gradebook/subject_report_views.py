@@ -57,7 +57,10 @@ def class_subject_reports(request):
     students = list(students.order_by("last_name", "first_name"))
     if request.method == "GET":
         entries = {e.student_id: e for e in SubjectReport.objects.filter(term=term, subject=subject, student__in=students)}
-        return Response({"fields": SUBJECT_FIELDS.get(request.user.profile.school.education_system, []),
+        from students.presets import section_for
+
+        system, _scale = section_for(school_class.year_group, request.user.profile.school)
+        return Response({"fields": SUBJECT_FIELDS.get(system, []),
                          "students": [_row(s, entries.get(s.id)) for s in students]})
 
     check_term_open(term)

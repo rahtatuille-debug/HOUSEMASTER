@@ -19,7 +19,7 @@ from attendance.models import AttendanceRecord
 from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
 from gradebook.weighting import school_weights, subject_percents
-from students.presets import DEFAULT_VOCAB, school_vocab
+from students.presets import DEFAULT_VOCAB, words_for
 
 from .models import StudentReport
 
@@ -188,7 +188,7 @@ def _results_table(pdf, school, summary, words):
         body = [[r["subject"], _pct(r["percent"]), r["level"] or "—", r["comment"]] for r in rows]
         widths = (50, 18, 18, 88)
     else:
-        leveled = bool(level_for(0, school.grading_scale))
+        leveled = bool(level_for(0, summary["scale"]))
         head = [subject, "Percent"] + (["Level"] if leveled else []) + ["Comment"]
         body = [[r["subject"], _pct(r["percent"])] + ([r["level"] or "—"] if leveled else []) + [r["comment"]]
                 for r in rows]
@@ -214,7 +214,7 @@ def _results_table(pdf, school, summary, words):
     if system == "ib" and summary.get("ib_total") is not None:
         return f"Total of grades: {summary['ib_total']}"
     if summary.get("average") is not None:
-        return f"Overall average: {with_level(summary['average'], school.grading_scale)}"
+        return f"Overall average: {with_level(summary['average'], summary['scale'])}"
     return ""
 
 
@@ -263,8 +263,6 @@ def reports_pdf(school, students, term):
     """One page per student with a finalized report for the term, in the school's system. Returns (bytes, count)."""
     from gradebook.systems import term_summary
 
-    words = school_vocab(school)
-    system = school.education_system
     reports = {
         r.student_id: r
         for r in StudentReport.objects.filter(student__in=students, term=term, status="finalized")
@@ -307,6 +305,8 @@ def reports_pdf(school, students, term):
         pdf.set_font("Serif", "", 10.5)
         pdf.set_text_color(*INK)
         klass = s.school_class
+        summary = term_summary(s, term)
+        words = words_for(school, summary["system"])
         details = [f"{words['term']}: {term.name}"]
         if klass:
             details.append(f"{words['class']}: {klass.year_group.name} · {klass.name}")
@@ -317,7 +317,7 @@ def reports_pdf(school, students, term):
         pdf.cell(0, 7, "   |   ".join(details), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 
-        summary = term_summary(s, term)
+        # A school running two systems prints each student's card in their own section's style.
         if summary["subjects"]:
             pdf.set_font("Serif", "B", 12)
             pdf.set_text_color(*NAVY)
@@ -331,7 +331,7 @@ def reports_pdf(school, students, term):
                 pdf.multi_cell(0, 6, line, new_x="LMARGIN", new_y="NEXT")
             pdf.ln(3)
 
-        _ratings(pdf, report, system)
+        _ratings(pdf, report, summary["system"])
 
         att = attendance[s.id]
         total = sum(att.values())
@@ -358,7 +358,7 @@ def reports_pdf(school, students, term):
         pdf.ln(2)
         pdf.set_font("Serif", "", 7.5)
         pdf.set_text_color(*MUTED)
-        for part in _key(system, school.grading_scale):
+        for part in _key(summary["system"], summary["scale"]):
             pdf.multi_cell(0, 4.5, part, new_x="LMARGIN", new_y="NEXT")
         finalized = report.finalized_at.date() if report.finalized_at else date.today()
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")

@@ -21,8 +21,22 @@ class SchoolSerializer(serializers.ModelSerializer):
 class YearGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = YearGroup
-        fields = ["id", "school", "name", "order", "is_final"]
+        fields = ["id", "school", "name", "order", "is_final", "education_system", "grading_scale"]
         extra_kwargs = {"school": {"read_only": True}}
+
+    def validate_education_system(self, value):
+        from .presets import SYSTEMS
+
+        if value and value not in SYSTEMS:
+            raise serializers.ValidationError("Choose one of the education systems.")
+        return value
+
+    def validate_grading_scale(self, value):
+        from gradebook.levels import SCALES
+
+        if value and value not in SCALES:
+            raise serializers.ValidationError("Choose one of the grading scales.")
+        return value
 
 
 class SchoolClassSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):

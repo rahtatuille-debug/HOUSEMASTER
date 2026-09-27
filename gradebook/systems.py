@@ -104,8 +104,9 @@ def _positions(student, term, system):
 
 def term_summary(student, term):
     """Everything a report card shows about the student's results this term, for their school's system."""
-    school = student.school
-    system, scale = school.education_system, school.grading_scale
+    from students.presets import student_section, words_for
+
+    system, scale = student_section(student)
     percents = _subject_percents([student.id], term).get(student.id, {})
     entries = {r.subject_id: r for r in SubjectReport.objects.filter(student=student, term=term).select_related("subject")}
     subjects = sorted(set(percents) | {r.subject for r in entries.values()}, key=lambda s: s.name)
@@ -135,7 +136,8 @@ def term_summary(student, term):
                                                                        if percent is not None else None))
         rows.append(row)
 
-    summary = {"system": system, "subjects": rows, "pathway": student.pathway}
+    summary = {"system": system, "scale": scale, "subjects": rows, "pathway": student.pathway,
+               "subject_word": words_for(student.school, system)["subject"]}
     average = _mean(percents.values())
     summary["average"] = round(average, 1) if average is not None else None
     summary["average_level"] = level_for(average, scale)

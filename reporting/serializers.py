@@ -19,7 +19,7 @@ class StudentReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelS
     class Meta:
         model = StudentReport
         fields = [
-            "id", "student", "term", "progress_summary", "report_comment", "principal_comment", "extra",
+            "id", "student", "term", "progress_summary", "report_comment", "principal_comment", "extra", "extra_groups",
             "tone_used", "status", "review_note", "generated_at", "edited_at",
             "submitted_by_name", "submitted_at", "finalized_by_name", "finalized_at",
         ]
@@ -28,12 +28,23 @@ class StudentReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelS
             "submitted_at", "finalized_at",
         ]
 
+    extra_groups = serializers.SerializerMethodField()
+
+    def get_extra_groups(self, obj):
+        """The ratings this student's report card has (CBC competencies, IB approaches to learning)."""
+        from gradebook.systems import REPORT_EXTRAS
+        from students.presets import student_section
+
+        return REPORT_EXTRAS.get(student_section(obj.student)[0], [])
+
     def validate_extra(self, value):
         from gradebook.systems import clean_extra
+        from students.presets import student_section
 
-        school = self.context["request"].user.profile.school
+        student = self.instance.student if self.instance else None
+        system = student_section(student)[0] if student else self.context["request"].user.profile.school.education_system
         try:
-            return clean_extra(school.education_system, value)
+            return clean_extra(system, value)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc))
 

@@ -10,7 +10,7 @@ import os
 from gradebook.models import Grade
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for
-from students.presets import school_vocab, writing_context
+from students.presets import student_section, words_for, writing_context
 
 from .models import StudentReport
 
@@ -32,8 +32,8 @@ def _build_student_context(student, term):
         date__lte=term.end_date if term.end_date else None,
     ) if term.start_date and term.end_date else AttendanceRecord.objects.none()
 
-    scale = student.school.grading_scale
-    words = school_vocab(student.school)
+    system, scale = student_section(student)
+    words = words_for(student.school, system)
 
     def line(g):
         percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
@@ -68,7 +68,7 @@ def _build_prompt(student, term, tone):
 
     return f"""You are helping a teacher prepare a student progress report from the data below.
 
-{writing_context(student.school)}
+{writing_context(student.school, student_section(student)[0])}
 
 {context}
 

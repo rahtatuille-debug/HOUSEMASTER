@@ -55,7 +55,7 @@ def class_subject_choices(request):
     [{subject, level}]}]}: replace those students' choices. Admins and the
     class's teachers can do this.
     """
-    from students.presets import PATHWAYS
+    from students.presets import PATHWAYS, section_for
 
     data = request.query_params if request.method == "GET" else request.data
     school_class = _class(request, data.get("school_class"))
@@ -65,7 +65,8 @@ def class_subject_choices(request):
     students = list(visible_students(request.user).filter(school_class=school_class, is_active=True)
                     .order_by("last_name", "first_name"))
     subjects = list(Subject.objects.filter(school=school).order_by("name"))
-    pathways = PATHWAYS.get(school.education_system, [])
+    system = section_for(school_class.year_group, school)[0]
+    pathways = PATHWAYS.get(system, [])
 
     if request.method == "POST":
         by_id = {s.id: s for s in students}
@@ -101,6 +102,7 @@ def class_subject_choices(request):
     for c in StudentSubject.objects.filter(student__in=students):
         chosen.setdefault(c.student_id, []).append({"subject": c.subject_id, "level": c.level})
     return Response({
+        "system": system,
         "subjects": [{"id": s.id, "name": s.name, "is_elective": s.is_elective} for s in subjects],
         "pathways": pathways,
         "students": [{"student": s.id, "name": f"{s.first_name} {s.last_name}", "pathway": s.pathway,

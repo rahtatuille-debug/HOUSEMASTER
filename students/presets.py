@@ -286,11 +286,12 @@ REPORT_GUIDANCE = {
 }
 
 
-def writing_context(school):
-    """Instructions that tell the AI which system, words and spelling this school uses."""
-    words = school_vocab(school)
+def writing_context(school, system=None):
+    """Instructions that tell the AI which system, words and spelling to use (a section's system if given)."""
+    system = system if system is not None else school.education_system
+    words = words_for(school, system)
     spelling = "American English" if school.country == "us" else "British English"
-    lines = [REPORT_GUIDANCE[school.education_system]] if school.education_system in REPORT_GUIDANCE else []
+    lines = [REPORT_GUIDANCE[system]] if system in REPORT_GUIDANCE else []
     lines.append(
         f"Use the school's own words: a year group is a \"{words['year_group'].lower()}\", a class is a "
         f"\"{words['class'].lower()}\", a subject is a \"{words['subject'].lower()}\" and a term is a "
@@ -301,3 +302,21 @@ def writing_context(school):
 
 # CBC senior school pathways (Grades 10 to 12).
 PATHWAYS = {"cbc": ["STEM", "Social Sciences", "Arts and Sports Science"]}
+
+
+def section_for(year_group, school):
+    """(system, grading scale) for a year group: its own if it has one, otherwise the school's."""
+    if year_group is not None and year_group.education_system:
+        return year_group.education_system, year_group.grading_scale or SYSTEMS[year_group.education_system]["scales"][0]
+    return school.education_system, (year_group.grading_scale if year_group is not None and year_group.grading_scale
+                                     else school.grading_scale)
+
+
+def student_section(student):
+    klass = student.school_class
+    return section_for(klass.year_group if klass else None, student.school)
+
+
+def words_for(school, system):
+    """The words for a section: the school's own words for its main system, the system's for another."""
+    return school_vocab(school) if system == school.education_system else vocab(system)

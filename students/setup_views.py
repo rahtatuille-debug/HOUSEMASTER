@@ -248,3 +248,65 @@ def finish_setup(request):
             **created,
         )
     return Response({"school": _school_state(school), "created": created})
+
+
+class AddSectionSerializer(serializers.Serializer):
+    education_system = serializers.ChoiceField(choices=list(SYSTEMS))
+    grading_scale = serializers.ChoiceField(choices=list(SCALES), required=False, allow_blank=True, default="")
+    year_groups = _YearGroupSerializer(many=True)
+    subjects = serializers.ListField(child=serializers.CharField(max_length=100), max_length=200, required=False,
+                                     default=list)
+
+    def validate_year_groups(self, value):
+        return FinishSetupSerializer.validate_year_groups(self, value)
+
+    def validate_subjects(self, value):
+        return list(dict.fromkeys(" ".join(v.split()) for v in value if v.strip()))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+def add_section(request):
+    """
+    Add a second curriculum to a school that already runs one (e.g. a CBC
+    school with a British IGCSE section): new year groups that follow that
+    system and grading scale, their classes, and any extra subjects. The
+    section's year groups come after the school's existing ones, and the
+    last of them is its graduating year.
+    """
+    data = AddSectionSerializer(data=request.data)
+    data.is_valid(raise_exception=True)
+    v = data.validated_data
+    school = request.user.profile.school
+    system = v["education_system"]
+    scale = v["grading_scale"] or SYSTEMS[system]["scales"][0]
+    names = [" ".join(g["name"].split()) for g in v["year_groups"]]
+    taken = set(YearGroup.objects.filter(school=school, name__in=names).values_list("name", flat=True))
+    if taken:
+        raise serializers.ValidationError({"year_groups": f"{', '.join(sorted(taken))} already exist. "
+                                                          "Give the new section's year groups different names."})
+    created = {"year_groups": 0, "classes": 0, "subjects": 0}
+    with transaction.atomic():
+        start = max(YearGroup.objects.filter(school=school).values_list("order", flat=True), default=-1) + 1
+        last = len(names) - 1
+        for i, (name, group) in enumerate(zip(names, v["year_groups"])):
+            year_group = YearGroup.objects.create(
+                school=school, name=name, order=start + i, is_final=i == last,
+                # The school's own system needs no override.
+                education_system="" if system == school.education_system else system,
+                grading_scale="" if scale == school.grading_scale and system == school.education_system else scale,
+            )
+            created["year_groups"] += 1
+            for class_name in group["classes"]:
+                SchoolClass.objects.create(year_group=year_group, name=class_name)
+                created["classes"] += 1
+        for subject in v["subjects"]:
+            _, made = Subject.objects.get_or_create(school=school, name=subject)
+            created["subjects"] += made
+        log_activity(
+            school=school, actor=request.user, action="school.section_added",
+            summary=f"Added a {SYSTEMS[system]['name']} section: {created['year_groups']} year groups, "
+                    f"{created['classes']} classes and {created['subjects']} new subjects",
+            **created,
+        )
+    return Response({"created": created}, status=201)

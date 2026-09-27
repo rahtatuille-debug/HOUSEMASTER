@@ -61,6 +61,10 @@ class YearGroup(models.Model):
     # the school's last year (its students graduate at the end of the year).
     order = models.PositiveSmallIntegerField(default=0)
     is_final = models.BooleanField(default=False)
+    # A school running two systems (e.g. CBC with a British IGCSE section)
+    # sets these on the other section's year groups; blank means the school's.
+    education_system = models.CharField(max_length=20, blank=True)
+    grading_scale = models.CharField(max_length=10, blank=True)
 
     class Meta:
         unique_together = ("school", "name")
