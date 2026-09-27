@@ -11,6 +11,7 @@ Only active students count towards group figures.
 from collections import defaultdict
 from datetime import date
 
+from gradebook.levels import SCALES
 from gradebook.models import Grade, Term
 from students.models import SchoolClass, Student, YearGroup
 
@@ -27,6 +28,7 @@ class SchoolGrades:
     """Every active student's grades at a school, loaded once and averaged in memory."""
 
     def __init__(self, school):
+        self.scale = school.grading_scale
         self.terms = sorted(Term.objects.filter(school=school), key=lambda t: (t.start_date or date.min, t.id))
         self.students = {
             s.id: s for s in Student.objects.filter(school=school, is_active=True)
@@ -62,8 +64,16 @@ class SchoolGrades:
         averages = [a for a in (self.student_average(s, term_id) for s in student_ids) if a is not None]
         return [
             {"band": label, "students": sum(1 for a in averages if low <= a < high)}
-            for low, high, label in BANDS
+            for low, high, label in self.bands()
         ]
+
+    def bands(self):
+        """CBC schools count students per level, lowest first; others use 10% bands."""
+        scale = SCALES.get(self.scale)
+        if not scale:
+            return BANDS
+        lows = [low for low, _code, _name in scale]
+        return [(low, lows[i - 1] if i else 101, code) for i, (low, code, _name) in enumerate(scale)][::-1]
 
     def in_class(self, class_id):
         return [s.id for s in self.students.values() if s.school_class_id == class_id]

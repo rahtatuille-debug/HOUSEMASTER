@@ -14,6 +14,15 @@ class School(models.Model):
         default="formal",
         help_text="School-level tone setting for AI-generated report comments (v1: per-school, not per-teacher).",
     )
+    class GradingScale(models.TextChoices):
+        CBC4 = "cbc4", "CBC: 4 levels (EE, ME, AE, BE)"
+        CBC8 = "cbc8", "CBC junior school: 8 levels (EE1 to BE2)"
+        PERCENT = "percent", "Percentages only"
+
+    grading_scale = models.CharField(
+        max_length=10, choices=GradingScale.choices, default=GradingScale.CBC4,
+        help_text="Which performance levels to show next to percentages. See gradebook.levels.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

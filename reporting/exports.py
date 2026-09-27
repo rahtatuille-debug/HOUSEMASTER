@@ -16,6 +16,7 @@ from fpdf.fonts import FontFace
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from attendance.models import AttendanceRecord
+from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
 
 from .models import StudentReport
@@ -74,7 +75,7 @@ def class_list_xlsx(students):
     return _workbook_bytes(wb)
 
 
-def grades_xlsx(students, term):
+def grades_xlsx(students, term, scale="percent"):
     grades = Grade.objects.filter(student__in=students, term=term).select_related("subject")
     by_student = defaultdict(dict)
     subjects = set()
@@ -87,11 +88,17 @@ def grades_xlsx(students, term):
     for s in students:
         marks = [by_student[s.id].get(subj) for subj in subjects]
         present = [m for m in marks if m is not None]
-        rows.append([s.external_id, s.last_name, s.first_name, *marks,
-                     round(sum(present) / len(present), 1) if present else None])
+        average = round(sum(present) / len(present), 1) if present else None
+        row = [s.external_id, s.last_name, s.first_name, *marks, average]
+        if level_for(0, scale):  # CBC schools also get the level for the average
+            row.append(level_for(average, scale))
+        rows.append(row)
+    headers = ["Admission no.", "Last name", "First name", *subjects, "Average"]
+    if level_for(0, scale):
+        headers.append("Level")
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    _sheet(wb, "Grades (%)", ["Admission no.", "Last name", "First name", *subjects, "Average"], rows)
+    _sheet(wb, "Grades (%)", headers, rows)
     return _workbook_bytes(wb)
 
 
@@ -193,12 +200,28 @@ def reports_pdf(school, students, term):
             pdf.cell(0, 8, "Results", new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*ink)
             pdf.set_font("Serif", "", 10)
-            with pdf.table(col_widths=(90, 40, 44), text_align=("LEFT", "CENTER", "CENTER"), line_height=7,
+            scale = school.grading_scale
+            leveled = bool(level_for(0, scale))
+            widths = (78, 36, 30, 30) if leveled else (90, 40, 44)
+            with pdf.table(col_widths=widths, text_align=("LEFT",) + ("CENTER",) * (len(widths) - 1), line_height=7,
                            headings_style=FontFace(emphasis="BOLD", fill_color=(242, 237, 225))) as table:
-                table.row(["Subject", "Score", "Percent"])
+                table.row(["Subject", "Score", "Percent", "Level"] if leveled else ["Subject", "Score", "Percent"])
+                by_subject = defaultdict(list)
                 for g in grades[s.id]:
-                    pct = f"{float(g.score) / float(g.max_score) * 100:.0f}%" if g.max_score else "—"
-                    table.row([g.subject.name, f"{g.score.normalize():f} / {g.max_score.normalize():f}", pct])
+                    percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
+                    if percent is not None:
+                        by_subject[g.subject_id].append(percent)
+                    row = [g.subject.name, f"{g.score.normalize():f} / {g.max_score.normalize():f}",
+                           f"{percent:.0f}%" if percent is not None else "—"]
+                    if leveled:
+                        row.append(level_for(percent, scale) or "—")
+                    table.row(row)
+            subject_means = [sum(v) / len(v) for v in by_subject.values()]
+            if subject_means:
+                pdf.ln(2)
+                pdf.set_font("Serif", "B", 10)
+                pdf.cell(0, 7, f"Overall average: {with_level(sum(subject_means) / len(subject_means), scale)}",
+                         new_x="LMARGIN", new_y="NEXT")
             pdf.ln(4)
 
         att = attendance[s.id]
@@ -219,6 +242,8 @@ def reports_pdf(school, students, term):
         pdf.ln(6)
         pdf.set_font("Serif", "", 8)
         pdf.set_text_color(110, 110, 110)
+        if key := levels_key(school.grading_scale):
+            pdf.cell(0, 5, f"Levels: {key}", new_x="LMARGIN", new_y="NEXT")
         finalized = report.finalized_at.date() if report.finalized_at else date.today()
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output()), count

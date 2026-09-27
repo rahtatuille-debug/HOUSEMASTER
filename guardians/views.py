@@ -11,6 +11,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from accounts.emails import send_admin_password_reset
 from activity.services import log_activity, student_name
+from gradebook.levels import school_summary
 
 from .models import Guardian, GuardianInvite
 from .permissions import IsGuardian
@@ -310,6 +311,6 @@ def guardian_me(request):
         "name": guardian.name,
         "email": request.user.email,
         "contact": GuardianContactSerializer(guardian).data,
-        "school": {"id": guardian.school_id, "name": guardian.school.name},
+        "school": school_summary(guardian.school),
         "students": GuardianStudentSerializer(guardian.students.all(), many=True).data,
     })

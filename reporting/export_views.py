@@ -64,7 +64,8 @@ def export_class_list(request):
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_grades(request):
     school_class, term = _class(request), _term(request)
-    content = exports.grades_xlsx(_students(request, school_class), term)
+    content = exports.grades_xlsx(_students(request, school_class), term,
+                                  scale=request.user.profile.school.grading_scale)
     return _file(content, XLSX, f"grades-{slugify(school_class.name)}-{slugify(term.name)}.xlsx", request,
                  f"{term.name} grades for {school_class.name}")
 

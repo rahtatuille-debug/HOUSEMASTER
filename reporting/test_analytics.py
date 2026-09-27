@@ -53,8 +53,9 @@ class PerformanceAnalyticsTests(SchoolScopedAPITestCase):
         data = self.get(scope="class", id=self.c7a.id, term=self.t2.id).data
         self.assertEqual(data["trend"][1], {"term": "T2", "class": 80.0, "year_group": 63.3, "school": 72.5})
         self.assertEqual(data["students_count"], 2)
+        # Schools use the 4-level CBC scale by default: Ann 90 is EE, Ben 70 is ME.
         dist = {d["band"]: d["students"] for d in data["distribution"]}
-        self.assertEqual((dist["70–79%"], dist["80% and above"]), (1, 1))
+        self.assertEqual((dist["ME"], dist["EE"]), (1, 1))
         self.assertEqual([(s["name"], s["average"], s["change"]) for s in data["students"]],
                          [("Ann X", 90.0, 20.0), ("Ben X", 70.0, 20.0)])
 

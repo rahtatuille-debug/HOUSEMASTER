@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from accounts.mixins import SchoolScopedViewSetMixin
 
 from activity.services import log_activity
+from gradebook.levels import school_summary
 
 from .emails import send_admin_password_reset
 
@@ -48,7 +49,7 @@ def me(request):
             "id": request.user.id,
             "name": profile.name,
             "role": profile.role,
-            "school": {"id": profile.school.id, "name": profile.school.name},
+            "school": school_summary(profile.school),
             "assignments": TeachingAssignmentSerializer(
                 profile.assignments.select_related("school_class", "subject"), many=True
             ).data,

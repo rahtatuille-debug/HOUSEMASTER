@@ -59,9 +59,9 @@ class ExportTests(SchoolScopedAPITestCase):
 
     def test_grades(self):
         rows = self.sheet(self.get("grades", school_class=self.c7a.id, term=self.term.id), "Grades (%)")
-        self.assertEqual(rows[0], ["Admission no.", "Last name", "First name", "Art", "Maths", "Average"])
+        self.assertEqual(rows[0], ["Admission no.", "Last name", "First name", "Art", "Maths", "Average", "Level"])
         ann = next(r for r in rows if r[0] == "S1")
-        self.assertEqual(ann[3:], [60.0, 80.0, 70.0])
+        self.assertEqual(ann[3:], [60.0, 80.0, 70.0, "ME"])
 
     def test_attendance(self):
         response = self.get("attendance", school_class=self.c7a.id, start="2026-02-01", end="2026-02-28")
