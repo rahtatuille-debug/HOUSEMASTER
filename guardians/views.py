@@ -15,7 +15,9 @@ from activity.services import log_activity, student_name
 from .models import Guardian, GuardianInvite
 from .permissions import IsGuardian
 from .serializers import (
+    CONTACT_FIELDS,
     AcceptGuardianInviteSerializer,
+    GuardianContactSerializer,
     GuardianInvitePreviewSerializer,
     GuardianInviteSerializer,
     GuardianNameSerializer,
@@ -86,8 +88,29 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         guardian = self.get_object()
-        if "students" not in request.data:
-            raise ValidationError({"students": "Send the full list of linked student IDs."})
+        contact = {k: request.data[k] for k in CONTACT_FIELDS + ["admin_note"] if k in request.data}
+        if "students" not in request.data and not contact:
+            raise ValidationError("Send contact details, or the full list of linked student IDs.")
+        if contact:
+            self._update_contact(request, guardian, contact)
+        if "students" in request.data:
+            self._update_students(request, guardian)
+        guardian.refresh_from_db()
+        return Response(self.get_serializer(guardian).data)
+
+    def _update_contact(self, request, guardian, contact):
+        serializer = self.get_serializer(guardian, data=contact, partial=True)
+        serializer.is_valid(raise_exception=True)
+        changed = [k for k, v in serializer.validated_data.items() if getattr(guardian, k) != v]
+        serializer.save()
+        if changed:
+            labels = [Guardian._meta.get_field(k).verbose_name for k in changed]
+            log_activity(
+                school=guardian.school, actor=request.user, action="parent.contact_changed", target=guardian,
+                summary=f"Updated {guardian.name}'s contact details ({', '.join(labels)})", fields=changed,
+            )
+
+    def _update_students(self, request, guardian):
         serializer = self.get_serializer(guardian, data={"students": request.data["students"]}, partial=True)
         serializer.is_valid(raise_exception=True)
         new_students = serializer.validated_data["students"]
@@ -109,7 +132,6 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 target=guardian, summary=f"Changed {guardian.name}'s children: " + "; ".join(parts),
                 added=[s.id for s in added], removed=[s.id for s in removed],
             )
-        return Response(self.get_serializer(guardian).data)
 
     def update(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
@@ -239,13 +261,28 @@ class AcceptGuardianInviteView(APIView):
 def guardian_me(request):
     guardian = request.user.guardian
     if request.method == "PATCH":
-        serializer = GuardianNameSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        guardian.display_name = serializer.validated_data["name"]
-        guardian.save(update_fields=["display_name"])
+        if "name" in request.data:
+            serializer = GuardianNameSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            guardian.display_name = serializer.validated_data["name"]
+            guardian.save(update_fields=["display_name"])
+        # A parent keeps their own contact details up to date (never the admin note).
+        contact = GuardianContactSerializer(
+            guardian, data={k: request.data[k] for k in CONTACT_FIELDS if k in request.data}, partial=True,
+        )
+        contact.is_valid(raise_exception=True)
+        changed = [k for k, v in contact.validated_data.items() if getattr(guardian, k) != v]
+        contact.save()
+        if changed:
+            log_activity(
+                school=guardian.school, actor=request.user, action="parent.contact_changed", target=guardian,
+                summary=f"{guardian.name} updated their contact details", fields=changed,
+            )
     return Response({
         "id": request.user.id,
         "name": guardian.name,
+        "email": request.user.email,
+        "contact": GuardianContactSerializer(guardian).data,
         "school": {"id": guardian.school_id, "name": guardian.school.name},
         "students": GuardianStudentSerializer(guardian.students.all(), many=True).data,
     })

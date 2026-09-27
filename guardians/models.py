@@ -34,6 +34,32 @@ class Guardian(models.Model):
     )
     students = models.ManyToManyField(Student, related_name="guardians", blank=True)
 
+    # Contact details. Admins and the parent can change them. Teachers of the
+    # parent's children see the phone numbers, relationship and preferred
+    # contact method only; the address, occupation and admin note stay with
+    # admins (and the admin note is never shown to the parent).
+    class Relationship(models.TextChoices):
+        MOTHER = "mother", "Mother"
+        FATHER = "father", "Father"
+        GUARDIAN = "guardian", "Guardian"
+        GRANDPARENT = "grandparent", "Grandparent"
+        SIBLING = "sibling", "Sibling"
+        OTHER = "other", "Other relative"
+
+    class ContactMethod(models.TextChoices):
+        CALL = "call", "Phone call"
+        SMS = "sms", "SMS"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        EMAIL = "email", "Email"
+
+    phone = models.CharField(max_length=30, blank=True)
+    phone_alt = models.CharField(max_length=30, blank=True, verbose_name="second phone")
+    relationship = models.CharField(max_length=20, choices=Relationship.choices, blank=True)
+    address = models.TextField(blank=True, verbose_name="home address")
+    occupation = models.CharField(max_length=120, blank=True)
+    preferred_contact = models.CharField(max_length=10, choices=ContactMethod.choices, blank=True)
+    admin_note = models.TextField(blank=True, help_text="Private to the school's admins.")
+
     @property
     def name(self):
         return self.display_name.strip() or self.user.get_full_name().strip() or "Guardian"

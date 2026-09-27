@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
@@ -171,6 +173,31 @@ class GuardianNameSerializer(serializers.Serializer):
         return name
 
 
+CONTACT_FIELDS = ["phone", "phone_alt", "relationship", "address", "occupation", "preferred_contact"]
+PHONE_RE = re.compile(r"^\+?[0-9 ()\-]{7,25}$")
+
+
+def _clean_phone(value):
+    value = " ".join(value.split())
+    if value and (not PHONE_RE.match(value) or sum(c.isdigit() for c in value) < 7):
+        raise serializers.ValidationError("Enter a phone number, e.g. +254 712 345 678.")
+    return value
+
+
+class GuardianContactSerializer(serializers.ModelSerializer):
+    """The contact details a parent can see and change themselves."""
+
+    class Meta:
+        model = Guardian
+        fields = CONTACT_FIELDS
+
+    def validate_phone(self, value):
+        return _clean_phone(value)
+
+    def validate_phone_alt(self, value):
+        return _clean_phone(value)
+
+
 class ParentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     """An admin's view of one parent account, including which children it's linked to."""
 
@@ -186,8 +213,14 @@ class ParentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializ
         model = Guardian
         fields = [
             "id", "user_id", "name", "email", "is_active", "students", "student_names",
-            "date_joined", "last_login",
+            "date_joined", "last_login", *CONTACT_FIELDS, "admin_note",
         ]
+
+    def validate_phone(self, value):
+        return _clean_phone(value)
+
+    def validate_phone_alt(self, value):
+        return _clean_phone(value)
 
     def get_student_names(self, obj):
         return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]

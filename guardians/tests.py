@@ -351,3 +351,91 @@ class GuardianStudentProfileTests(SchoolScopedAPITestCase):
     def test_parent_cannot_use_staff_student_endpoints(self):
         self.assertEqual(self.parent.get(f"/api/students/{self.child.id}/profile/").status_code, 403)
         self.assertEqual(self.parent.patch(f"/api/students/{self.child.id}/", {"medical_notes": "x"}).status_code, 403)
+
+
+class ParentContactDetailsTests(SchoolScopedAPITestCase):
+    """Who can see and change a parent's phone numbers, address and notes."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_client_a = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Grade 7")
+        self.my_class = SchoolClass.objects.create(year_group=year, name="7 East")
+        other_class = SchoolClass.objects.create(year_group=year, name="7 West")
+        self.child = Student.objects.create(school=self.school_a, school_class=self.my_class,
+                                            first_name="Ann", last_name="One")
+        self.other_child = Student.objects.create(school=self.school_a, school_class=other_class,
+                                                  first_name="Ben", last_name="Two")
+        self.assign(self.user_a, self.my_class, None)
+        user = User.objects.create_user(username="parent@alpha.test", email="parent@alpha.test", password="pass1234")
+        self.parent = Guardian.objects.create(
+            user=user, school=self.school_a, display_name="Pat Parent", phone="+254 712 345 678",
+            relationship="mother", address="12 Ngong Road, Nairobi", occupation="Nurse",
+            preferred_contact="whatsapp", admin_note="Fees handled by aunt",
+        )
+        self.parent.students.set([self.child])
+        self.parent_client = self.authed_client(user)
+
+    def test_admin_sees_every_contact_detail(self):
+        row = self.admin_client_a.get(f"/api/parents/{self.parent.id}/").data
+        self.assertEqual(row["phone"], "+254 712 345 678")
+        self.assertEqual(row["address"], "12 Ngong Road, Nairobi")
+        self.assertEqual(row["admin_note"], "Fees handled by aunt")
+
+    def test_admin_updates_contact_details_and_it_is_logged(self):
+        response = self.admin_client_a.patch(
+            f"/api/parents/{self.parent.id}/", {"phone_alt": "0722 000 111", "occupation": "Doctor"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.parent.refresh_from_db()
+        self.assertEqual(self.parent.phone_alt, "0722 000 111")
+        self.assertEqual(list(self.parent.students.all()), [self.child])  # links untouched
+        log = ActivityLog.objects.get(action="parent.contact_changed")
+        self.assertIn("second phone", log.summary)
+        self.assertNotIn("0722", log.summary)
+
+    def test_bad_phone_and_relationship_are_rejected(self):
+        url = f"/api/parents/{self.parent.id}/"
+        self.assertEqual(self.admin_client_a.patch(url, {"phone": "call me"}, format="json").status_code, 400)
+        self.assertEqual(self.admin_client_a.patch(url, {"relationship": "boss"}, format="json").status_code, 400)
+        self.assertEqual(self.admin_client_a.patch(url, {"phone": ""}, format="json").status_code, 200)
+
+    def test_parent_updates_own_details_but_never_the_admin_note(self):
+        response = self.parent_client.patch(
+            "/api/guardian-me/", {"phone": "0700 111 222", "admin_note": "hacked", "address": "New address"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["contact"]["phone"], "0700 111 222")
+        self.assertNotIn("admin_note", response.data["contact"])
+        self.parent.refresh_from_db()
+        self.assertEqual(self.parent.address, "New address")
+        self.assertEqual(self.parent.admin_note, "Fees handled by aunt")
+        self.assertNotIn("admin_note", str(self.parent_client.get("/api/guardian-me/").data))
+
+    def test_parent_can_still_change_just_their_name(self):
+        response = self.parent_client.patch("/api/guardian-me/", {"name": "Patricia"}, format="json")
+        self.assertEqual(response.data["name"], "Patricia")
+        self.assertEqual(response.data["contact"]["phone"], "+254 712 345 678")
+
+    def test_teacher_sees_phone_but_not_address_or_note_for_own_students(self):
+        parents = self.client_a.get(f"/api/students/{self.child.id}/profile/").data["parents"]
+        self.assertEqual(parents[0]["phone"], "+254 712 345 678")
+        self.assertEqual(parents[0]["relationship"], "mother")
+        for private in ("address", "occupation", "admin_note"):
+            self.assertNotIn(private, parents[0])
+        self.assertEqual(self.client_a.get(f"/api/students/{self.other_child.id}/profile/").status_code, 404)
+        self.assertEqual(self.client_a.get(f"/api/parents/{self.parent.id}/").status_code, 403)
+
+    def test_admin_sees_everything_on_the_student_page(self):
+        parents = self.admin_client_a.get(f"/api/students/{self.child.id}/profile/").data["parents"]
+        self.assertEqual(parents[0]["admin_note"], "Fees handled by aunt")
+
+    def test_other_schools_cannot_see_or_change_the_parent(self):
+        admin_b = User.objects.create_user(username="admin_b", email="admin.b@beta.test", password="pass1234")
+        from accounts.models import Profile
+        Profile.objects.create(user=admin_b, school=self.school_b, role=Profile.Role.ADMIN)
+        client = self.authed_client(admin_b)
+        self.assertEqual(client.get(f"/api/parents/{self.parent.id}/").status_code, 404)
+        self.assertEqual(client.patch(f"/api/parents/{self.parent.id}/", {"phone": "0700 000 000"},
+                                      format="json").status_code, 404)

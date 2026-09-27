@@ -66,6 +66,10 @@ STAFF = [  # name, role, email local part, teaches [(class, subject or None for 
     ("Fatuma Hassan", "teacher", "f.hassan", [("9 East", None), ("7 East", "Kiswahili"), ("9 West", "Kiswahili")]),
     ("David Wafula", "teacher", "d.wafula", [("9 West", None), ("8 East", "Social Studies"), ("7 West", "Agriculture")]),
 ]
+DEMO_STREETS = ["Ngong Road", "Kilimani Road", "Mombasa Road", "Thika Road", "Langata Road", "Jogoo Road",
+                "Waiyaki Way", "Kiambu Road"]
+DEMO_OCCUPATIONS = ["Teacher", "Nurse", "Farmer", "Accountant", "Driver", "Trader", "Engineer", "Mechanic",
+                    "Civil servant", "Shopkeeper", "Doctor", "Tailor", "Banker", "Chef", ""]
 COMMENTS = {
     "high": "{name} has had an excellent term, working with real focus and helping classmates along the way. "
             "Results in {best} were outstanding. Keep challenging yourself with the extension work.",
@@ -257,7 +261,22 @@ class Command(BaseCommand):
             u = user(f"parent{parent_n:03d}", pname)
             u.last_login = now - timedelta(days=rng.randint(0, 20)) if rng.random() < 0.8 else None
             u.save(update_fields=["last_login"])
-            g = Guardian.objects.create(user=u, school=school, display_name=pname)
+            # Contact details use a separate random stream so the rest of the
+            # demo data stays the same. Phone numbers start +254 000, which no
+            # real line uses, so nobody can ring a stranger from the demo.
+            crng = random.Random(parent_n)
+            g = Guardian.objects.create(
+                user=u, school=school, display_name=pname,
+                phone=f"+254 000 {crng.randint(100, 999)} {crng.randint(100, 999)}",
+                phone_alt=f"+254 000 {crng.randint(100, 999)} {crng.randint(100, 999)}" if crng.random() < 0.4 else "",
+                relationship=("mother" if female else "father") if crng.random() < 0.85 else
+                crng.choice(["guardian", "grandparent", "other"]),
+                address=f"{crng.choice(['House', 'Plot', 'Flat'])} {crng.randint(1, 90)}, "
+                        f"{crng.choice(DEMO_STREETS)}, Nairobi",
+                occupation=crng.choice(DEMO_OCCUPATIONS),
+                preferred_contact=crng.choice(["call", "call", "sms", "whatsapp", "whatsapp", "email"]),
+                admin_note="Second contact collects the children on Fridays." if crng.random() < 0.08 else "",
+            )
             kids = [child]
             if rng.random() < 0.15 and i + 1 < len(linked):  # a sibling
                 i += 1

@@ -61,12 +61,13 @@ def class_list_xlsx(students):
         rows.append([
             s.external_id, s.last_name, s.first_name, GENDERS.get(s.gender, ""), s.date_of_birth,
             s.house, MODES.get(s.mode_of_learning, ""), s.enrolled_on, "Active" if s.is_active else "Inactive",
-            "; ".join(g.name for g in parents), "; ".join(g.user.email for g in parents), s.medical_notes,
+            "; ".join(g.name for g in parents), "; ".join(g.user.email for g in parents),
+            "; ".join(g.phone for g in parents if g.phone), s.medical_notes,
         ])
     ws = _sheet(wb, "Class list", [
         "Admission no.", "Last name", "First name", "Gender", "Date of birth", "House", "Mode of learning",
-        "Admission date", "Status", "Parents", "Parent emails", "Health notes",
-    ], rows, widths={"Parents": 28, "Parent emails": 32, "Health notes": 40})
+        "Admission date", "Status", "Parents", "Parent emails", "Parent phones", "Health notes",
+    ], rows, widths={"Parents": 28, "Parent emails": 32, "Parent phones": 22, "Health notes": 40})
     for row in ws.iter_rows(min_row=2):
         for cell in (row[4], row[7]):
             cell.number_format = "yyyy-mm-dd"

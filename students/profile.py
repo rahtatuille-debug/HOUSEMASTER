@@ -118,11 +118,20 @@ def build_profile(student, user):
     }
 
     # Parents with accounts, and invites that haven't been accepted yet.
-    parents = [
-        {"name": g.name, "email": g.user.email, "is_active": g.user.is_active,
-         "last_login": g.user.last_login, "user_id": g.user_id}
-        for g in student.guardians.select_related("user")
-    ]
+    # Everyone who can see the student sees how to reach the parents; the
+    # address, occupation and admin note are for admins only.
+    admin = is_admin(user)
+    parents = []
+    for g in student.guardians.select_related("user"):
+        parent = {
+            "id": g.id, "name": g.name, "email": g.user.email, "is_active": g.user.is_active,
+            "last_login": g.user.last_login, "user_id": g.user_id,
+            "phone": g.phone, "phone_alt": g.phone_alt, "relationship": g.relationship,
+            "preferred_contact": g.preferred_contact,
+        }
+        if admin:
+            parent.update(address=g.address, occupation=g.occupation, admin_note=g.admin_note)
+        parents.append(parent)
     pending_invites = [
         {"name": inv.name, "email": inv.email, "status": inv.status}
         for inv in GuardianInvite.objects.filter(students=student, accepted_at__isnull=True)
