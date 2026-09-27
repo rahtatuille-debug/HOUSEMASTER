@@ -270,3 +270,7 @@ def writing_context(school):
         f"\"{words['term'].lower()}\". Write in {spelling}."
     )
     return "\n".join(lines)
+
+
+# CBC senior school pathways (Grades 10 to 12).
+PATHWAYS = {"cbc": ["STEM", "Social Sciences", "Arts and Sports Science"]}

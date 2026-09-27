@@ -9,6 +9,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, StudentViewSet, promote_students
 from gradebook.views import AssessmentTypeViewSet, SubjectViewSet, TermViewSet, GradeViewSet
 from gradebook.subject_report_views import class_subject_reports
+from gradebook.choices import class_subject_choices
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
 from communications.views import AnnouncementViewSet, UrgentAlertViewSet
@@ -78,6 +79,7 @@ urlpatterns = [
     path('api/schools/register/', register_school, name='register_school'),
     path('api/setup/', setup_state, name='setup_state'),
     path('api/subject-reports/', class_subject_reports, name='class_subject_reports'),
+    path('api/subject-choices/', class_subject_choices, name='class_subject_choices'),
     path('api/setup/finish/', finish_setup, name='finish_setup'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),

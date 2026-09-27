@@ -30,11 +30,17 @@ class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSeriali
             "id", "school", "school_class", "external_id",
             "first_name", "last_name", "house", "enrolled_on", "is_active",
             "gender", "date_of_birth", "nationality", "mode_of_learning", "medical_notes",
-            "has_photo", "photo_updated_at",
+            "has_photo", "photo_updated_at", "pathway", "subject_choices",
         ]
-        extra_kwargs = {"school": {"read_only": True}, "photo_updated_at": {"read_only": True}}
+        extra_kwargs = {"school": {"read_only": True}, "photo_updated_at": {"read_only": True},
+                        "pathway": {"read_only": True}}
 
     has_photo = serializers.SerializerMethodField()
+    # Electives chosen and IB levels; changed through the class subject choices grid.
+    subject_choices = serializers.SerializerMethodField()
+
+    def get_subject_choices(self, obj):
+        return [{"subject": c.subject_id, "level": c.level} for c in obj.subject_choices.all()]
 
     def get_has_photo(self, obj):
         return obj.photo_updated_at is not None

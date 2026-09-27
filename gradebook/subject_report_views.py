@@ -51,8 +51,10 @@ def class_subject_reports(request):
     """
     data = request.query_params if request.method == "GET" else request.data
     term, subject, school_class = _lookup(request, data)
-    students = list(visible_students(request.user).filter(school_class=school_class, is_active=True)
-                    .order_by("last_name", "first_name"))
+    students = visible_students(request.user).filter(school_class=school_class, is_active=True)
+    if subject.is_elective:
+        students = students.filter(subject_choices__subject=subject)
+    students = list(students.order_by("last_name", "first_name"))
     if request.method == "GET":
         entries = {e.student_id: e for e in SubjectReport.objects.filter(term=term, subject=subject, student__in=students)}
         return Response({"fields": SUBJECT_FIELDS.get(request.user.profile.school.education_system, []),

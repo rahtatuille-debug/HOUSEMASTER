@@ -6,7 +6,7 @@ from .models import AssessmentType, Subject, Term, Grade
 class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
-        fields = ["id", "school", "name", "credits"]
+        fields = ["id", "school", "name", "credits", "is_elective"]
         extra_kwargs = {"school": {"read_only": True}}
 
 

@@ -8,6 +8,7 @@ from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
 
+from .choices import check_takes
 from .locks import check_term_open
 
 from .models import AssessmentType, Subject, Term, Grade
@@ -114,6 +115,7 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         check_term_open(serializer.validated_data["term"])
         check_can_grade(self.request.user, serializer.validated_data["student"],
                         serializer.validated_data["subject"])
+        check_takes(serializer.validated_data["student"], serializer.validated_data["subject"])
         grade = serializer.save()
         log_activity(
             school=self.get_school(), actor=self.request.user, action="grade.created", target=grade,
@@ -130,6 +132,8 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         self.check_belongs_to_school(term.school, "term")
         check_can_grade(self.request.user, serializer.instance.student, serializer.instance.subject)
         check_can_grade(self.request.user, student, subject)
+        if (student, subject) != (serializer.instance.student, serializer.instance.subject):
+            check_takes(student, subject)
         check_term_open(serializer.instance.term)
         check_term_open(term)
         old = f"{serializer.instance.score}/{serializer.instance.max_score}"

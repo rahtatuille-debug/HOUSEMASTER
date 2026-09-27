@@ -175,8 +175,8 @@ def _results_table(pdf, school, summary, words):
         widths = (40, 20, 16, 17, 16, 65)
     elif system == "ib":
         head = [subject, "A", "B", "C", "D", "Grade", "Comment"]
-        body = [[r["subject"], *[r["criteria"].get(c, "—") for c in "ABCD"], r["ib_grade"] or "—", r["comment"]]
-                for r in rows]
+        body = [[f'{r["subject"]} {r["subject_level"]}'.strip(), *[r["criteria"].get(c, "—") for c in "ABCD"],
+                 r["ib_grade"] or "—", r["comment"]] for r in rows]
         widths = (42, 11, 11, 11, 11, 16, 72)
     elif system == "british":
         head = [subject, "Percent", "Grade", "Effort", "Target", "Comment"]
@@ -312,6 +312,8 @@ def reports_pdf(school, students, term):
             details.append(f"{words['class']}: {klass.year_group.name} · {klass.name}")
         if s.external_id:
             details.append(f"{words['student_id']}: {s.external_id}")
+        if s.pathway:
+            details.append(f"Pathway: {s.pathway}")
         pdf.cell(0, 7, "   |   ".join(details), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 

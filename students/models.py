@@ -90,6 +90,9 @@ class Student(models.Model):
     house = models.CharField(max_length=100, blank=True)
     enrolled_on = models.DateField(null=True, blank=True, verbose_name="admission date")
     is_active = models.BooleanField(default=True)
+    pathway = models.CharField(
+        max_length=60, blank=True, help_text="CBC senior school pathway, e.g. STEM. See students.presets.PATHWAYS.",
+    )
 
     class Gender(models.TextChoices):
         FEMALE = "female", "Female"

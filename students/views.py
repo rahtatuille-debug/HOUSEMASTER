@@ -82,7 +82,7 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
     Deactivating (is_active=False) is the everyday way to remove a student.
     """
 
-    queryset = Student.objects.all()
+    queryset = Student.objects.prefetch_related("subject_choices")
     serializer_class = StudentSerializer
     filterset_fields = ["school", "school_class", "is_active"]
     school_lookup = "school"

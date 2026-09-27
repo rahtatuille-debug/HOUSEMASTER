@@ -7,6 +7,8 @@ class Subject(models.Model):
     name = models.CharField(max_length=100)
     # Weight in a GPA (American schools); everyone else can leave it at 1.
     credits = models.DecimalField(max_digits=4, decimal_places=1, default=1)
+    # Core subjects are taken by everyone; an elective only by students who chose it.
+    is_elective = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("school", "name")
@@ -91,3 +93,25 @@ class SubjectReport(models.Model):
 
     def __str__(self):
         return f"{self.student} - {self.subject} ({self.term})"
+
+
+class StudentSubject(models.Model):
+    """
+    A student's choice of an elective, or the level they take a subject at
+    (IB Higher or Standard Level). A student takes every core subject plus
+    the electives they have a row for. See gradebook.choices.
+    """
+    class Level(models.TextChoices):
+        NONE = "", "—"
+        HL = "HL", "Higher Level"
+        SL = "SL", "Standard Level"
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="subject_choices")
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="student_choices")
+    level = models.CharField(max_length=2, choices=Level.choices, blank=True)
+
+    class Meta:
+        unique_together = ("student", "subject")
+
+    def __str__(self):
+        return f"{self.student} takes {self.subject}{f' ({self.level})' if self.level else ''}"

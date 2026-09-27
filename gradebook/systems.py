@@ -20,6 +20,7 @@ A subject's percentage for the term is the mean of its marks, as elsewhere.
 from collections import defaultdict
 
 from .levels import level_for
+from .choices import levels_for
 from .models import Grade, SubjectReport
 from .weighting import school_weights, subject_percents
 
@@ -109,6 +110,7 @@ def term_summary(student, term):
     entries = {r.subject_id: r for r in SubjectReport.objects.filter(student=student, term=term).select_related("subject")}
     subjects = sorted(set(percents) | {r.subject for r in entries.values()}, key=lambda s: s.name)
 
+    levels = levels_for(student)
     rows = []
     for subject in subjects:
         percent = percents.get(subject)
@@ -119,6 +121,7 @@ def term_summary(student, term):
             "level": level_for(percent, scale),
             "comment": entry.comment if entry else "", "effort": entry.effort if entry else "",
             "target": entry.target if entry else "",
+            "subject_level": levels.get(subject.id, ""),
         }
         if system == "844":
             code = level_for(percent, "kcse")
@@ -132,7 +135,7 @@ def term_summary(student, term):
                                                                        if percent is not None else None))
         rows.append(row)
 
-    summary = {"system": system, "subjects": rows}
+    summary = {"system": system, "subjects": rows, "pathway": student.pathway}
     average = _mean(percents.values())
     summary["average"] = round(average, 1) if average is not None else None
     summary["average_level"] = level_for(average, scale)
