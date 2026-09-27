@@ -173,6 +173,12 @@ def _results_table(pdf, school, summary, words):
         body = [[r["subject"], _pct(r["percent"]), r["letter"] or "—", f"{r['credits']:g}",
                  r["gpa_points"] if r["gpa_points"] is not None else "—", r["comment"]] for r in rows]
         widths = (40, 20, 16, 17, 16, 65)
+    elif system == "ib" and not any(r["criteria"] for r in rows):
+        # Diploma Programme students are graded 1 to 7 from their marks, without MYP criteria.
+        head = [subject, "Percent", "Grade", "Comment"]
+        body = [[f'{r["subject"]} {r["subject_level"]}'.strip(), _pct(r["percent"]), r["ib_grade"] or "—", r["comment"]]
+                for r in rows]
+        widths = (50, 20, 18, 86)
     elif system == "ib":
         head = [subject, "A", "B", "C", "D", "Grade", "Comment"]
         body = [[f'{r["subject"]} {r["subject_level"]}'.strip(), *[r["criteria"].get(c, "—") for c in "ABCD"],

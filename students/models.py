@@ -47,6 +47,8 @@ class School(models.Model):
     # {"term": "Quarter", "terms": "Quarters"}. See students.presets.school_vocab.
     vocab_overrides = models.JSONField(default=dict, blank=True)
     setup_completed_at = models.DateTimeField(null=True, blank=True)
+    # The admin hid the first-week checklist on the home page.
+    checklist_hidden = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

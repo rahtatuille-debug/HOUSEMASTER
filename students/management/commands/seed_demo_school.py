@@ -1,5 +1,7 @@
 """
-Create "HouseMaster Demo Academy": a complete, realistic school for demos.
+Create "HouseMaster Demo Academy": a complete, realistic CBC school for demos,
+and one smaller demo school for each other system (8-4-4, British, IB and
+American; see students/demo_systems.py).
 
 It fills every part of the app: staff, teaching assignments, about 150
 students over three year groups, parents, three terms of grades (the
@@ -7,9 +9,9 @@ current term partly graded), recent attendance, reports at every stage,
 announcements, messages, an urgent alert, an approval request, invites,
 a locked term and activity history.
 
-Safe to run on every deploy (e.g. in Render's build command): if the demo
-school already exists it does nothing, unless --reset is given, which
-deletes and rebuilds the demo school and its demo accounts only.
+Safe to run on every deploy (e.g. in Render's build command): it creates any
+demo school that is missing and leaves the others alone, unless --reset is
+given, which deletes and rebuilds the demo schools and their demo accounts only.
 
 Demo logins all end in @housemaster-demo.example (a reserved domain, so no
 email ever reaches a real person) and share the password in the
@@ -110,7 +112,7 @@ def _weekdays(start, end):
 
 
 class Command(BaseCommand):
-    help = "Create the HouseMaster Demo Academy with realistic data (skips if it exists; --reset rebuilds it)."
+    help = "Create the demo schools with realistic data (skips any that exist; --reset rebuilds them)."
 
     def add_arguments(self, parser):
         parser.add_argument("--reset", action="store_true", help="Delete and rebuild the demo school.")
@@ -126,11 +128,33 @@ class Command(BaseCommand):
         existing = School.objects.filter(name=SCHOOL_NAME).first()
         if existing and not options["reset"]:
             self.stdout.write(f"{SCHOOL_NAME} already exists; nothing to do (use --reset to rebuild it).")
-            return
-        with transaction.atomic():
-            if existing:
-                self._delete(existing)
-            self._build(password)
+        else:
+            with transaction.atomic():
+                if existing:
+                    self._delete(existing)
+                self._build(password)
+        self._system_demos(password, options["reset"])
+
+    def _system_demos(self, password, reset):
+        """The 8-4-4, British, IB and American demo schools, each created if it's missing."""
+        from students import demo_systems
+
+        password_hash = None
+        for spec in demo_systems.DEMOS:
+            existing = School.objects.filter(name=spec["name"]).first()
+            if existing and not reset:
+                self.stdout.write(f"{spec['name']} already exists; nothing to do.")
+                continue
+            with transaction.atomic():
+                if existing:
+                    users = demo_systems.demo_users(spec)
+                    if users.exclude(profile__school=existing).exclude(guardian__school=existing) \
+                            .exclude(profile__isnull=True, guardian__isnull=True).exists():
+                        raise CommandError(f"Some {spec['name']} accounts belong to another school; refusing to delete.")
+                    existing.delete()
+                    users.delete()
+                password_hash = password_hash or make_password(password)
+                self.stdout.write(self.style.SUCCESS(demo_systems.build(spec, password_hash)))
 
     def _delete(self, school):
         # Only the demo school and accounts on the demo domain are touched.

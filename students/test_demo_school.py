@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 
 from accounts.tests import SchoolScopedAPITestCase
 from gradebook.models import Grade
+from reporting.models import StudentReport
 
 from .management.commands.seed_demo_school import DOMAIN, SCHOOL_NAME
 from .models import School, Student
@@ -81,6 +82,54 @@ class DemoSchoolTests(SchoolScopedAPITestCase):
         first_id = School.objects.get(name=SCHOOL_NAME).id
         self.assertIn("Deleted the old", run("--reset"))
         self.assertNotEqual(School.objects.get(name=SCHOOL_NAME).id, first_id)
+
+
+class SystemDemoTests(SchoolScopedAPITestCase):
+    """The 8-4-4, British, IB and American demo schools."""
+    login = DemoSchoolTests.login
+
+    def test_one_demo_school_per_system_each_in_its_own_style(self):
+        from .demo_systems import DEMOS, domain
+
+        run()
+        self.assertEqual(set(School.objects.filter(name__startswith="HouseMaster Demo")
+                             .values_list("education_system", flat=True)), {"cbc", "844", "british", "ib", "american"})
+        markers = {"844": "mean_grade", "british": "subjects", "ib": "ib_total", "american": "gpa"}
+        for spec in DEMOS:
+            school = School.objects.get(name=spec["name"])
+            admin = self.login(f"principal@{domain(spec)}")
+            me = admin.get("/api/me/").data
+            self.assertEqual((me["school"]["name"], me["role"]), (spec["name"], "admin"))
+            students = admin.get("/api/students/").data
+            self.assertEqual(len(students), Student.objects.filter(school=school).count())
+            # Each demo school sees only its own students.
+            self.assertTrue(all(s["school"] == school.id for s in students))
+            parent = self.login(f"parent@{domain(spec)}")
+            child = parent.get("/api/guardian-students/").data[0]
+            report = StudentReport.objects.get(student_id=child["id"], status="finalized")
+            summary = admin.get(f"/api/students/{child['id']}/term-summary/", {"term": report.term_id}).data
+            self.assertEqual(summary["system"], spec["key"])
+            self.assertIsNotNone(summary.get(markers[spec["key"]]), spec["key"])
+            teacher = self.login(f"{spec['staff'][1][1]}@{domain(spec)}")
+            self.assertGreater(len(teacher.get("/api/me/").data["assignments"]), 0)
+        # Finalized report cards download as PDFs.
+        ib = School.objects.get(name="HouseMaster Demo IB School")
+        report = StudentReport.objects.filter(student__school=ib, status="finalized").first()
+        pdf = self.login(f"principal@ib.{DOMAIN}").get("/api/exports/reports/", {
+            "school_class": report.student.school_class_id, "term": report.term_id})
+        self.assertTrue(pdf.content.startswith(b"%PDF"))
+
+    def test_missing_demo_schools_are_added_and_reset_rebuilds_them(self):
+        run()
+        School.objects.filter(name="HouseMaster Demo IB School").delete()
+        User.objects.filter(email__iendswith=f"@ib.{DOMAIN}").delete()
+        out = run()
+        self.assertIn("Created HouseMaster Demo IB School", out)
+        self.assertIn("HouseMaster Demo Secondary already exists", out)
+        before = School.objects.get(name="HouseMaster Demo Secondary").id
+        run("--reset")
+        self.assertNotEqual(School.objects.get(name="HouseMaster Demo Secondary").id, before)
+        self.assertEqual(School.objects.filter(name__startswith="HouseMaster Demo").count(), 5)
 
 
 class DemoAfterMigrateTests(SchoolScopedAPITestCase):

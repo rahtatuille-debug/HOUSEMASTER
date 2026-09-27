@@ -310,3 +310,49 @@ def add_section(request):
             **created,
         )
     return Response({"created": created}, status=201)
+
+
+class PreviewReportSerializer(serializers.Serializer):
+    """The wizard's answers so far; only the education system is needed."""
+    education_system = serializers.ChoiceField(choices=list(SYSTEMS))
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    motto = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    address = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    email = serializers.CharField(max_length=254, required=False, allow_blank=True, default="")
+    country = serializers.ChoiceField(choices=list(COUNTRIES), required=False)
+    grading_scale = serializers.ChoiceField(choices=list(SCALES), required=False)
+    report_tone = serializers.ChoiceField(choices=[c[0] for c in School._meta.get_field("report_tone").choices],
+                                          required=False)
+    year_groups = _YearGroupSerializer(many=True, required=False)
+    subjects = serializers.ListField(child=serializers.CharField(max_length=100), max_length=200, required=False)
+    terms = _TermSerializer(many=True, required=False)
+    vocab_overrides = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False)
+
+    def validate_vocab_overrides(self, value):
+        return FinishSetupSerializer.validate_vocab_overrides(self, value)
+
+
+class PreviewThrottle(SimpleRateThrottle):
+    scope = "report_preview"
+    rate = "30/hour"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+@throttle_classes([PreviewThrottle])
+def preview_report_card(request):
+    """A sample report card (PDF) for a made-up student, in the style chosen in the wizard so far. Nothing is saved."""
+    from django.http import HttpResponse
+
+    from reporting.preview import sample_report_pdf
+
+    data = PreviewReportSerializer(data=request.data)
+    data.is_valid(raise_exception=True)
+    pdf = sample_report_pdf(data.validated_data)
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = 'inline; filename="sample-report-card.pdf"'
+    return response

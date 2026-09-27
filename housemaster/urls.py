@@ -22,7 +22,8 @@ from guardians.views import (
     guardian_me,
 )
 from messaging.views import ConversationViewSet
-from students.setup_views import add_section, finish_setup, register_school, setup_state
+from students.setup_views import add_section, finish_setup, preview_report_card, register_school, setup_state
+from students.checklist import first_week_checklist
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
@@ -82,6 +83,8 @@ urlpatterns = [
     path('api/subject-choices/', class_subject_choices, name='class_subject_choices'),
     path('api/setup/finish/', finish_setup, name='finish_setup'),
     path('api/setup/add-section/', add_section, name='add_section'),
+    path('api/setup/preview-report/', preview_report_card, name='preview_report_card'),
+    path('api/checklist/', first_week_checklist, name='first_week_checklist'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),
     path('api/exports/attendance/', export_attendance, name='export_attendance'),
