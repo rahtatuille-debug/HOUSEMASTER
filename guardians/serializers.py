@@ -128,6 +128,7 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
         )
         guardian = Guardian.objects.create(
             user=user, school=invite.school, display_name=display_name, privacy_accepted_at=timezone.now(),
+            phone=invite.phone, relationship=invite.relationship,
         )
         guardian.students.set(invite.students.all())
         invite.accepted_at = timezone.now()

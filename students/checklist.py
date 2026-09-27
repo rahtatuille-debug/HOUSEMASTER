@@ -105,9 +105,10 @@ def checklist(school):
               "Add them by hand or import a class list from Excel in Setup.",
               Student.objects.filter(school=school).exists(), "setup"),
         _step("invite_parents", "Invite parents",
-              "Parents get their own login to see reports, results and messages.",
+              "Share a sign-up link with each class, or invite parents one by one.",
               Guardian.objects.filter(school=school).exists()
-              or GuardianInvite.objects.filter(school=school).exists(), "parents"),
+              or GuardianInvite.objects.filter(school=school).exists()
+              or school.signup_links.exists(), "parents"),
         _step("attendance", "Take the first register", f"Mark attendance for a {words['class'].lower()}.",
               AttendanceRecord.objects.filter(student__school=school).exists(), "attendance"),
         _step("marks", "Record the first marks",

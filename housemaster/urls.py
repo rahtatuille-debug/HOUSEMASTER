@@ -24,6 +24,7 @@ from guardians.views import (
 from messaging.views import ConversationViewSet
 from students.setup_views import add_section, finish_setup, preview_report_card, register_school, setup_state
 from students.checklist import first_week_checklist
+from guardians.signup import join, signup_links, signup_requests
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
@@ -96,5 +97,8 @@ urlpatterns = [
     path('api/guardian-invites/preview/<str:token>/', GuardianInvitePreviewView.as_view(), name='guardian_invite_preview'),
     path('api/guardian-invites/accept/', AcceptGuardianInviteView.as_view(), name='guardian_invite_accept'),
     path('api/guardian-me/', guardian_me, name='guardian_me'),
+    path('api/join/<str:token>/', join, name='parent_join'),
+    path('api/signup-links/', signup_links, name='signup_links'),
+    path('api/signup-requests/', signup_requests, name='signup_requests'),
     path('api/', include(router.urls)),
 ]

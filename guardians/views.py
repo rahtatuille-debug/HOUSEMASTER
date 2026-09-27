@@ -13,6 +13,7 @@ from accounts.emails import send_admin_password_reset
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
+from .invite_emails import send_invite_email
 from .models import Guardian, GuardianInvite
 from .permissions import IsGuardian
 from .serializers import (
@@ -47,6 +48,7 @@ class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             summary=f"Invited parent {invite.name} ({invite.email}) for {children}",
             email=invite.email, students=[s.id for s in invite.students.all()],
         )
+        send_invite_email(invite)
 
     @action(detail=True, methods=["post"])
     def renew(self, request, pk=None):
@@ -54,6 +56,7 @@ class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         if invite.is_accepted:
             raise ValidationError("This invite has already been accepted.")
         invite.renew()
+        send_invite_email(invite)
         log_activity(
             school=invite.school, actor=request.user, action="parent_invite.renewed", target=invite,
             summary=f"Renewed the parent invite for {invite.name} ({invite.email}) with a new link",

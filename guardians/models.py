@@ -104,6 +104,9 @@ class GuardianInvite(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="guardian_invite_accepted",
     )
+    # Filled in from a class sign-up request, and copied onto the parent's account.
+    phone = models.CharField(max_length=30, blank=True)
+    relationship = models.CharField(max_length=20, choices=Guardian.Relationship.choices, blank=True)
 
     def renew(self):
         """Give an unaccepted invite a new link and a fresh 7 days. The old link stops working."""
@@ -129,3 +132,54 @@ class GuardianInvite(models.Model):
 
     def __str__(self):
         return f"Guardian invite to {self.school} ({self.status})"
+
+
+class ClassSignupLink(models.Model):
+    """
+    One shareable link for a class (e.g. posted in the class WhatsApp group).
+    A parent who opens it asks to join by giving their details and their
+    child's admission number. Nothing is created until an admin approves the
+    request, because an admission number alone doesn't prove who someone is.
+    """
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="signup_links")
+    school_class = models.OneToOneField("students.SchoolClass", on_delete=models.CASCADE, related_name="signup_link")
+    token = models.CharField(max_length=64, unique=True, default=_generate_token, editable=False)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name="signup_links_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def renew(self):
+        """A new link; the old one stops working."""
+        self.token = _generate_token()
+        self.is_active = True
+        self.save(update_fields=["token", "is_active"])
+
+
+class ParentSignupRequest(models.Model):
+    """A parent asking to join through a class sign-up link, waiting for an admin."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Turned down"
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="signup_requests")
+    school_class = models.ForeignKey("students.SchoolClass", on_delete=models.CASCADE, related_name="signup_requests")
+    name = models.CharField(max_length=255)
+    email = models.EmailField()
+    phone = models.CharField(max_length=30, blank=True)
+    relationship = models.CharField(max_length=20, choices=Guardian.Relationship.choices, blank=True)
+    admission_number = models.CharField(max_length=50)
+    # The student with that admission number at this school, if there is one.
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, null=True, blank=True,
+                                related_name="signup_requests")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="signup_requests_decided")
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
