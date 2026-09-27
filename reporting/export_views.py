@@ -31,8 +31,8 @@ def _class(request):
 
 
 def _words(request):
-    from students.presets import vocab
-    return vocab(request.user.profile.school.education_system)
+    from students.presets import school_vocab
+    return school_vocab(request.user.profile.school)
 
 
 def _term(request):

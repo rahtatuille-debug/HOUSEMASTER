@@ -10,7 +10,7 @@ import os
 from gradebook.models import Grade
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for
-from students.presets import vocab, writing_context
+from students.presets import school_vocab, writing_context
 
 from .models import StudentReport
 
@@ -33,7 +33,7 @@ def _build_student_context(student, term):
     ) if term.start_date and term.end_date else AttendanceRecord.objects.none()
 
     scale = student.school.grading_scale
-    words = vocab(student.school.education_system)
+    words = school_vocab(student.school)
 
     def line(g):
         percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None

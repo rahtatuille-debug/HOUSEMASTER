@@ -161,6 +161,15 @@ class FinishSetupSerializer(serializers.Serializer):
     terms = _TermSerializer(many=True)
     grading_scale = serializers.ChoiceField(choices=list(SCALES))
     assessments = _AssessmentSerializer(many=True, required=False, default=list)
+    vocab_overrides = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False, default=dict)
+
+    def validate_vocab_overrides(self, value):
+        from .presets import clean_vocab_overrides
+
+        try:
+            return clean_vocab_overrides(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
     report_tone = serializers.ChoiceField(choices=[c[0] for c in School._meta.get_field("report_tone").choices])
 
     def validate_year_groups(self, value):
@@ -203,8 +212,13 @@ def finish_setup(request):
                       "grading_scale", "report_tone"):
             setattr(school, field, v[field].strip() if isinstance(v[field], str) else v[field])
         school.name = " ".join(v["name"].split())
-        for group in v["year_groups"]:
-            year_group, made = YearGroup.objects.get_or_create(school=school, name=" ".join(group["name"].split()))
+        school.vocab_overrides = v["vocab_overrides"]
+        last = len(v["year_groups"]) - 1
+        for order, group in enumerate(v["year_groups"]):
+            # In the order given, youngest first; the last is the final (graduating) year.
+            year_group, made = YearGroup.objects.update_or_create(
+                school=school, name=" ".join(group["name"].split()),
+                defaults={"order": order, "is_final": order == last})
             created["year_groups"] += made
             for class_name in group["classes"]:
                 _, made = SchoolClass.objects.get_or_create(year_group=year_group, name=class_name)

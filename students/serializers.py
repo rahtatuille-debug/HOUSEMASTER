@@ -6,14 +6,22 @@ from .models import School, YearGroup, SchoolClass, Student
 class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
-        fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "motto",
+        fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "vocab_overrides", "motto",
                   "address", "phone", "email", "created_at"]
+
+    def validate_vocab_overrides(self, value):
+        from .presets import clean_vocab_overrides
+
+        try:
+            return clean_vocab_overrides(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
 
 class YearGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = YearGroup
-        fields = ["id", "school", "name"]
+        fields = ["id", "school", "name", "order", "is_final"]
         extra_kwargs = {"school": {"read_only": True}}
 
 

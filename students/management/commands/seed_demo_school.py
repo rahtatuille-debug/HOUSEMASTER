@@ -164,7 +164,7 @@ class Command(BaseCommand):
         # --- structure
         years, classes = {}, {}
         for grade in (7, 8, 9):
-            years[grade] = YearGroup.objects.create(school=school, name=f"Grade {grade}")
+            years[grade] = YearGroup.objects.create(school=school, name=f"Grade {grade}", order=grade, is_final=grade == 9)
             for stream in ("East", "West"):
                 classes[f"{grade} {stream}"] = SchoolClass.objects.create(
                     year_group=years[grade], name=f"{grade} {stream}")

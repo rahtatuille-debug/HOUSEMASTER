@@ -43,6 +43,9 @@ class School(models.Model):
     # The setup wizard: a school can't use the app until its first admin
     # finishes it. Their choices so far are kept so they can come back later.
     setup_progress = models.JSONField(default=dict, blank=True)
+    # The school's own words where they differ from its system's, e.g.
+    # {"term": "Quarter", "terms": "Quarters"}. See students.presets.school_vocab.
+    vocab_overrides = models.JSONField(default=dict, blank=True)
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -54,6 +57,10 @@ class YearGroup(models.Model):
     """A year/grade level within a school, e.g. 'Year 7', 'Grade 9'."""
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="year_groups")
     name = models.CharField(max_length=100)
+    # Year groups in the order students move through them, and whether this is
+    # the school's last year (its students graduate at the end of the year).
+    order = models.PositiveSmallIntegerField(default=0)
+    is_final = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("school", "name")
@@ -90,6 +97,7 @@ class Student(models.Model):
     house = models.CharField(max_length=100, blank=True)
     enrolled_on = models.DateField(null=True, blank=True, verbose_name="admission date")
     is_active = models.BooleanField(default=True)
+    graduated_on = models.DateField(null=True, blank=True, help_text="Set when they leave from a final year.")
     pathway = models.CharField(
         max_length=60, blank=True, help_text="CBC senior school pathway, e.g. STEM. See students.presets.PATHWAYS.",
     )

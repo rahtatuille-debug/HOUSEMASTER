@@ -19,7 +19,7 @@ from attendance.models import AttendanceRecord
 from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
 from gradebook.weighting import school_weights, subject_percents
-from students.presets import DEFAULT_VOCAB, vocab
+from students.presets import DEFAULT_VOCAB, school_vocab
 
 from .models import StudentReport
 
@@ -263,7 +263,7 @@ def reports_pdf(school, students, term):
     """One page per student with a finalized report for the term, in the school's system. Returns (bytes, count)."""
     from gradebook.systems import term_summary
 
-    words = vocab(school.education_system)
+    words = school_vocab(school)
     system = school.education_system
     reports = {
         r.student_id: r

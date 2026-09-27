@@ -11,6 +11,8 @@ from datetime import date
 KENYA_TERMS = [("Term 1", (1, 6), (4, 3)), ("Term 2", (4, 28), (8, 1)), ("Term 3", (8, 25), (10, 30))]
 UK_TERMS = [("Autumn term", (9, 3), (12, 12)), ("Spring term", (1, 6), (3, 27)), ("Summer term", (4, 20), (7, 10))]
 US_TERMS = [("Fall semester", (8, 25), (12, 19)), ("Spring semester", (1, 12), (5, 29))]
+US_QUARTERS = [("Quarter 1", (8, 25), (10, 24)), ("Quarter 2", (10, 27), (12, 19)), ("Quarter 3", (1, 12), (3, 13)),
+               ("Quarter 4", (3, 23), (5, 29))]
 
 SYSTEMS = {
     "cbc": {
@@ -136,10 +138,10 @@ SYSTEMS = {
 }
 
 
-def suggested_terms(system, today=None):
+def suggested_terms(system, today=None, terms=None):
     """This school year's terms for a system, with the usual dates, as [{name, start_date, end_date}]."""
     today = today or date.today()
-    terms = SYSTEMS[system]["terms"]
+    terms = terms or SYSTEMS[system]["terms"]
     if SYSTEMS[system]["year_starts"] == "january":
         years = [today.year] * len(terms)
         label = str(today.year)
@@ -173,7 +175,10 @@ def catalogue(today=None):
         "systems": [
             {"key": key, "name": s["name"], "country": s["country"], "description": s["description"],
              "stages": s["stages"], "terms": suggested_terms(key, today), "scales": s["scales"],
-             "assessments": [{"name": n, "weight": w} for n, w in s["assessments"]]}
+             "assessments": [{"name": n, "weight": w} for n, w in s["assessments"]],
+             # American schools can use four quarters instead of two semesters.
+             "alternative_terms": ({"label": "Quarters", "terms": suggested_terms(key, today, US_QUARTERS),
+                                    "vocab": {"term": "Quarter", "terms": "Quarters"}} if key == "american" else None)}
             for key, s in SYSTEMS.items()
         ],
         "scales": [{"key": k, "label": v, "key_text": levels_key(k)} for k, v in SCALE_LABELS.items()],
@@ -202,6 +207,28 @@ VOCAB = {
 
 def vocab(system):
     return VOCAB.get(system, DEFAULT_VOCAB)
+
+
+def school_vocab(school):
+    """The system's words with any the school has changed (e.g. Quarter instead of Semester)."""
+    overrides = {k: v for k, v in (school.vocab_overrides or {}).items() if k in DEFAULT_VOCAB and v}
+    return {**vocab(school.education_system), **overrides}
+
+
+def clean_vocab_overrides(value):
+    """Only known words, as short text. Raises ValueError otherwise."""
+    if not isinstance(value, dict):
+        raise ValueError("Send the words as an object.")
+    cleaned = {}
+    for key, word in value.items():
+        if key not in DEFAULT_VOCAB:
+            raise ValueError(f'"{key}" isn\'t a word that can be changed.')
+        word = " ".join(str(word or "").split())
+        if len(word) > 40:
+            raise ValueError("Words must be 40 characters or fewer.")
+        if word:
+            cleaned[key] = word
+    return cleaned
 
 
 # Where the school is, which decides the privacy law it follows and local formats.
@@ -261,7 +288,7 @@ REPORT_GUIDANCE = {
 
 def writing_context(school):
     """Instructions that tell the AI which system, words and spelling this school uses."""
-    words = vocab(school.education_system)
+    words = school_vocab(school)
     spelling = "American English" if school.country == "us" else "British English"
     lines = [REPORT_GUIDANCE[school.education_system]] if school.education_system in REPORT_GUIDANCE else []
     lines.append(

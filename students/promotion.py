@@ -7,6 +7,8 @@ the plan stay as they are. Every student's destination is worked out from
 the classes they're in *before* anyone moves, so swaps and chains
 (7A -> 8A while 8A -> 9A) are safe.
 """
+from datetime import date
+
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
@@ -44,7 +46,8 @@ def plan_promotion(school, moves):
 def summarize(plan):
     return [
         {"from_class": f.id, "from_name": f.name, "to_class": t.id if t else None,
-         "to_name": t.name if t else "Leaving school", "students": len(s)}
+         "to_name": t.name if t else ("Graduating" if f.year_group.is_final else "Leaving school"),
+         "students": len(s)}
         for f, t, s in plan
     ]
 
@@ -53,7 +56,11 @@ def summarize(plan):
 def apply_promotion(school, actor, plan):
     for from_class, to_class, students in plan:
         ids = [s.id for s in students]
-        if to_class is None:
+        if to_class is None and from_class.year_group.is_final:
+            # Leaving from the final year is graduating; their records stay.
+            Student.objects.filter(id__in=ids).update(is_active=False, graduated_on=date.today())
+            summary = f"Graduated {len(ids)} students from {from_class.name}"
+        elif to_class is None:
             Student.objects.filter(id__in=ids).update(is_active=False)
             summary = f"Marked {len(ids)} students in {from_class.name} as leaving school (deactivated)"
         else:
