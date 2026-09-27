@@ -33,6 +33,13 @@ class StudentReport(models.Model):
         max_length=50, blank=True,
         help_text="The School.report_tone value in effect when this was generated.",
     )
+    principal_comment = models.TextField(
+        blank=True, help_text="The head's remarks, printed on report cards that have them (e.g. 8-4-4). Admins only.",
+    )
+    extra = models.JSONField(
+        default=dict, blank=True,
+        help_text="Per-system ratings for the report card: CBC competencies and values, IB approaches to learning.",
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
     review_note = models.TextField(
         blank=True, help_text="An admin's note on what to change, set when a report is sent back."

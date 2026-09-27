@@ -230,6 +230,21 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         reports = student.reports.filter(status="finalized").select_related("term").order_by("-generated_at")
         return Response(GuardianReportSerializer(reports, many=True).data)
 
+    @action(detail=True, methods=["get"], url_path="term-summary")
+    def term_summary(self, request, pk=None):
+        """A child's results for a term, once the school has finalized that term's report."""
+        from gradebook.systems import term_summary
+
+        student = self.get_object()
+        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).first() \
+            if str(request.query_params.get("term", "")).isdigit() else None
+        if report is None:
+            raise NotFound("There's no finalized report for that term.")
+        summary = term_summary(student, report.term)
+        for row in summary["subjects"]:
+            row.pop("subject_id", None)
+        return Response(summary)
+
     @action(detail=True, methods=["get"], url_path="report-card")
     def report_card(self, request, pk=None):
         """The printable report card (PDF) for one finalized term report."""

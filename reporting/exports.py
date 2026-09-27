@@ -150,16 +150,123 @@ class _ReportPDF(FPDF):
         self.cell(0, 6, f"{self.school_name} · Page {self.page_no()}", align="C")
 
 
+NAVY, GOLD, INK, MUTED = (30, 47, 82), (184, 134, 46), (27, 35, 51), (110, 110, 110)
+HEAD_STYLE = FontFace(emphasis="BOLD", fill_color=(242, 237, 225))
+
+
+def _pct(value):
+    return f"{value:.0f}%" if value is not None else "—"
+
+
+def _results_table(pdf, school, summary, words):
+    """The results table for the school's system. Returns the summary line under it."""
+    system, rows = summary["system"], summary["subjects"]
+    subject = words["subject"]
+    if system == "844":
+        head = [subject, "Marks", "Grade", "Points", "Remarks"]
+        body = [[r["subject"], _pct(r["percent"]), r["kcse_grade"] or "—", r["points"] or "—", r["comment"]] for r in rows]
+        widths = (44, 20, 18, 18, 74)
+    elif system == "american":
+        head = [subject, "Percent", "Grade", "Credits", "Points", "Comment"]
+        body = [[r["subject"], _pct(r["percent"]), r["letter"] or "—", f"{r['credits']:g}",
+                 r["gpa_points"] if r["gpa_points"] is not None else "—", r["comment"]] for r in rows]
+        widths = (40, 20, 16, 17, 16, 65)
+    elif system == "ib":
+        head = [subject, "A", "B", "C", "D", "Grade", "Comment"]
+        body = [[r["subject"], *[r["criteria"].get(c, "—") for c in "ABCD"], r["ib_grade"] or "—", r["comment"]]
+                for r in rows]
+        widths = (42, 11, 11, 11, 11, 16, 72)
+    elif system == "british":
+        head = [subject, "Percent", "Grade", "Effort", "Target", "Comment"]
+        body = [[r["subject"], _pct(r["percent"]), r["level"] or "—", r["effort"] or "—", r["target"] or "—",
+                 r["comment"]] for r in rows]
+        widths = (40, 18, 16, 16, 16, 68)
+    elif system == "cbc":
+        head = [subject, "Score", "Level", "Teacher's comment"]
+        body = [[r["subject"], _pct(r["percent"]), r["level"] or "—", r["comment"]] for r in rows]
+        widths = (50, 18, 18, 88)
+    else:
+        leveled = bool(level_for(0, school.grading_scale))
+        head = [subject, "Percent"] + (["Level"] if leveled else []) + ["Comment"]
+        body = [[r["subject"], _pct(r["percent"])] + ([r["level"] or "—"] if leveled else []) + [r["comment"]]
+                for r in rows]
+        widths = (50, 20, 18, 86) if leveled else (56, 22, 96)
+    align = ("LEFT",) + ("CENTER",) * (len(widths) - 2) + ("LEFT",)
+    with pdf.table(col_widths=widths, text_align=align, line_height=6, headings_style=HEAD_STYLE) as table:
+        table.row([str(h) for h in head])
+        for row in body:
+            table.row([str(c) if c not in (None, "") else "" for c in row])
+
+    if system == "844" and summary.get("mean_grade"):
+        line = (f"Total marks: {summary['total_marks']}   ·   Total points: {summary['total_points']}   ·   "
+                f"Mean grade: {summary['mean_grade']} ({summary['mean_points']:g} points)")
+        positions = summary.get("positions")
+        if positions:
+            line += (f"\nPosition in {words['class'].lower()}: {positions['stream']['position']} of "
+                     f"{positions['stream']['of']}   ·   Position in {words['year_group'].lower()}: "
+                     f"{positions['form']['position']} of {positions['form']['of']}")
+        return line
+    if system == "american" and summary.get("gpa") is not None:
+        extra = f"   ·   {summary['honor_roll']}" if summary["honor_roll"] else ""
+        return f"GPA: {summary['gpa']:.2f} (4.0 scale, {summary['credits']:g} credits){extra}"
+    if system == "ib" and summary.get("ib_total") is not None:
+        return f"Total of grades: {summary['ib_total']}"
+    if summary.get("average") is not None:
+        return f"Overall average: {with_level(summary['average'], school.grading_scale)}"
+    return ""
+
+
+def _ratings(pdf, report, system):
+    """CBC competencies and values, or IB approaches to learning, when the teacher has rated them."""
+    from gradebook.systems import REPORT_EXTRAS
+
+    for group in REPORT_EXTRAS.get(system, []):
+        given = (report.extra or {}).get(group["key"]) or {}
+        if not given:
+            continue
+        names = group.get("rating_names", {})
+        pdf.set_font("Serif", "B", 11)
+        pdf.set_text_color(*NAVY)
+        pdf.cell(0, 7, group["title"], new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Serif", "", 9)
+        pdf.set_text_color(*INK)
+        items = [item for item in group["items"] if given.get(item)]
+        widths = (52, 35, 52, 35) if names else (62, 25, 62, 25)
+        with pdf.table(col_widths=widths, text_align=("LEFT", "CENTER", "LEFT", "CENTER"),
+                       line_height=5.5, first_row_as_headings=False) as table:
+            for i in range(0, len(items), 2):
+                pair = items[i:i + 2]
+                cells = []
+                for item in pair:
+                    rating = given[item]
+                    cells += [item, f"{rating} ({names[rating]})" if rating in names else rating]
+                table.row(cells + ["", ""] * (2 - len(pair)))
+        pdf.ln(3)
+
+
+def _key(system, scale):
+    parts = []
+    if key := levels_key(scale):
+        parts.append(f"Levels: {key}")
+    if system == "844":
+        parts.append("Points: A = 12, A- = 11, B+ = 10 … D- = 2, E = 1; mean grade from mean points")
+    elif system == "ib":
+        parts.append("MYP grade from criteria A to D (each out of 8) when all four are assessed")
+    elif system == "american":
+        parts.append("Grade points: A = 4, B = 3, C = 2, D = 1, F = 0, weighted by credits")
+    return parts
+
+
 def reports_pdf(school, students, term):
-    """One page per student with a finalized report for the term. Returns (bytes, count)."""
+    """One page per student with a finalized report for the term, in the school's system. Returns (bytes, count)."""
+    from gradebook.systems import term_summary
+
     words = vocab(school.education_system)
+    system = school.education_system
     reports = {
         r.student_id: r
         for r in StudentReport.objects.filter(student__in=students, term=term, status="finalized")
     }
-    grades = defaultdict(list)
-    for g in Grade.objects.filter(student__in=students, term=term).select_related("subject").order_by("subject__name"):
-        grades[g.student_id].append(g)
     attendance = defaultdict(lambda: defaultdict(int))
     if term.start_date and term.end_date:
         for r in AttendanceRecord.objects.filter(student__in=students, date__gte=term.start_date,
@@ -168,19 +275,19 @@ def reports_pdf(school, students, term):
 
     pdf = _ReportPDF(school.name)
     count = 0
-    navy, gold, ink = (30, 47, 82), (184, 134, 46), (27, 35, 51)
     for s in students:
         report = reports.get(s.id)
         if report is None:
             continue
+        s.school = school  # the caller's copy has the current settings
         count += 1
         pdf.add_page()
-        pdf.set_draw_color(*gold)
+        pdf.set_draw_color(*GOLD)
         pdf.set_line_width(1.2)
         pdf.line(18, 14, 192, 14)
         pdf.set_line_width(0.2)
         pdf.set_draw_color(221, 213, 194)
-        pdf.set_text_color(*navy)
+        pdf.set_text_color(*NAVY)
         pdf.set_font("Serif", "B", 11)
         pdf.cell(0, 8, school.name.upper(), new_x="LMARGIN", new_y="NEXT")
         # The school's motto and contact details, when set during setup.
@@ -191,12 +298,12 @@ def reports_pdf(school, students, term):
             for line in (school.motto, contact):
                 if line:
                     pdf.cell(0, 4.5, line, new_x="LMARGIN", new_y="NEXT")
-            pdf.set_text_color(*navy)
+            pdf.set_text_color(*NAVY)
             pdf.ln(1)
         pdf.set_font("Serif", "B", 20)
         pdf.cell(0, 11, _name(s), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Serif", "", 11)
-        pdf.set_text_color(*ink)
+        pdf.set_font("Serif", "", 10.5)
+        pdf.set_text_color(*INK)
         klass = s.school_class
         details = [f"{words['term']}: {term.name}"]
         if klass:
@@ -204,58 +311,51 @@ def reports_pdf(school, students, term):
         if s.external_id:
             details.append(f"{words['student_id']}: {s.external_id}")
         pdf.cell(0, 7, "   |   ".join(details), new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(4)
+        pdf.ln(3)
 
-        if grades[s.id]:
+        summary = term_summary(s, term)
+        if summary["subjects"]:
             pdf.set_font("Serif", "B", 12)
-            pdf.set_text_color(*navy)
+            pdf.set_text_color(*NAVY)
             pdf.cell(0, 8, "Results", new_x="LMARGIN", new_y="NEXT")
-            pdf.set_text_color(*ink)
-            pdf.set_font("Serif", "", 10)
-            scale = school.grading_scale
-            leveled = bool(level_for(0, scale))
-            widths = (78, 36, 30, 30) if leveled else (90, 40, 44)
-            with pdf.table(col_widths=widths, text_align=("LEFT",) + ("CENTER",) * (len(widths) - 1), line_height=7,
-                           headings_style=FontFace(emphasis="BOLD", fill_color=(242, 237, 225))) as table:
-                table.row(["Subject", "Score", "Percent", "Level"] if leveled else ["Subject", "Score", "Percent"])
-                by_subject = defaultdict(list)
-                for g in grades[s.id]:
-                    percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
-                    if percent is not None:
-                        by_subject[g.subject_id].append(percent)
-                    row = [g.subject.name, f"{g.score.normalize():f} / {g.max_score.normalize():f}",
-                           f"{percent:.0f}%" if percent is not None else "—"]
-                    if leveled:
-                        row.append(level_for(percent, scale) or "—")
-                    table.row(row)
-            subject_means = [sum(v) / len(v) for v in by_subject.values()]
-            if subject_means:
+            pdf.set_text_color(*INK)
+            pdf.set_font("Serif", "", 9)
+            line = _results_table(pdf, school, summary, words)
+            if line:
                 pdf.ln(2)
                 pdf.set_font("Serif", "B", 10)
-                pdf.cell(0, 7, f"Overall average: {with_level(sum(subject_means) / len(subject_means), scale)}",
-                         new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(4)
+                pdf.multi_cell(0, 6, line, new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(3)
+
+        _ratings(pdf, report, system)
 
         att = attendance[s.id]
         total = sum(att.values())
         if total:
             pdf.set_font("Serif", "", 10)
             rate = (att["present"] + att["late"]) / total * 100
-            pdf.cell(0, 7, f"Attendance this term: {rate:.0f}% ({att['absent']} absent, {att['late']} late, "
-                           f"{att['excused']} excused, of {total} days)", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 7, f"Attendance this {words['term'].lower()}: {rate:.0f}% ({att['absent']} absent, "
+                           f"{att['late']} late, {att['excused']} excused, of {total} days)",
+                     new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
 
-        pdf.set_font("Serif", "B", 12)
-        pdf.set_text_color(*navy)
-        pdf.cell(0, 8, "Teacher's comment", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Serif", "", 11)
-        pdf.set_text_color(*ink)
-        pdf.multi_cell(0, 6.5, report.report_comment or "—", align="L", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(6)
-        pdf.set_font("Serif", "", 8)
-        pdf.set_text_color(110, 110, 110)
-        if key := levels_key(school.grading_scale):
-            pdf.cell(0, 5, f"Levels: {key}", new_x="LMARGIN", new_y="NEXT")
+        for title, text in (("Class teacher's comment", report.report_comment),
+                            ("Principal's remarks", report.principal_comment)):
+            if not text and title.startswith("Principal"):
+                continue
+            pdf.set_font("Serif", "B", 11)
+            pdf.set_text_color(*NAVY)
+            pdf.cell(0, 7, title, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Serif", "", 10.5)
+            pdf.set_text_color(*INK)
+            pdf.multi_cell(0, 6, text or "—", align="L", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(3)
+
+        pdf.ln(2)
+        pdf.set_font("Serif", "", 7.5)
+        pdf.set_text_color(*MUTED)
+        for part in _key(system, school.grading_scale):
+            pdf.multi_cell(0, 4.5, part, new_x="LMARGIN", new_y="NEXT")
         finalized = report.finalized_at.date() if report.finalized_at else date.today()
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output()), count

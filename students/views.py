@@ -171,6 +171,19 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
         )
         return Response(self.get_serializer(student).data)
 
+    @action(detail=True, methods=["get"], url_path="term-summary")
+    def term_summary(self, request, pk=None):
+        """This student's results for a term, the way their school's system reports them."""
+        from gradebook.models import Term
+        from gradebook.systems import term_summary
+
+        student = self.get_object()
+        try:
+            term = Term.objects.get(pk=request.query_params.get("term"), school=student.school)
+        except (Term.DoesNotExist, ValueError, TypeError):
+            raise NotFound("Term not found.")
+        return Response(term_summary(student, term))
+
     # Data protection requests (Kenya Data Protection Act). Admins only.
     @action(detail=True, methods=["get"], url_path="data-export", permission_classes=[HasSchoolProfile, IsSchoolAdmin])
     def data_export(self, request, pk=None):

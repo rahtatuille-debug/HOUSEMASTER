@@ -70,6 +70,9 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         report = serializer.instance
+        new_principal = serializer.validated_data.get("principal_comment", report.principal_comment)
+        if new_principal != report.principal_comment and not is_admin(self.request.user):
+            raise PermissionDenied("Only admins can write the principal's remarks.")
         if report.status == "finalized":
             raise ValidationError("A finalized report can't be edited. An admin must send it back first.")
         student = serializer.validated_data.get("student", report.student)

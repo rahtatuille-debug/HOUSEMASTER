@@ -101,8 +101,12 @@ def school_summary(school):
     """The school details every signed-in page needs: grading scale, words to use and country."""
     from students.presets import country, vocab
 
+    from .systems import REPORT_EXTRAS, SUBJECT_FIELDS
+
     return {"id": school.id, "name": school.name, "grading_scale": school.grading_scale,
             "levels": levels(school.grading_scale), "education_system": school.education_system,
             "privacy_contact": school.privacy_contact,
             "setup_completed": school.setup_completed_at is not None,
-            "vocab": vocab(school.education_system), "country": country(school.country)}
+            "vocab": vocab(school.education_system), "country": country(school.country),
+            "report_extras": REPORT_EXTRAS.get(school.education_system, []),
+            "subject_fields": SUBJECT_FIELDS.get(school.education_system, [])}

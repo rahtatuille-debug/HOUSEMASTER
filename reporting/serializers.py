@@ -19,7 +19,7 @@ class StudentReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelS
     class Meta:
         model = StudentReport
         fields = [
-            "id", "student", "term", "progress_summary", "report_comment",
+            "id", "student", "term", "progress_summary", "report_comment", "principal_comment", "extra",
             "tone_used", "status", "review_note", "generated_at", "edited_at",
             "submitted_by_name", "submitted_at", "finalized_by_name", "finalized_at",
         ]
@@ -27,6 +27,15 @@ class StudentReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelS
             "tone_used", "status", "review_note", "generated_at", "edited_at",
             "submitted_at", "finalized_at",
         ]
+
+    def validate_extra(self, value):
+        from gradebook.systems import clean_extra
+
+        school = self.context["request"].user.profile.school
+        try:
+            return clean_extra(school.education_system, value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
     def get_submitted_by_name(self, obj):
         return display_name(obj.submitted_by) if obj.submitted_by else None
