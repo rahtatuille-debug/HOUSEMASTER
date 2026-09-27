@@ -10,8 +10,8 @@ from activity.services import log_activity, student_name
 
 from .locks import check_term_open
 
-from .models import Subject, Term, Grade
-from .serializers import SubjectSerializer, TermSerializer, GradeSerializer
+from .models import AssessmentType, Subject, Term, Grade
+from .serializers import AssessmentTypeSerializer, SubjectSerializer, TermSerializer, GradeSerializer
 
 
 class SubjectViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
@@ -66,6 +66,21 @@ class TermViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.Mode
     @action(detail=True, methods=["post"])
     def unlock(self, request, pk=None):
         return self._set_locked(request, False)
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.get_school())
+
+    def perform_update(self, serializer):
+        serializer.save(school=self.get_school())
+
+
+class AssessmentTypeViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
+    """How marks are weighted, e.g. CAT 30 and End-term exam 70. Teachers' changes need approval."""
+    queryset = AssessmentType.objects.all()
+    serializer_class = AssessmentTypeSerializer
+    school_lookup = "school"
+    approval_kind = "assessment_type"
+    approval_label = "assessment type"
 
     def perform_create(self, serializer):
         serializer.save(school=self.get_school())

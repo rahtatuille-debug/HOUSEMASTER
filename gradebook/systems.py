@@ -21,6 +21,7 @@ from collections import defaultdict
 
 from .levels import level_for
 from .models import Grade, SubjectReport
+from .weighting import school_weights, subject_percents
 
 KCSE_POINTS = {"A": 12, "A-": 11, "B+": 10, "B": 9, "B-": 8, "C+": 7, "C": 6, "C-": 5, "D+": 4, "D": 3,
                "D-": 2, "E": 1}
@@ -57,14 +58,10 @@ def honor_roll(gpa):
 
 
 def _subject_percents(student_ids, term):
-    """{student_id: {subject: percent}} for the term, averaging a subject's marks."""
-    marks = defaultdict(lambda: defaultdict(list))
-    subjects = {}
-    for g in Grade.objects.filter(student_id__in=student_ids, term=term).select_related("subject"):
-        if g.max_score:
-            marks[g.student_id][g.subject_id].append(float(g.score) / float(g.max_score) * 100)
-            subjects[g.subject_id] = g.subject
-    return {sid: {subjects[sub]: sum(v) / len(v) for sub, v in per.items()} for sid, per in marks.items()}
+    """{student_id: {subject: percent}} for the term, weighting marks by assessment type."""
+    grades = Grade.objects.filter(student_id__in=student_ids, term=term).select_related("subject")
+    per = subject_percents(grades, school_weights(term.school))
+    return {sid: subjects for (sid, _t), subjects in per.items()}
 
 
 def _mean(values):

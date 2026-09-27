@@ -19,7 +19,7 @@ from accounts.models import Profile, username_for_email
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from activity.services import log_activity
 from gradebook.levels import SCALES
-from gradebook.models import Subject, Term
+from gradebook.models import AssessmentType, Subject, Term
 
 from .models import School, SchoolClass, YearGroup
 from .presets import COUNTRIES, SYSTEMS, catalogue
@@ -142,6 +142,11 @@ class _TermSerializer(serializers.Serializer):
         return attrs
 
 
+class _AssessmentSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=60)
+    weight = serializers.DecimalField(max_digits=5, decimal_places=1, min_value=0, max_value=100)
+
+
 class FinishSetupSerializer(serializers.Serializer):
     name = serializers.CharField(min_length=2, max_length=255)
     motto = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
@@ -155,6 +160,7 @@ class FinishSetupSerializer(serializers.Serializer):
     subjects = serializers.ListField(child=serializers.CharField(max_length=100), max_length=200)
     terms = _TermSerializer(many=True)
     grading_scale = serializers.ChoiceField(choices=list(SCALES))
+    assessments = _AssessmentSerializer(many=True, required=False, default=list)
     report_tone = serializers.ChoiceField(choices=[c[0] for c in School._meta.get_field("report_tone").choices])
 
     def validate_year_groups(self, value):
@@ -191,7 +197,7 @@ def finish_setup(request):
     data.is_valid(raise_exception=True)
     v = data.validated_data
     school = request.user.profile.school
-    created = {"year_groups": 0, "classes": 0, "subjects": 0, "terms": 0}
+    created = {"year_groups": 0, "classes": 0, "subjects": 0, "terms": 0, "assessment_types": 0}
     with transaction.atomic():
         for field in ("motto", "address", "phone", "email", "privacy_contact", "country", "education_system",
                       "grading_scale", "report_tone"):
@@ -212,6 +218,10 @@ def finish_setup(request):
                 defaults={"start_date": term["start_date"], "end_date": term["end_date"]},
             )
             created["terms"] += made
+        for order, item in enumerate(v["assessments"]):
+            _, made = AssessmentType.objects.update_or_create(
+                school=school, name=" ".join(item["name"].split()), defaults={"weight": item["weight"], "order": order})
+            created["assessment_types"] += made
         first_time = school.setup_completed_at is None
         school.setup_completed_at = school.setup_completed_at or timezone.now()
         school.setup_progress = {}

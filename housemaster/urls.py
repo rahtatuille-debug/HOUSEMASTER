@@ -7,7 +7,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from students.views import SchoolViewSet, YearGroupViewSet, SchoolClassViewSet, StudentViewSet, promote_students
-from gradebook.views import SubjectViewSet, TermViewSet, GradeViewSet
+from gradebook.views import AssessmentTypeViewSet, SubjectViewSet, TermViewSet, GradeViewSet
 from gradebook.subject_report_views import class_subject_reports
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
@@ -48,6 +48,7 @@ router.register(r"students", StudentViewSet)
 router.register(r"subjects", SubjectViewSet)
 router.register(r"terms", TermViewSet)
 router.register(r"grades", GradeViewSet)
+router.register(r"assessment-types", AssessmentTypeViewSet)
 router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)

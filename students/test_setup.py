@@ -87,7 +87,7 @@ class SetupWizardTests(SchoolScopedAPITestCase):
     def test_finishing_creates_everything_and_opens_the_school(self):
         response = self.admin.post("/api/setup/finish/", finish_payload(), format="json")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["created"], {"year_groups": 2, "classes": 3, "subjects": 2, "terms": 2})
+        self.assertEqual(response.data["created"], {"year_groups": 2, "classes": 3, "subjects": 2, "terms": 2, "assessment_types": 0})
         self.school_a.refresh_from_db()
         self.assertEqual((self.school_a.education_system, self.school_a.grading_scale, self.school_a.motto),
                          ("cbc", "cbc8", "Rise and shine"))
@@ -101,7 +101,7 @@ class SetupWizardTests(SchoolScopedAPITestCase):
     def test_finishing_twice_does_not_duplicate(self):
         self.admin.post("/api/setup/finish/", finish_payload(), format="json")
         again = self.admin.post("/api/setup/finish/", finish_payload(subjects=["English", "Kiswahili"]), format="json")
-        self.assertEqual(again.data["created"], {"year_groups": 0, "classes": 0, "subjects": 1, "terms": 0})
+        self.assertEqual(again.data["created"], {"year_groups": 0, "classes": 0, "subjects": 1, "terms": 0, "assessment_types": 0})
         self.assertEqual(Subject.objects.filter(school=self.school_a, name="English").count(), 1)
 
     def test_bad_choices_are_rejected(self):

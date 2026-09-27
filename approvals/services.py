@@ -18,6 +18,7 @@ VIEWSETS = {
     "school_class": "students.views.SchoolClassViewSet",
     "student": "students.views.StudentViewSet",
     "subject": "gradebook.views.SubjectViewSet",
+    "assessment_type": "gradebook.views.AssessmentTypeViewSet",
     "term": "gradebook.views.TermViewSet",
 }
 

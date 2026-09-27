@@ -10,6 +10,7 @@ from activity.models import ActivityLog
 from activity.services import display_name
 from attendance.models import AttendanceRecord
 from gradebook.models import Grade, Term
+from gradebook.weighting import school_weights, student_average, subject_percents
 from guardians.models import GuardianInvite
 from reporting.models import StudentReport
 
@@ -25,12 +26,10 @@ def _average(values):
     return round(sum(values) / len(values), 1) if values else None
 
 
-def _group_average(students, term):
+def _group_average(students, term, weights):
     """Average of each student's average for the term, so one heavily graded student doesn't dominate."""
-    per_student = defaultdict(list)
-    for grade in Grade.objects.filter(student__in=students, term=term):
-        per_student[grade.student_id].append(_percent(grade))
-    return _average([_average(v) for v in per_student.values()])
+    per = subject_percents(Grade.objects.filter(student__in=students, term=term), weights, key=lambda g: g.subject_id)
+    return _average([student_average(subjects) for subjects in per.values()])
 
 
 def _age(dob):
@@ -56,7 +55,8 @@ def build_profile(student, user):
     ]
 
     # Grades, grouped by term, oldest term first.
-    grades = list(Grade.objects.filter(student=student).select_related("subject", "term"))
+    grades = list(Grade.objects.filter(student=student).select_related("subject", "term", "assessment_type"))
+    weights = school_weights(student.school)
     terms = sorted({g.term for g in grades}, key=lambda t: (t.start_date or date.min, t.id))
     subjects = sorted({g.subject.name for g in grades} | {
         a.subject.name for a in assignments if a.subject
@@ -72,16 +72,18 @@ def build_profile(student, user):
         term_grades = sorted((g for g in grades if g.term_id == term.id), key=lambda g: g.subject.name)
         rows = [
             {"subject": g.subject.name, "score": str(g.score), "max_score": str(g.max_score),
-             "percent": round(_percent(g), 1) if _percent(g) is not None else None}
+             "percent": round(_percent(g), 1) if _percent(g) is not None else None,
+             "assessment": g.assessment_type.name if g.assessment_type else ""}
             for g in term_grades
         ]
-        student_avg = _average([_percent(g) for g in term_grades])
+        per_subject = subject_percents(term_grades, weights).get((student.id, term.id), {})
+        student_avg = _average([student_average(per_subject)])
         grades_by_term.append({"term": term.name, "term_id": term.id, "average": student_avg, "grades": rows})
         performance.append({
             "term": term.name,
             "student": student_avg,
-            "class": _group_average(classmates, term) if classmates is not None else None,
-            "year_group": _group_average(year_mates, term) if year_mates is not None else None,
+            "class": _group_average(classmates, term, weights) if classmates is not None else None,
+            "year_group": _group_average(year_mates, term, weights) if year_mates is not None else None,
         })
 
     # Attendance: overall, current term, and the latest records.

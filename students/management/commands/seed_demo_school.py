@@ -35,7 +35,7 @@ from activity.services import log_activity
 from approvals.models import ChangeRequest
 from attendance.models import AttendanceRecord
 from communications.models import AlertRecipient, Announcement, UrgentAlert
-from gradebook.models import Grade, Subject, SubjectReport, Term
+from gradebook.models import AssessmentType, Grade, Subject, SubjectReport, Term
 from gradebook.systems import REPORT_EXTRAS
 from guardians.models import Guardian, GuardianInvite
 from messaging.models import Conversation, ConversationParticipant, Message
@@ -230,6 +230,8 @@ class Command(BaseCommand):
         # --- grades: full for past terms, part of the subjects for the current term
         subject_bias = {"Mathematics": -9, "English": 5, "Kiswahili": 3, "Integrated Science": -3,
                         "Social Studies": 4, "Pre-Technical Studies": 1, "Agriculture": 6}
+        formative = AssessmentType.objects.create(school=school, name="Formative assessment", weight=40, order=0)
+        end_term = AssessmentType.objects.create(school=school, name="End-term assessment", weight=60, order=1)
         grades = []
         for term_number, term in enumerate(terms[: current_index + 1]):
             graded = SUBJECTS if term != current else SUBJECTS[:4]
@@ -238,7 +240,9 @@ class Command(BaseCommand):
                     shift = class_shift[s.school_class.name][min(term_number, 2)]
                     score = ability[s.id] + shift + trend[s.id] * term_number + subject_bias[name] + rng.gauss(0, 7)
                     grades.append(Grade(student=s, subject=subjects[name], term=term,
-                                        score=Decimal(max(8, min(100, round(score)))), max_score=Decimal(100)))
+                                        score=Decimal(max(8, min(100, round(score)))), max_score=Decimal(100),
+                                        # This term's marks so far are classwork; past terms are end-of-term.
+                                        assessment_type=formative if term == current else end_term))
         Grade.objects.bulk_create(grades)
         grades_by_student = {}
         for g in grades:

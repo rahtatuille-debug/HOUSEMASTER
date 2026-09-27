@@ -14,6 +14,7 @@ US_TERMS = [("Fall semester", (8, 25), (12, 19)), ("Spring semester", (1, 12), (
 
 SYSTEMS = {
     "cbc": {
+        "assessments": [("Formative assessment", 40), ("End-term assessment", 60)],
         "name": "CBC (Competency Based Curriculum)",
         "country": "Kenya",
         "description": "Pre-primary to Grade 12 under Kenya's Competency Based Curriculum.",
@@ -44,6 +45,7 @@ SYSTEMS = {
         ],
     },
     "844": {
+        "assessments": [("CAT", 30), ("End-term exam", 70)],
         "name": "8-4-4",
         "country": "Kenya",
         "description": "Form 1 to Form 4 secondary, examined by KCSE.",
@@ -58,6 +60,7 @@ SYSTEMS = {
         ],
     },
     "british": {
+        "assessments": [("Coursework", 40), ("Exams", 60)],
         "name": "British / Cambridge",
         "country": "United Kingdom",
         "description": "Early Years to A Level, with Cambridge IGCSE.",
@@ -86,6 +89,7 @@ SYSTEMS = {
         ],
     },
     "ib": {
+        "assessments": [("Formative tasks", 40), ("Summative tasks", 60)],
         "name": "International Baccalaureate (IB)",
         "country": "International",
         "description": "Primary Years, Middle Years and Diploma Programmes.",
@@ -107,6 +111,7 @@ SYSTEMS = {
         ],
     },
     "american": {
+        "assessments": [("Classwork and homework", 30), ("Quizzes and tests", 40), ("Final exam", 30)],
         "name": "American",
         "country": "United States",
         "description": "Kindergarten to Grade 12, in two semesters.",
@@ -167,7 +172,8 @@ def catalogue(today=None):
     return {
         "systems": [
             {"key": key, "name": s["name"], "country": s["country"], "description": s["description"],
-             "stages": s["stages"], "terms": suggested_terms(key, today), "scales": s["scales"]}
+             "stages": s["stages"], "terms": suggested_terms(key, today), "scales": s["scales"],
+             "assessments": [{"name": n, "weight": w} for n, w in s["assessments"]]}
             for key, s in SYSTEMS.items()
         ],
         "scales": [{"key": k, "label": v, "key_text": levels_key(k)} for k, v in SCALE_LABELS.items()],

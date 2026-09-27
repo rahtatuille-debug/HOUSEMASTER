@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from accounts.mixins import SchoolScopedRelatedFieldsMixin
-from .models import Subject, Term, Grade
+from .models import AssessmentType, Subject, Term, Grade
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -8,6 +8,18 @@ class SubjectSerializer(serializers.ModelSerializer):
         model = Subject
         fields = ["id", "school", "name", "credits"]
         extra_kwargs = {"school": {"read_only": True}}
+
+
+class AssessmentTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentType
+        fields = ["id", "school", "name", "weight", "order"]
+        extra_kwargs = {"school": {"read_only": True}}
+
+    def validate_weight(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("A weight is a percentage from 0 to 100.")
+        return value
 
 
 class TermSerializer(serializers.ModelSerializer):
@@ -21,4 +33,4 @@ class TermSerializer(serializers.ModelSerializer):
 class GradeSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Grade
-        fields = ["id", "student", "subject", "term", "score", "max_score", "recorded_at"]
+        fields = ["id", "student", "subject", "term", "score", "max_score", "assessment_type", "recorded_at"]

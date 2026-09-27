@@ -52,6 +52,7 @@ def requester_school(request):
 
 # How to reach School from each model a serializer can link to.
 _SCHOOL_PATHS = {
+    "AssessmentType": "school",
     "School": "pk",
     "Student": "school",
     "Subject": "school",

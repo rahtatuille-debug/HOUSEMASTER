@@ -13,6 +13,7 @@ from datetime import date
 
 from gradebook.levels import SCALES
 from gradebook.models import Grade, Term
+from gradebook.weighting import school_weights, subject_percent
 from students.models import SchoolClass, Student, YearGroup
 
 BANDS = [(0, 40, "Below 40%"), (40, 50, "40–49%"), (50, 60, "50–59%"), (60, 70, "60–69%"),
@@ -34,21 +35,23 @@ class SchoolGrades:
             s.id: s for s in Student.objects.filter(school=school, is_active=True)
             .select_related("school_class__year_group")
         }
-        # (student, term) -> {subject: [percent, ...]}
+        # (student, term) -> {subject: [(percent, assessment type), ...]}
+        self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
-        for student_id, term_id, subject, score, max_score in Grade.objects.filter(
+        for student_id, term_id, subject, score, max_score, type_id in Grade.objects.filter(
             student_id__in=self.students
-        ).values_list("student_id", "term_id", "subject__name", "score", "max_score"):
+        ).values_list("student_id", "term_id", "subject__name", "score", "max_score", "assessment_type_id"):
             if max_score:
-                self.marks[(student_id, term_id)][subject].append(float(score) / float(max_score) * 100)
+                self.marks[(student_id, term_id)][subject].append((float(score) / float(max_score) * 100, type_id))
         self.graded_terms = [t for t in self.terms if any(k[1] == t.id for k in self.marks)]
 
     def student_average(self, student_id, term_id):
         subjects = self.marks.get((student_id, term_id))
-        return _mean([_mean(v) for v in subjects.values()]) if subjects else None
+        return _mean([self.student_subject(student_id, term_id, s) for s in subjects]) if subjects else None
 
     def student_subject(self, student_id, term_id, subject):
-        return _mean(self.marks.get((student_id, term_id), {}).get(subject, []))
+        result = subject_percent(self.marks.get((student_id, term_id), {}).get(subject, []), self.weights)
+        return round(result, 1) if result is not None else None
 
     def group_average(self, student_ids, term_id):
         return _mean([self.student_average(s, term_id) for s in student_ids])

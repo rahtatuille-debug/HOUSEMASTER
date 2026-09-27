@@ -32,6 +32,24 @@ class Term(models.Model):
         return self.name
 
 
+class AssessmentType(models.Model):
+    """
+    A kind of assessment and how much it counts towards a subject's term
+    result, e.g. "CAT" 30 and "End-term exam" 70. See gradebook.weighting.
+    """
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="assessment_types")
+    name = models.CharField(max_length=60)
+    weight = models.DecimalField(max_digits=5, decimal_places=1, help_text="Its share of the term result, e.g. 30.")
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("school", "name")
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.name} ({self.weight:g}%)"
+
+
 class Grade(models.Model):
     """A single assessment score for a student, in a subject, in a term."""
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="grades")
@@ -39,6 +57,10 @@ class Grade(models.Model):
     term = models.ForeignKey(Term, on_delete=models.CASCADE, related_name="grades")
     score = models.DecimalField(max_digits=5, decimal_places=2)
     max_score = models.DecimalField(max_digits=5, decimal_places=2, default=100)
+    assessment_type = models.ForeignKey(
+        AssessmentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="grades",
+        help_text="Which kind of assessment this mark is from; decides its weight.",
+    )
     recorded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

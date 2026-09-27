@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
+from gradebook.weighting import school_weights, subject_percents
 from students.presets import DEFAULT_VOCAB, vocab
 
 from .models import StudentReport
@@ -80,10 +81,11 @@ def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB):
     grades = Grade.objects.filter(student__in=students, term=term).select_related("subject")
     by_student = defaultdict(dict)
     subjects = set()
-    for g in grades:
-        percent = round(float(g.score) / float(g.max_score) * 100, 1) if g.max_score else None
-        by_student[g.student_id][g.subject.name] = percent
-        subjects.add(g.subject.name)
+    for (student_id, _term), per in subject_percents(grades, school_weights(term.school),
+                                                     key=lambda g: g.subject.name).items():
+        for subject, value in per.items():
+            by_student[student_id][subject] = round(value, 1)
+            subjects.add(subject)
     subjects = sorted(subjects)
     rows = []
     for s in students:
