@@ -35,7 +35,8 @@ from activity.services import log_activity
 from approvals.models import ChangeRequest
 from attendance.models import AttendanceRecord
 from communications.models import AlertRecipient, Announcement, UrgentAlert
-from gradebook.models import Grade, Subject, Term
+from gradebook.models import Grade, Subject, SubjectReport, Term
+from gradebook.systems import REPORT_EXTRAS
 from guardians.models import Guardian, GuardianInvite
 from messaging.models import Conversation, ConversationParticipant, Message
 from reporting.models import StudentReport
@@ -70,6 +71,14 @@ DEMO_STREETS = ["Ngong Road", "Kilimani Road", "Mombasa Road", "Thika Road", "La
                 "Waiyaki Way", "Kiambu Road"]
 DEMO_OCCUPATIONS = ["Teacher", "Nurse", "Farmer", "Accountant", "Driver", "Trader", "Engineer", "Mechanic",
                     "Civil servant", "Shopkeeper", "Doctor", "Tailor", "Banker", "Chef", ""]
+SUBJECT_COMMENTS = {
+    "high": ["Excellent understanding; keep taking on the extension tasks.", "Consistently strong work and good questions.",
+             "A very good term. Well done.", "Confident and accurate. Keep it up."],
+    "mid": ["Steady progress; more regular revision will lift results.", "Good effort. Check work carefully before handing in.",
+            "Participates well; needs to practise the harder topics.", "Improving. Keep asking for help when stuck."],
+    "low": ["Needs more practice with the basics; extra support offered.", "Must complete homework regularly to improve.",
+            "Finds this learning area hard; we will work on it together.", "More focus in class will help a lot."],
+}
 COMMENTS = {
     "high": "{name} has had an excellent term, working with real focus and helping classmates along the way. "
             "Results in {best} were outstanding. Keep challenging yourself with the extension work.",
@@ -231,6 +240,9 @@ class Command(BaseCommand):
                     grades.append(Grade(student=s, subject=subjects[name], term=term,
                                         score=Decimal(max(8, min(100, round(score)))), max_score=Decimal(100)))
         Grade.objects.bulk_create(grades)
+        grades_by_student = {}
+        for g in grades:
+            grades_by_student.setdefault((g.student.id, g.term.id), []).append(g)
 
         # --- attendance: every school day of the current term so far; today only for some classes
         records = []
@@ -320,8 +332,16 @@ class Command(BaseCommand):
                 if not text:
                     continue
                 waiting = k % 17 == 0
+                # CBC competency and value ratings, from their own random stream so
+                # the rest of the demo data doesn't change.
+                erng = random.Random(s.id)
+                marks = [g.score for g in grades_by_student.get((s.id, previous.id), [])]
+                typical = "EE" if marks and sum(marks) / len(marks) >= 72 else "ME"
+                extra = {group["key"]: {item: erng.choice([typical, typical, typical, "ME", "EE", "AE"])
+                                        for item in group["items"]} for group in REPORT_EXTRAS["cbc"]}
                 report_rows.append(StudentReport(
                     student=s, term=previous, progress_summary=summary, report_comment=text, tone_used="warm",
+                    extra=extra,
                     status="submitted" if waiting else "finalized",
                     submitted_by=rng.choice(teachers), submitted_at=now - timedelta(days=rng.randint(40, 60)),
                     finalized_by=None if waiting else principal,
@@ -333,6 +353,16 @@ class Command(BaseCommand):
                 report_rows.append(StudentReport(student=s, term=current, progress_summary=summary,
                                                  report_comment=text, tone_used="warm", status="draft"))
         StudentReport.objects.bulk_create(report_rows)
+        # Subject teachers' comments on last term's report cards.
+        if previous:
+            entries = []
+            for s in active:
+                for grade in grades_by_student.get((s.id, previous.id), []):
+                    crng = random.Random(s.id * 1000 + grade.subject.id)
+                    band = "high" if grade.score >= 75 else "mid" if grade.score >= 50 else "low"
+                    entries.append(SubjectReport(student=s, subject=grade.subject, term=previous,
+                                                 comment=crng.choice(SUBJECT_COMMENTS[band])))
+            SubjectReport.objects.bulk_create(entries)
         # The first term of the year is finished and locked.
         if current_index >= 2:
             terms[0].is_locked = True
