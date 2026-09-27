@@ -120,6 +120,10 @@ class Invite(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=_default_expiry)
+    assignments = models.JSONField(
+        default=list, blank=True,
+        help_text='Classes to assign when the invite is accepted: [{"school_class": id, "subject": id or null}].',
+    )
     accepted_at = models.DateTimeField(null=True, blank=True)
     accepted_by = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="invite_accepted"

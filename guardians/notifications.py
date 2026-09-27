@@ -148,3 +148,17 @@ def notify_reports_finalized(reports, actor):
         )
 
     _run_after_commit(send)
+
+
+def send_after_commit(messages, on_done=None):
+    """
+    Send (subject, body, address) emails once the current change is saved,
+    in the background. `on_done(sent, attempted)` runs afterwards, e.g. to
+    record the result in the activity log.
+    """
+    def send():
+        sent, attempted = _send(messages)
+        if on_done is not None:
+            on_done(sent, attempted)
+
+    _run_after_commit(send)

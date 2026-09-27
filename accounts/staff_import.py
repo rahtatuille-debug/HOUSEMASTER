@@ -1,0 +1,161 @@
+"""
+Import staff from an Excel sheet: one invite per person, with the classes
+and subjects they teach assigned automatically when they accept.
+
+Columns (first row is the header, order doesn't matter):
+  name, email, role, class_teacher_of, teaches
+
+* role: teacher (the default) or admin.
+* class_teacher_of: classes they teach every subject in, separated by ";".
+* teaches: "class: subject, subject" entries separated by ";",
+  e.g. "7 West: Mathematics; 8 East: Mathematics, English".
+
+A class can be written "Grade 7/East" when two year groups share a class
+name. Classes and subjects must already exist. People who already have an
+account or a pending invite at the school are skipped. Preview and import
+run the same code: a preview rolls everything back.
+"""
+import openpyxl
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
+from django.db import transaction
+
+from gradebook.models import Subject
+from students.importer import MAX_ERRORS, WorkbookError, _rows, _text
+from students.models import SchoolClass
+
+from .models import Invite, Profile
+from .serializers import email_in_use_at_school
+
+SHEET = "Staff"
+COLUMNS = ["name", "email", "role", "class_teacher_of", "teaches"]
+EXAMPLES = [
+    ["Mary Njeri", "m.njeri@yourschool.ac.ke", "teacher", "7 East", "7 West: Mathematics; 8 East: Mathematics"],
+    ["Peter Otieno", "p.otieno@yourschool.ac.ke", "admin", "", ""],
+]
+ROLES = {"teacher": Profile.Role.TEACHER, "admin": Profile.Role.ADMIN, "": Profile.Role.TEACHER}
+
+
+def staff_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = SHEET
+    ws.append(COLUMNS)
+    for row in EXAMPLES:
+        ws.append(row)
+    for letter, width in zip("ABCDE", (22, 30, 10, 22, 50)):
+        ws.column_dimensions[letter].width = width
+    return wb
+
+
+class _Rollback(Exception):
+    pass
+
+
+class _StaffImport:
+    def __init__(self, school, invited_by):
+        self.school = school
+        self.invited_by = invited_by
+        self.errors, self.people, self.skipped = [], [], []
+        self.classes = list(SchoolClass.objects.filter(year_group__school=school).select_related("year_group"))
+        self.subjects = {s.name.lower(): s for s in Subject.objects.filter(school=school)}
+        self.seen_emails = set()
+
+    def error(self, row, message):
+        if len(self.errors) < MAX_ERRORS:
+            self.errors.append({"sheet": SHEET, "row": row, "message": message})
+
+    def find_class(self, text):
+        text = " ".join(text.split())
+        if "/" in text:
+            year, _, name = (part.strip().lower() for part in text.partition("/"))
+            matches = [c for c in self.classes if c.name.lower() == name and c.year_group.name.lower() == year]
+        else:
+            matches = [c for c in self.classes if c.name.lower() == text.lower()]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise ValueError(f'"{text}" matches more than one class; write it as "Year group/Class"')
+        raise ValueError(f'no class called "{text}" (add it in Setup first)')
+
+    def find_subject(self, text):
+        subject = self.subjects.get(" ".join(text.split()).lower())
+        if subject is None:
+            raise ValueError(f'no subject called "{text}" (add it in Setup first)')
+        return subject
+
+    def assignments(self, row):
+        """[(class, subject or None)] from the class_teacher_of and teaches columns."""
+        result = []
+        for part in _text(row.get("class_teacher_of")).split(";"):
+            if part.strip():
+                result.append((self.find_class(part), None))
+        for entry in _text(row.get("teaches")).split(";"):
+            if not entry.strip():
+                continue
+            class_text, colon, subjects = entry.partition(":")
+            if not colon or not subjects.strip():
+                raise ValueError(f'"{entry.strip()}" should look like "7 West: Mathematics"')
+            school_class = self.find_class(class_text)
+            for subject_text in subjects.split(","):
+                if subject_text.strip():
+                    result.append((school_class, self.find_subject(subject_text)))
+        return list(dict.fromkeys(result))
+
+    def run(self, ws):
+        for number, row in _rows(ws):
+            name, email = " ".join(_text(row.get("name")).split()), _text(row.get("email")).lower()
+            role_text = _text(row.get("role")).lower()
+            if not name or not email:
+                self.error(number, "name and email are both required")
+                continue
+            try:
+                validate_email(email)
+            except DjangoValidationError:
+                self.error(number, f'"{email}" isn\'t an email address')
+                continue
+            if role_text not in ROLES:
+                self.error(number, f'role "{role_text}" must be teacher or admin')
+                continue
+            if email in self.seen_emails:
+                self.error(number, f"{email} appears more than once in the sheet")
+                continue
+            self.seen_emails.add(email)
+            try:
+                assignments = self.assignments(row)
+            except ValueError as exc:
+                self.error(number, str(exc))
+                continue
+            if email_in_use_at_school(email, self.school) or Invite.objects.filter(
+                    school=self.school, email__iexact=email, accepted_at__isnull=True).exists():
+                self.skipped.append({"row": number, "name": name, "email": email,
+                                     "reason": "already has an account or a pending invite"})
+                continue
+            invite = Invite.objects.create(
+                school=self.school, name=name, email=email, role=ROLES[role_text], invited_by=self.invited_by,
+                assignments=[{"school_class": c.id, "subject": s.id if s else None} for c, s in assignments],
+            )
+            self.people.append({
+                "row": number, "name": name, "email": email, "role": invite.role, "invite_id": invite.id,
+                "token": invite.token,
+                "assignments": [f"{c.name} ({s.name if s else 'all subjects'})" for c, s in assignments],
+            })
+
+
+def import_staff(upload, school, invited_by, commit=False):
+    try:
+        wb = openpyxl.load_workbook(upload, read_only=True, data_only=True)
+    except Exception:
+        raise WorkbookError("That file isn't an Excel workbook (.xlsx).")
+    ws = wb[SHEET] if SHEET in wb.sheetnames else wb.worksheets[0]
+    job = _StaffImport(school, invited_by)
+    try:
+        with transaction.atomic():
+            job.run(ws)
+            if not commit:
+                raise _Rollback
+    except _Rollback:
+        for person in job.people:  # nothing was saved, so there are no links yet
+            person.pop("token")
+            person.pop("invite_id")
+    return {"committed": commit, "people": job.people, "skipped": job.skipped, "errors": job.errors}

@@ -180,13 +180,25 @@ class AcceptInviteSerializer(serializers.Serializer):
             first_name=first_name[:150],
             last_name=last_name[:150],
         )
-        Profile.objects.create(
+        profile = Profile.objects.create(
             user=user,
             school=invite.school,
             role=invite.role,
             display_name=display_name,
             privacy_accepted_at=timezone.now(),
         )
+        # Classes chosen when the invite was made (e.g. from the staff import),
+        # skipping any class or subject that has since been deleted.
+        from gradebook.models import Subject
+        from students.models import SchoolClass
+
+        for item in invite.assignments or []:
+            school_class = SchoolClass.objects.filter(
+                pk=item.get("school_class"), year_group__school=invite.school).first()
+            subject = Subject.objects.filter(pk=item.get("subject"), school=invite.school).first() \
+                if item.get("subject") else None
+            if school_class and (subject or not item.get("subject")):
+                TeachingAssignment.objects.get_or_create(teacher=profile, school_class=school_class, subject=subject)
         invite.accepted_at = timezone.now()
         invite.accepted_by = user
         invite.save(update_fields=["accepted_at", "accepted_by"])

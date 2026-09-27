@@ -20,7 +20,7 @@ from guardians.views import (
     guardian_me,
 )
 from messaging.views import ConversationViewSet
-from students.import_views import import_school_workbook, import_template
+from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
@@ -70,6 +70,8 @@ urlpatterns = [
     path('api/promotion/', promote_students, name='promote_students'),
     path('api/analytics/performance/', performance, name='performance'),
     path('api/import/template/', import_template, name='import_template'),
+    path('api/import/staff-template/', staff_import_template, name='staff_import_template'),
+    path('api/import/staff/', import_staff, name='import_staff'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),
     path('api/exports/attendance/', export_attendance, name='export_attendance'),
