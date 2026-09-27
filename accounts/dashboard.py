@@ -1,5 +1,5 @@
 """The admin home page: what needs attention at the school today."""
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Count, Q
 
@@ -20,12 +20,15 @@ def _invite_row(invite, kind):
 
 def build_dashboard(school):
     today = date.today()
+    # At weekends, show the last school day's registers instead of warning
+    # that none were taken today.
+    register_day = today - timedelta(days=max(0, today.weekday() - 4))
     students = Student.objects.filter(school=school, is_active=True)
 
     # Today's register, class by class.
     per_class = {
         row["student__school_class"]: row
-        for row in AttendanceRecord.objects.filter(student__in=students, date=today)
+        for row in AttendanceRecord.objects.filter(student__in=students, date=register_day)
         .values("student__school_class")
         .annotate(
             marked=Count("id"),
@@ -53,7 +56,8 @@ def build_dashboard(school):
     marked = sum(c["marked"] for c in classes)
     attended = sum(c["present"] + c["late"] for c in classes)
     attendance = {
-        "date": today,
+        "date": register_day,
+        "is_today": register_day == today,
         "students": sum(c["students"] for c in classes),
         "marked": marked,
         "absent": sum(c["absent"] for c in classes),

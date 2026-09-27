@@ -724,8 +724,12 @@ class DashboardTests(SchoolScopedAPITestCase):
         self.ben = Student.objects.create(school=self.school_a, first_name="Ben", last_name="B", school_class=c7a)
         Student.objects.create(school=self.school_a, first_name="Cy", last_name="C", school_class=c7c)
         Student.objects.create(school=self.school_b, first_name="Other", last_name="School")
-        AttendanceRecord.objects.create(student=self.ann, date=date.today(), status="present")
-        AttendanceRecord.objects.create(student=self.ben, date=date.today(), status="absent")
+        # The day the home page shows: today, or the last Friday at weekends.
+        from datetime import timedelta
+
+        day = date.today() - timedelta(days=max(0, date.today().weekday() - 4))
+        AttendanceRecord.objects.create(student=self.ann, date=day, status="present")
+        AttendanceRecord.objects.create(student=self.ben, date=day, status="absent")
         parent = User.objects.create_user(username="p@x.test", email="p@x.test", password="x")
         Guardian.objects.create(user=parent, school=self.school_a).students.add(self.ann)
         term = Term.objects.create(school=self.school_a, name="T1")
@@ -757,3 +761,20 @@ class DashboardTests(SchoolScopedAPITestCase):
         data = self.client_b.get("/api/dashboard/").data
         self.assertEqual(data["students_without_parent"]["total_students"], 1)
         self.assertEqual(data["reports_waiting"]["count"], 0)
+
+
+class DashboardWeekendTests(SchoolScopedAPITestCase):
+    def test_weekend_shows_fridays_registers(self):
+        from datetime import date
+        from unittest.mock import patch
+
+        class Sunday(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 9, 27)
+
+        self.make_admin(self.user_a)
+        with patch("accounts.dashboard.date", Sunday):
+            data = self.client_a.get("/api/dashboard/").data["attendance_today"]
+        self.assertEqual(str(data["date"]), "2026-09-25")
+        self.assertFalse(data["is_today"])
