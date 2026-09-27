@@ -124,6 +124,8 @@ REST_FRAMEWORK = {
         # env var without a redeploy-worthy code change if these turn out
         # to be too tight or too loose in practice.
         'ai_report_generation': os.environ.get('AI_REPORT_GENERATION_RATE', '30/hour'),
+        # Starting AI reports for a whole class counts once here, not per report.
+        'ai_class_report_generation': os.environ.get('AI_CLASS_REPORT_GENERATION_RATE', '5/hour'),
         'ai_announcement_drafting': os.environ.get('AI_ANNOUNCEMENT_DRAFTING_RATE', '30/hour'),
     },
 }
