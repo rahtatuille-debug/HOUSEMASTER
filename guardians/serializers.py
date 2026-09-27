@@ -66,11 +66,12 @@ class GuardianInviteSerializer(SchoolScopedRelatedFieldsMixin, serializers.Model
 
 class GuardianInvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
+    privacy_contact = serializers.CharField(source="school.privacy_contact", read_only=True)
     student_names = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = GuardianInvite
-        fields = ["school_name", "email", "student_names", "status"]
+        fields = ["school_name", "privacy_contact", "email", "student_names", "status"]
 
     def get_student_names(self, obj):
         return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]
@@ -79,6 +80,14 @@ class GuardianInvitePreviewSerializer(serializers.ModelSerializer):
 class AcceptGuardianInviteSerializer(serializers.Serializer):
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    accept_privacy = serializers.BooleanField(
+        help_text="They've read the school's privacy notice and agree to it (Kenya Data Protection Act).",
+    )
+
+    def validate_accept_privacy(self, value):
+        if not value:
+            raise serializers.ValidationError("Please read and accept the privacy notice to continue.")
+        return value
 
     def validate_token(self, value):
         try:
@@ -112,7 +121,7 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
             last_name=last_name[:150],
         )
         guardian = Guardian.objects.create(
-            user=user, school=invite.school, display_name=display_name,
+            user=user, school=invite.school, display_name=display_name, privacy_accepted_at=timezone.now(),
         )
         guardian.students.set(invite.students.all())
         invite.accepted_at = timezone.now()

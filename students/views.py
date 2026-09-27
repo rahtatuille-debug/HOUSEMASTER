@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
@@ -170,6 +170,43 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             summary=f"{verb} {student_name(student)}'s photo",
         )
         return Response(self.get_serializer(student).data)
+
+    # Data protection requests (Kenya Data Protection Act). Admins only.
+    @action(detail=True, methods=["get"], url_path="data-export", permission_classes=[HasSchoolProfile, IsSchoolAdmin])
+    def data_export(self, request, pk=None):
+        """Everything held about this student and their parents, as an Excel workbook."""
+        from django.utils.text import slugify
+
+        from .privacy import family_export
+
+        student = self.get_object()
+        log_activity(
+            school=student.school, actor=request.user, action="student.data_exported", target=student,
+            summary=f"Exported all personal data held about {student_name(student)} and their parents",
+        )
+        response = HttpResponse(
+            family_export(student),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        name = slugify(student_name(student)) or "student"
+        response["Content-Disposition"] = f'attachment; filename="personal-data-{name}.xlsx"'
+        return response
+
+    @action(detail=True, methods=["post"], url_path="remove-personal-data",
+            permission_classes=[HasSchoolProfile, IsSchoolAdmin])
+    def remove_personal_data(self, request, pk=None):
+        """
+        Remove a family's personal details on request. The admin must type
+        the student's full name to confirm; this can't be undone.
+        """
+        from .privacy import remove_personal_data
+
+        student = self.get_object()
+        typed = " ".join(str(request.data.get("confirm_name", "")).split()).lower()
+        if typed != " ".join(student_name(student).split()).lower():
+            raise ValidationError({"confirm_name": "Type the student's full name exactly to confirm."})
+        counts = remove_personal_data(student, request.user)
+        return Response({"removed": True, **counts})
 
 
 @api_view(["POST"])

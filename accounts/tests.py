@@ -217,7 +217,7 @@ class PasswordResetTests(SchoolScopedAPITestCase):
         reset_token = PasswordResetToken.objects.create(user=self.user_a)
         response = self.client.post(
             "/api/password-reset/confirm/",
-            {"token": reset_token.token, "password": "a-brand-new-strong-pw9"},
+            {"token": reset_token.token, "password": "a-brand-new-strong-pw9", "accept_privacy": True},
         )
         self.assertEqual(response.status_code, 200)
         self.user_a.refresh_from_db()
@@ -229,18 +229,18 @@ class PasswordResetTests(SchoolScopedAPITestCase):
         reset_token = PasswordResetToken.objects.create(user=self.user_a)
         self.client.post(
             "/api/password-reset/confirm/",
-            {"token": reset_token.token, "password": "a-brand-new-strong-pw9"},
+            {"token": reset_token.token, "password": "a-brand-new-strong-pw9", "accept_privacy": True},
         )
         response = self.client.post(
             "/api/password-reset/confirm/",
-            {"token": reset_token.token, "password": "another-strong-pw123"},
+            {"token": reset_token.token, "password": "another-strong-pw123", "accept_privacy": True},
         )
         self.assertEqual(response.status_code, 400)
 
     def test_confirm_rejects_unknown_token(self):
         response = self.client.post(
             "/api/password-reset/confirm/",
-            {"token": "not-a-real-token", "password": "a-brand-new-strong-pw9"},
+            {"token": "not-a-real-token", "password": "a-brand-new-strong-pw9", "accept_privacy": True},
         )
         self.assertEqual(response.status_code, 400)
 
@@ -248,7 +248,7 @@ class PasswordResetTests(SchoolScopedAPITestCase):
 class LoginTests(SchoolScopedAPITestCase):
     def test_login_with_email_and_password_succeeds(self):
         response = self.client.post(
-            "/api/token/", {"email": self.user_a.email, "password": "pass1234"}
+            "/api/token/", {"email": self.user_a.email, "password": "pass1234", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data)
@@ -256,7 +256,7 @@ class LoginTests(SchoolScopedAPITestCase):
 
     def test_login_with_wrong_password_fails(self):
         response = self.client.post(
-            "/api/token/", {"email": self.user_a.email, "password": "wrong-password"}
+            "/api/token/", {"email": self.user_a.email, "password": "wrong-password", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 401)
 
@@ -264,13 +264,13 @@ class LoginTests(SchoolScopedAPITestCase):
         # `username` is no longer accepted by this endpoint at all — only
         # `email` is a recognised field now.
         response = self.client.post(
-            "/api/token/", {"username": self.user_a.username, "password": "pass1234"}
+            "/api/token/", {"username": self.user_a.username, "password": "pass1234", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 400)
 
     def test_login_is_case_insensitive_on_email(self):
         response = self.client.post(
-            "/api/token/", {"email": self.user_a.email.upper(), "password": "pass1234"}
+            "/api/token/", {"email": self.user_a.email.upper(), "password": "pass1234", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 200)
 
@@ -289,7 +289,7 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
     def test_accept_with_valid_token_creates_account_with_invites_email(self):
         invite = self._create_invite()
         response = self.client.post(
-            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"}
+            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 201)
         self.assertIn("access", response.data)
@@ -309,7 +309,7 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
         invite = self._create_invite()
         response = self.client.post(
             "/api/invites/accept/",
-            {"token": invite.token, "email": "someone-else@alpha.test", "password": "a-strong-new-pw9"},
+            {"token": invite.token, "email": "someone-else@alpha.test", "password": "a-strong-new-pw9", "accept_privacy": True},
         )
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(email="new.teacher@alpha.test").exists())
@@ -317,16 +317,16 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
 
     def test_accept_rejects_reused_token(self):
         invite = self._create_invite()
-        self.client.post("/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"})
+        self.client.post("/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9", "accept_privacy": True})
         response = self.client.post(
-            "/api/invites/accept/", {"token": invite.token, "password": "another-strong-pw2"}
+            "/api/invites/accept/", {"token": invite.token, "password": "another-strong-pw2", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 400)
 
     def test_accept_rejects_email_already_in_use(self):
         invite = self._create_invite(email=self.user_a.email)
         response = self.client.post(
-            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9"}
+            "/api/invites/accept/", {"token": invite.token, "password": "a-strong-new-pw9", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 400)
 
@@ -435,7 +435,7 @@ class StaffManagementTests(SchoolScopedAPITestCase):
         # Their existing login token stops working...
         self.assertEqual(self.client_a.get("/api/me/").status_code, 401)
         # ...they can't log in again...
-        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234"})
+        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234", "accept_privacy": True})
         self.assertEqual(login.status_code, 401)
         # ...and their refresh token can't mint a new access token.
         refresh = RefreshToken.for_user(self.user_a)
@@ -445,7 +445,7 @@ class StaffManagementTests(SchoolScopedAPITestCase):
     def test_reactivated_staff_can_log_in_again(self):
         self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/deactivate/")
         self.admin_client_a.post(f"/api/staff/{self.profile_a.id}/reactivate/")
-        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234"})
+        login = self.client.post("/api/token/", {"email": "teacher.a@alpha.test", "password": "pass1234", "accept_privacy": True})
         self.assertEqual(login.status_code, 200)
 
     def test_staff_cannot_be_created_directly(self):
@@ -631,7 +631,7 @@ class InviteRenewalAndAdminResetTests(SchoolScopedAPITestCase):
         self.assertGreater(invite.expires_at, timezone.now() + timezone.timedelta(days=6))
         # The old link no longer works; the new one does.
         self.assertEqual(self.client.get(f"/api/invites/preview/{old_token}/").status_code, 404)
-        accept = self.client.post("/api/invites/accept/", {"token": invite.token, "password": "a-long-Password-123"})
+        accept = self.client.post("/api/invites/accept/", {"token": invite.token, "password": "a-long-Password-123", "accept_privacy": True})
         self.assertEqual(accept.status_code, 201)
         self.assertTrue(ActivityLog.objects.filter(action="staff_invite.renewed").exists())
 

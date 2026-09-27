@@ -62,6 +62,9 @@ class Guardian(models.Model):
     email_notifications = models.BooleanField(
         default=True, help_text="Email this parent when an announcement or report is published for them.",
     )
+    privacy_accepted_at = models.DateTimeField(
+        null=True, blank=True, help_text="When they accepted the privacy notice while setting up their account.",
+    )
 
     @property
     def name(self):

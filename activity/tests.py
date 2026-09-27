@@ -97,7 +97,7 @@ class ActivityIsRecordedTests(SchoolScopedAPITestCase):
             school=self.school_a, email="joiner@alpha.test", name="Joiner", invited_by=self.admin_a
         )
         response = self.client.post(
-            "/api/invites/accept/", {"token": invite.token, "password": "a-long-Password-123"}
+            "/api/invites/accept/", {"token": invite.token, "password": "a-long-Password-123", "accept_privacy": True}
         )
         self.assertEqual(response.status_code, 201)
         entry = ActivityLog.objects.get(action="staff_invite.accepted")

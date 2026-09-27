@@ -70,7 +70,7 @@ class GuardianInviteFlowTests(SchoolScopedAPITestCase):
         self.assertEqual(preview.data["student_names"], ["Amina Otieno"])
 
         accept = APIClient().post(
-            "/api/guardian-invites/accept/", {"token": token, "password": "SuperSecret123!"}
+            "/api/guardian-invites/accept/", {"token": token, "password": "SuperSecret123!", "accept_privacy": True}
         )
         self.assertEqual(accept.status_code, 201, accept.data)
         self.assertIn("access", accept.data)
@@ -91,7 +91,7 @@ class GuardianInviteFlowTests(SchoolScopedAPITestCase):
         )
         accept = APIClient().post(
             "/api/guardian-invites/accept/",
-            {"token": create.data["token"], "password": "SuperSecret123!"},
+            {"token": create.data["token"], "password": "SuperSecret123!", "accept_privacy": True},
         )
         guardian_client = APIClient()
         guardian_client.credentials(HTTP_AUTHORIZATION=f"Bearer {accept.data['access']}")
@@ -107,7 +107,7 @@ class GuardianInviteFlowTests(SchoolScopedAPITestCase):
         )
         accept = APIClient().post(
             "/api/guardian-invites/accept/",
-            {"token": create.data["token"], "password": "SuperSecret123!"},
+            {"token": create.data["token"], "password": "SuperSecret123!", "accept_privacy": True},
         )
         guardian_client = APIClient()
         guardian_client.credentials(HTTP_AUTHORIZATION=f"Bearer {accept.data['access']}")
@@ -278,7 +278,7 @@ class ParentManagementTests(SchoolScopedAPITestCase):
     def test_reactivated_parent_can_log_in(self):
         self.admin_client_a.post(f"/api/parents/{self.parent.id}/deactivate/")
         self.admin_client_a.post(f"/api/parents/{self.parent.id}/reactivate/")
-        login = self.client.post("/api/token/", {"email": "parent@alpha.test", "password": "pass1234"})
+        login = self.client.post("/api/token/", {"email": "parent@alpha.test", "password": "pass1234", "accept_privacy": True})
         self.assertEqual(login.status_code, 200)
 
 

@@ -23,6 +23,10 @@ class School(models.Model):
         max_length=10, choices=GradingScale.choices, default=GradingScale.CBC4,
         help_text="Which performance levels to show next to percentages. See gradebook.levels.",
     )
+    privacy_contact = models.CharField(
+        max_length=255, blank=True,
+        help_text="Who people contact about their personal data (Kenya Data Protection Act), e.g. an email address.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

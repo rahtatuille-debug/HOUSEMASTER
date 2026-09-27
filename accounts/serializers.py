@@ -120,10 +120,11 @@ class ProfileNameSerializer(serializers.Serializer):
 
 class InvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
+    privacy_contact = serializers.CharField(source="school.privacy_contact", read_only=True)
 
     class Meta:
         model = Invite
-        fields = ["school_name", "role", "email", "status"]
+        fields = ["school_name", "privacy_contact", "role", "email", "status"]
 
 
 class AcceptInviteSerializer(serializers.Serializer):
@@ -135,6 +136,14 @@ class AcceptInviteSerializer(serializers.Serializer):
 
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    accept_privacy = serializers.BooleanField(
+        help_text="They've read the school's privacy notice and agree to it (Kenya Data Protection Act).",
+    )
+
+    def validate_accept_privacy(self, value):
+        if not value:
+            raise serializers.ValidationError("Please read and accept the privacy notice to continue.")
+        return value
 
     def validate_token(self, value):
         try:
@@ -176,6 +185,7 @@ class AcceptInviteSerializer(serializers.Serializer):
             school=invite.school,
             role=invite.role,
             display_name=display_name,
+            privacy_accepted_at=timezone.now(),
         )
         invite.accepted_at = timezone.now()
         invite.accepted_by = user

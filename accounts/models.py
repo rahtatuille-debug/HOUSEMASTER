@@ -48,6 +48,9 @@ class Profile(models.Model):
     )
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="staff_profiles")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.TEACHER)
+    privacy_accepted_at = models.DateTimeField(
+        null=True, blank=True, help_text="When they accepted the privacy notice while setting up their account.",
+    )
     display_name = models.CharField(
         max_length=255,
         blank=True,
