@@ -292,7 +292,8 @@ def guardian_me(request):
             guardian.save(update_fields=["display_name"])
         # A parent keeps their own contact details up to date (never the admin note).
         contact = GuardianContactSerializer(
-            guardian, data={k: request.data[k] for k in CONTACT_FIELDS if k in request.data}, partial=True,
+            guardian, data={k: request.data[k] for k in CONTACT_FIELDS + ["email_notifications"] if k in request.data},
+            partial=True,
         )
         contact.is_valid(raise_exception=True)
         changed = [k for k, v in contact.validated_data.items() if getattr(guardian, k) != v]
@@ -300,7 +301,9 @@ def guardian_me(request):
         if changed:
             log_activity(
                 school=guardian.school, actor=request.user, action="parent.contact_changed", target=guardian,
-                summary=f"{guardian.name} updated their contact details", fields=changed,
+                summary=(f"{guardian.name} turned email notifications {'on' if guardian.email_notifications else 'off'}"
+                         if changed == ["email_notifications"] else f"{guardian.name} updated their contact details"),
+                fields=changed,
             )
     return Response({
         "id": request.user.id,

@@ -59,6 +59,9 @@ class Guardian(models.Model):
     occupation = models.CharField(max_length=120, blank=True)
     preferred_contact = models.CharField(max_length=10, choices=ContactMethod.choices, blank=True)
     admin_note = models.TextField(blank=True, help_text="Private to the school's admins.")
+    email_notifications = models.BooleanField(
+        default=True, help_text="Email this parent when an announcement or report is published for them.",
+    )
 
     @property
     def name(self):

@@ -191,7 +191,7 @@ class GuardianContactSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Guardian
-        fields = CONTACT_FIELDS
+        fields = CONTACT_FIELDS + ["email_notifications"]
 
     def validate_phone(self, value):
         return _clean_phone(value)
@@ -215,8 +215,9 @@ class ParentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializ
         model = Guardian
         fields = [
             "id", "user_id", "name", "email", "is_active", "students", "student_names",
-            "date_joined", "last_login", *CONTACT_FIELDS, "admin_note",
+            "date_joined", "last_login", *CONTACT_FIELDS, "admin_note", "email_notifications",
         ]
+        read_only_fields = ["email_notifications"]  # the parent's own choice
 
     def validate_phone(self, value):
         return _clean_phone(value)

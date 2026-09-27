@@ -11,6 +11,7 @@ from accounts.permissions import IsSchoolAdmin
 from accounts.scoping import check_can_see_student, is_admin, limit_to_visible_students, visible_students
 from activity.services import log_activity, student_name
 from gradebook.locks import check_term_open
+from guardians.notifications import notify_reports_finalized
 
 from students.models import SchoolClass, Student
 from gradebook.models import Term
@@ -118,6 +119,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         report.review_note = ""
         report.save(update_fields=["status", "finalized_by", "finalized_at", "review_note", "edited_at"])
         self._log(report, "report.finalized", "Finalized and released to parents")
+        notify_reports_finalized([report], request.user)
         return Response(self.get_serializer(report).data)
 
     @action(detail=True, methods=["post"], url_path="send-back", permission_classes=[IsSchoolAdmin])
@@ -282,10 +284,14 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         # Only reports a teacher has submitted; drafts still need their review.
         school_class, term = self._class_and_term(request)
         check_term_open(term)
-        count = self._class_reports(request, school_class, term, "submitted").update(
+        reports = self._class_reports(request, school_class, term, "submitted")
+        ids = list(reports.values_list("id", flat=True))
+        count = reports.update(
             status="finalized", finalized_by=request.user, finalized_at=timezone.now(), review_note="",
             edited_at=timezone.now(),
         )
+        notify_reports_finalized(
+            StudentReport.objects.filter(id__in=ids).select_related("student__school", "term"), request.user)
         if count:
             log_activity(
                 school=school_class.year_group.school, actor=request.user, action="report.class_finalized",

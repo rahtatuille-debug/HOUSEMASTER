@@ -13,6 +13,8 @@ from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
 
+from guardians.notifications import notify_announcement_published
+
 from .alerts import alert_recipient_users, email_alert
 from .models import AlertRecipient, Announcement, UrgentAlert
 from .permissions import CanViewAnnouncements
@@ -130,6 +132,7 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         if announcement.status != Announcement.Status.DRAFT:
             raise ValidationError("Only draft announcements can be published.")
         announcement.publish()
+        notify_announcement_published(announcement, request.user)
         log_activity(
             school=announcement.school, actor=request.user, action="announcement.published",
             target=announcement,

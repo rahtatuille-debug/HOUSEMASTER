@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 
 import os
+import sys
 
 import dj_database_url
 from dotenv import load_dotenv
@@ -314,3 +315,8 @@ if SENTRY_DSN:
         send_default_pii=False,
         environment=os.environ.get('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
     )
+
+# Parent notification emails are sent on a background thread so publishing to
+# a whole school doesn't hold up the request. Tests send them inline.
+NOTIFICATIONS_IN_BACKGROUND = os.environ.get('NOTIFICATIONS_IN_BACKGROUND', 'true').lower() == 'true' \
+    and 'test' not in sys.argv[1:2]
