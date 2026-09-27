@@ -22,7 +22,7 @@ from gradebook.levels import SCALES
 from gradebook.models import AssessmentType, Subject, Term
 
 from .models import School, SchoolClass, YearGroup
-from .presets import COUNTRIES, SYSTEMS, catalogue
+from .presets import COUNTRIES, SYSTEMS, catalogue, subject_key
 
 MAX_PROGRESS_CHARS = 50_000
 
@@ -232,7 +232,7 @@ def finish_setup(request):
                 _, made = SchoolClass.objects.get_or_create(year_group=year_group, name=class_name)
                 created["classes"] += made
         for subject in v["subjects"]:
-            _, made = Subject.objects.get_or_create(school=school, name=subject)
+            _, made = Subject.objects.get_or_create(school=school, name=subject, education_system="")
             created["subjects"] += made
         for term in v["terms"]:
             _, made = Term.objects.get_or_create(
@@ -310,7 +310,9 @@ def add_section(request):
                 SchoolClass.objects.create(year_group=year_group, name=class_name)
                 created["classes"] += 1
         for subject in v["subjects"]:
-            _, made = Subject.objects.get_or_create(school=school, name=subject)
+            # The section keeps its own subject list, separate from the rest of the school's.
+            _, made = Subject.objects.get_or_create(school=school, name=subject,
+                                                    education_system=subject_key(school, system))
             created["subjects"] += made
         log_activity(
             school=school, actor=request.user, action="school.section_added",

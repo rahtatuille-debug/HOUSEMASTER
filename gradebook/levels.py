@@ -103,6 +103,7 @@ def school_summary(school):
 
     from .systems import REPORT_EXTRAS, SUBJECT_FIELDS
 
+    sections = school_sections(school)
     return {"id": school.id, "name": school.name, "grading_scale": school.grading_scale,
             "levels": levels(school.grading_scale), "education_system": school.education_system,
             "privacy_contact": school.privacy_contact,
@@ -111,4 +112,19 @@ def school_summary(school):
                             "people" if school.structure_completed_at else "structure"),
             "vocab": school_vocab(school), "country": country(school.country),
             "report_extras": REPORT_EXTRAS.get(school.education_system, []),
-            "subject_fields": SUBJECT_FIELDS.get(school.education_system, [])}
+            "subject_fields": SUBJECT_FIELDS.get(school.education_system, []),
+            # A school running two curricula grades each section on its own scale.
+            "sections": sections,
+            "scale_levels": {scale: levels(scale) for scale in {school.grading_scale, *(s["scale"] for s in sections)}}}
+
+
+def school_sections(school):
+    """Every curriculum at the school with its grading: [{system, scale, name}], the school's own first."""
+    from students.presets import SHORT_NAMES, SYSTEMS, section_for
+
+    seen = {school.education_system: school.grading_scale}
+    for year_group in school.year_groups.exclude(education_system=""):
+        system, scale = section_for(year_group, school)
+        seen.setdefault(system, scale)
+    return [{"system": system, "scale": scale, "name": SHORT_NAMES.get(system, system),
+             "levels_key": levels_key(scale)} for system, scale in seen.items() if system in SYSTEMS]

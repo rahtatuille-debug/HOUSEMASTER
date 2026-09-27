@@ -56,6 +56,10 @@ class Profile(models.Model):
         blank=True,
         help_text="The staff member's name shown throughout HouseMaster. Never use their login email as a display name.",
     )
+    # Getting started: when they finished (or skipped) the guided tour, and
+    # whether they've hidden the getting-started checklist on their home page.
+    tour_seen_at = models.DateTimeField(null=True, blank=True)
+    checklist_hidden = models.BooleanField(default=False)
 
     @property
     def is_admin(self):

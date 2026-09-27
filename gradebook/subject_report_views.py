@@ -29,6 +29,12 @@ def _lookup(request, data):
         school_class = SchoolClass.objects.get(pk=data.get("school_class"), year_group__school=school)
     except (Term.DoesNotExist, Subject.DoesNotExist, SchoolClass.DoesNotExist, ValueError, TypeError):
         raise NotFound("Term, subject or class not found.")
+    from students.presets import section_for
+
+    from .choices import subject_system
+
+    if subject_system(subject, school) != section_for(school_class.year_group, school)[0]:
+        raise ValidationError(f"{subject.name} isn't part of {school_class.name}'s curriculum.")
     return term, subject, school_class
 
 

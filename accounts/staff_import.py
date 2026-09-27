@@ -79,7 +79,8 @@ class _StaffImport:
         self.invited_by = invited_by
         self.errors, self.people, self.skipped = [], [], []
         self.classes = list(SchoolClass.objects.filter(year_group__school=school).select_related("year_group"))
-        self.subjects = {s.name.lower(): s for s in Subject.objects.filter(school=school)}
+        # Keyed by curriculum too: a school running two can have "Mathematics" in each.
+        self.subjects = {(s.name.lower(), s.education_system): s for s in Subject.objects.filter(school=school)}
         self.seen_emails = set()
 
     def error(self, row, message):
@@ -99,10 +100,13 @@ class _StaffImport:
             raise ValueError(f'"{text}" matches more than one class; write it as "Year group/Class"')
         raise ValueError(f'no class called "{text}" (add it in Setup first)')
 
-    def find_subject(self, text):
-        subject = self.subjects.get(" ".join(text.split()).lower())
+    def find_subject(self, text, school_class):
+        from students.presets import section_for, subject_key
+
+        system = section_for(school_class.year_group, self.school)[0]
+        subject = self.subjects.get((" ".join(text.split()).lower(), subject_key(self.school, system)))
         if subject is None:
-            raise ValueError(f'no subject called "{text}" (add it in Setup first)')
+            raise ValueError(f'no subject called "{text}" in {school_class.name}\'s curriculum (add it in Setup first)')
         return subject
 
     def assignments(self, row):
@@ -120,7 +124,7 @@ class _StaffImport:
             school_class = self.find_class(class_text)
             for subject_text in subjects.split(","):
                 if subject_text.strip():
-                    result.append((school_class, self.find_subject(subject_text)))
+                    result.append((school_class, self.find_subject(subject_text, school_class)))
         return list(dict.fromkeys(result))
 
     def run(self, ws):

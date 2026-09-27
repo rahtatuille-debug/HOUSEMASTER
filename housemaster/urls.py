@@ -26,6 +26,7 @@ from students.setup_views import (add_section, complete_setup, finish_setup, pre
                                   setup_people, setup_state)
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
+from accounts.teacher_home import teacher_home, tour_seen
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
@@ -102,6 +103,8 @@ urlpatterns = [
     path('api/guardian-me/', guardian_me, name='guardian_me'),
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
+    path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/tour-seen/', tour_seen, name='tour_seen'),
     path('api/signup-requests/', signup_requests, name='signup_requests'),
     path('api/', include(router.urls)),
 ]

@@ -140,12 +140,20 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
 class GuardianStudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     school_class_name = serializers.SerializerMethodField(read_only=True)
 
+    # The grading scale of the child's section, so levels show on the right scale.
+    scale = serializers.SerializerMethodField(read_only=True)
+
+    def get_scale(self, obj):
+        from students.presets import student_section
+
+        return student_section(obj)[1]
+
     class Meta:
         model = Student
         fields = [
             "id", "first_name", "last_name", "school_class", "school_class_name",
             "house", "enrolled_on", "is_active", "external_id", "gender", "date_of_birth",
-            "nationality", "mode_of_learning", "medical_notes", "has_photo",
+            "nationality", "mode_of_learning", "medical_notes", "has_photo", "scale",
         ]
 
     has_photo = serializers.SerializerMethodField(read_only=True)

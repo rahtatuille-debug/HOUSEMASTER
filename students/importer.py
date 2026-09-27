@@ -171,7 +171,13 @@ class _Import:
             if getattr(term, "is_locked", False):
                 self.error("Grades", number, f'Term "{term_name}" is locked')
                 continue
-            subject = self._named(Subject, subject_name, "subjects")
+            from .presets import student_section, subject_key
+
+            subject, made = Subject.objects.get_or_create(
+                school=self.school, name=subject_name,
+                education_system=subject_key(self.school, student_section(student)[0]))
+            if made:
+                self.created["subjects"].append(subject_name)
             Grade.objects.update_or_create(student=student, subject=subject, term=term,
                                            defaults={"score": score, "max_score": max_score})
             self.counts["grades"] += 1

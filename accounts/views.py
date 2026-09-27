@@ -49,6 +49,7 @@ def me(request):
             "id": request.user.id,
             "name": profile.name,
             "role": profile.role,
+            "tour_seen": profile.tour_seen_at is not None,
             "school": school_summary(profile.school),
             "assignments": TeachingAssignmentSerializer(
                 profile.assignments.select_related("school_class", "subject"), many=True

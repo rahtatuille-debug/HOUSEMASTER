@@ -9,9 +9,12 @@ class Subject(models.Model):
     credits = models.DecimalField(max_digits=4, decimal_places=1, default=1)
     # Core subjects are taken by everyone; an elective only by students who chose it.
     is_elective = models.BooleanField(default=False)
+    # A school running two curricula keeps a separate subject list for each:
+    # blank is the school's own system, otherwise the other section's system.
+    education_system = models.CharField(max_length=20, blank=True)
 
     class Meta:
-        unique_together = ("school", "name")
+        unique_together = ("school", "name", "education_system")
 
     def __str__(self):
         return self.name

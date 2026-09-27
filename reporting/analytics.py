@@ -11,7 +11,8 @@ Only active students count towards group figures.
 from collections import defaultdict
 from datetime import date
 
-from gradebook.levels import SCALES
+from gradebook.levels import SCALES, levels, school_sections
+from students.presets import SHORT_NAMES, section_for, student_section
 from gradebook.models import Grade, Term
 from gradebook.weighting import school_weights, subject_percent
 from students.models import SchoolClass, Student, YearGroup
@@ -29,19 +30,23 @@ class SchoolGrades:
     """Every active student's grades at a school, loaded once and averaged in memory."""
 
     def __init__(self, school):
+        self.school = school
         self.scale = school.grading_scale
         self.terms = sorted(Term.objects.filter(school=school), key=lambda t: (t.start_date or date.min, t.id))
         self.students = {
             s.id: s for s in Student.objects.filter(school=school, is_active=True)
-            .select_related("school_class__year_group")
+            .select_related("school", "school_class__year_group")
         }
         # (student, term) -> {subject: [(percent, assessment type), ...]}
         self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
-        for student_id, term_id, subject, score, max_score, type_id in Grade.objects.filter(
+        for student_id, term_id, subject, section, score, max_score, type_id in Grade.objects.filter(
             student_id__in=self.students
-        ).values_list("student_id", "term_id", "subject__name", "score", "max_score", "assessment_type_id"):
+        ).values_list("student_id", "term_id", "subject__name", "subject__education_system", "score", "max_score",
+                      "assessment_type_id"):
             if max_score:
+                # Each curriculum's subjects are separate, e.g. "Mathematics · British".
+                subject = f"{subject} · {SHORT_NAMES.get(section, section)}" if section else subject
                 self.marks[(student_id, term_id)][subject].append((float(score) / float(max_score) * 100, type_id))
         self.graded_terms = [t for t in self.terms if any(k[1] == t.id for k in self.marks)]
 
@@ -63,16 +68,19 @@ class SchoolGrades:
                 per_subject[subject].append(self.student_subject(s, term_id, subject))
         return {subject: _mean(values) for subject, values in per_subject.items()}
 
-    def distribution(self, student_ids, term_id):
+    def distribution(self, student_ids, term_id, scale=None):
         averages = [a for a in (self.student_average(s, term_id) for s in student_ids) if a is not None]
         return [
             {"band": label, "students": sum(1 for a in averages if low <= a < high)}
-            for low, high, label in self.bands()
+            for low, high, label in self.bands(scale)
         ]
 
-    def bands(self):
-        """CBC schools count students per level, lowest first; others use 10% bands."""
-        scale = SCALES.get(self.scale)
+    def section_of(self, student_id):
+        return student_section(self.students[student_id])
+
+    def bands(self, scale=None):
+        """Schools with levels count students per level, lowest first; others use 10% bands."""
+        scale = SCALES.get(scale or self.scale)
         if not scale:
             return BANDS
         lows = [low for low, _code, _name in scale]
@@ -131,6 +139,7 @@ def _student_rows(data, student_ids, term, visible_ids):
 
 def student_analytics(data, student, term):
     sid = student.id
+    system, scale = student_section(student)
     klass = student.school_class
     classmates = data.in_class(klass.id) if klass else []
     year_mates = data.in_year(klass.year_group_id) if klass else []
@@ -150,11 +159,18 @@ def student_analytics(data, student, term):
             data.group_subjects(classmates, term.id) if term and klass else {},
             "student", "class",
         ),
+        "grading": _grading(system, scale),
     }
+
+
+def _grading(system, scale):
+    """Which curriculum and scale a view's levels use, so the app labels them right."""
+    return {"system": system, "scale": scale, "levels": levels(scale)}
 
 
 def class_analytics(data, school_class, term, visible_ids):
     ids = data.in_class(school_class.id)
+    system, scale = section_for(school_class.year_group, data.school)
     year_ids = data.in_year(school_class.year_group_id)
     everyone = data.everyone()
     return {
@@ -168,14 +184,16 @@ def class_analytics(data, school_class, term, visible_ids):
         "subjects": _subject_rows(data.group_subjects(ids, term.id) if term else {},
                                   data.group_subjects(year_ids, term.id) if term else {},
                                   "class", "year_group"),
-        "distribution": data.distribution(ids, term.id) if term else [],
+        "distribution": data.distribution(ids, term.id, scale) if term else [],
         "students": _student_rows(data, ids, term, visible_ids),
+        "grading": _grading(system, scale),
     }
 
 
 def year_group_analytics(data, year_group, term, visible_ids):
     classes = list(SchoolClass.objects.filter(year_group=year_group).order_by("name"))
     ids = data.in_year(year_group.id)
+    system, scale = section_for(year_group, data.school)
     everyone = data.everyone()
     return {
         "scope": "year_group", "name": year_group.name, "students_count": len(ids),
@@ -194,8 +212,9 @@ def year_group_analytics(data, year_group, term, visible_ids):
         "subjects": _subject_rows(data.group_subjects(ids, term.id) if term else {},
                                   data.group_subjects(everyone, term.id) if term else {},
                                   "year_group", "school"),
-        "distribution": data.distribution(ids, term.id) if term else [],
+        "distribution": data.distribution(ids, term.id, scale) if term else [],
         "students": _student_rows(data, ids, term, visible_ids),
+        "grading": _grading(system, scale),
     }
 
 
@@ -218,4 +237,17 @@ def school_analytics(data, school, term):
         ],
         "subjects": _subject_rows(data.group_subjects(everyone, term.id) if term else {}, {}, "school", "unused"),
         "distribution": data.distribution(everyone, term.id) if term else [],
+        "grading": _grading(school.education_system, school.grading_scale),
+        # A school running two curricula gets a level spread for each, on its own scale.
+        "distributions": _section_distributions(data, school, everyone, term),
     }
+
+
+def _section_distributions(data, school, everyone, term):
+    sections = school_sections(school)
+    if len(sections) < 2 or term is None:
+        return []
+    return [{**section, "levels": levels(section["scale"]),
+             "distribution": data.distribution([s for s in everyone if data.section_of(s)[0] == section["system"]],
+                                               term.id, section["scale"])}
+            for section in sections]

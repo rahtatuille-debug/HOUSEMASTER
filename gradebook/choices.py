@@ -22,8 +22,24 @@ from .models import StudentSubject, Subject
 LEVELS = {"", "HL", "SL"}
 
 
+def subject_system(subject, school=None):
+    """The curriculum a subject belongs to."""
+    return subject.education_system or (school or subject.school).education_system
+
+
+def section_subjects(school, system):
+    """The subjects of one curriculum at the school."""
+    from students.presets import subject_key
+
+    return Subject.objects.filter(school=school, education_system=subject_key(school, system))
+
+
 def takes(student, subject):
-    """Whether the student studies this subject."""
+    """Whether the student studies this subject: it's in their curriculum, and core or chosen."""
+    from students.presets import student_section
+
+    if subject_system(subject, student.school) != student_section(student)[0]:
+        return False
     return not subject.is_elective or StudentSubject.objects.filter(student=student, subject=subject).exists()
 
 
@@ -64,8 +80,8 @@ def class_subject_choices(request):
         raise PermissionDenied("You can only set subject choices for a class you teach.")
     students = list(visible_students(request.user).filter(school_class=school_class, is_active=True)
                     .order_by("last_name", "first_name"))
-    subjects = list(Subject.objects.filter(school=school).order_by("name"))
     system = section_for(school_class.year_group, school)[0]
+    subjects = list(section_subjects(school, system).order_by("name"))
     pathways = PATHWAYS.get(system, [])
 
     if request.method == "POST":

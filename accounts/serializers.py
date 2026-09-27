@@ -97,10 +97,24 @@ class TeachingAssignmentSerializer(SchoolScopedRelatedFieldsMixin, serializers.M
         extra_kwargs = {"subject": {"required": False, "allow_null": True}}
 
     def get_subject_name(self, obj):
-        return obj.subject.name if obj.subject else "All subjects"
+        if not obj.subject:
+            return "All subjects"
+        from students.presets import SHORT_NAMES
+
+        system = obj.subject.education_system
+        return f"{obj.subject.name} · {SHORT_NAMES.get(system, system)}" if system else obj.subject.name
 
     def validate(self, attrs):
         attrs.setdefault("subject", None)
+        subject, school_class = attrs["subject"], attrs["school_class"]
+        if subject is not None:
+            from gradebook.choices import subject_system
+            from students.presets import section_for
+
+            school = school_class.year_group.school
+            if subject_system(subject, school) != section_for(school_class.year_group, school)[0]:
+                raise serializers.ValidationError(
+                    f"{subject.name} belongs to a different curriculum from {school_class.name}.")
         if TeachingAssignment.objects.filter(
             teacher=attrs["teacher"], school_class=attrs["school_class"], subject=attrs["subject"]
         ).exists():

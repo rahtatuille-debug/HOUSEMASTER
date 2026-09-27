@@ -317,6 +317,14 @@ def student_section(student):
     return section_for(klass.year_group if klass else None, student.school)
 
 
+SHORT_NAMES = {"cbc": "CBC", "844": "8-4-4", "british": "British", "ib": "IB", "american": "American"}
+
+
+def subject_key(school, system):
+    """What Subject.education_system holds for a section: blank for the school's own system."""
+    return "" if not system or system == school.education_system else system
+
+
 def words_for(school, system):
     """The words for a section: the school's own words for its main system, the system's for another."""
     return school_vocab(school) if system == school.education_system else vocab(system)

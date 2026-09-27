@@ -40,9 +40,15 @@ class YearGroupSerializer(serializers.ModelSerializer):
 
 
 class SchoolClassSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
+    # The curriculum the class follows (its year group's, or the school's).
+    section = serializers.SerializerMethodField()
+
     class Meta:
         model = SchoolClass
-        fields = ["id", "year_group", "name", "house"]
+        fields = ["id", "year_group", "name", "house", "section"]
+
+    def get_section(self, obj):
+        return obj.year_group.education_system or obj.year_group.school.education_system
 
 
 class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
@@ -52,7 +58,7 @@ class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSeriali
             "id", "school", "school_class", "external_id",
             "first_name", "last_name", "house", "enrolled_on", "is_active",
             "gender", "date_of_birth", "nationality", "mode_of_learning", "medical_notes",
-            "has_photo", "photo_updated_at", "pathway", "subject_choices",
+            "has_photo", "photo_updated_at", "pathway", "subject_choices", "section", "scale",
         ]
         extra_kwargs = {"school": {"read_only": True}, "photo_updated_at": {"read_only": True},
                         "pathway": {"read_only": True}}
@@ -61,8 +67,22 @@ class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSeriali
     # Electives chosen and IB levels; changed through the class subject choices grid.
     subject_choices = serializers.SerializerMethodField()
 
+    # The curriculum and grading scale of the student's section (the school's, unless their year group differs).
+    section = serializers.SerializerMethodField()
+    scale = serializers.SerializerMethodField()
+
     def get_subject_choices(self, obj):
         return [{"subject": c.subject_id, "level": c.level} for c in obj.subject_choices.all()]
+
+    def get_section(self, obj):
+        from .presets import student_section
+
+        return student_section(obj)[0]
+
+    def get_scale(self, obj):
+        from .presets import student_section
+
+        return student_section(obj)[1]
 
     def get_has_photo(self, obj):
         return obj.photo_updated_at is not None

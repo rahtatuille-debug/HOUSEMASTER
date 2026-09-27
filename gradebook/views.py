@@ -16,7 +16,7 @@ from .serializers import AssessmentTypeSerializer, SubjectSerializer, TermSerial
 
 
 class SubjectViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Subject.objects.all()
+    queryset = Subject.objects.select_related("school")
     serializer_class = SubjectSerializer
     school_lookup = "school"
     approval_kind = "subject"
