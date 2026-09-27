@@ -229,6 +229,30 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         reports = student.reports.filter(status="finalized").select_related("term").order_by("-generated_at")
         return Response(GuardianReportSerializer(reports, many=True).data)
 
+    @action(detail=True, methods=["get"], url_path="report-card")
+    def report_card(self, request, pk=None):
+        """The printable report card (PDF) for one finalized term report."""
+        from django.http import HttpResponse
+        from django.utils.text import slugify
+
+        from reporting.exports import reports_pdf
+
+        student = self.get_object()
+        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).first() \
+            if str(request.query_params.get("term", "")).isdigit() else None
+        if report is None:
+            raise NotFound("There's no finalized report for that term.")
+        content, _ = reports_pdf(student.school, [student], report.term)
+        log_activity(
+            school=student.school, actor=request.user, action="report.downloaded", target=report,
+            summary=f"{request.user.guardian.name} downloaded the {report.term.name} report card for "
+                    f"{student_name(student)}",
+        )
+        response = HttpResponse(content, content_type="application/pdf")
+        filename = f"report-card-{slugify(student.first_name)}-{slugify(student.last_name)}-{slugify(report.term.name)}.pdf"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
 
 class GuardianInvitePreviewView(APIView):
     permission_classes = [AllowAny]

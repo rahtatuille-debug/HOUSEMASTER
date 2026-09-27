@@ -158,8 +158,10 @@ class GuardianReportSerializer(SchoolScopedRelatedFieldsMixin, serializers.Model
     class Meta:
         model = StudentReport
         fields = [
-            "id", "term", "term_name", "progress_summary", "report_comment",
-            "status", "generated_at", "edited_at",
+            # The progress summary is written for staff records, so parents
+            # only get the report comment.
+            "id", "term", "term_name", "report_comment",
+            "status", "generated_at", "edited_at", "finalized_at",
         ]
 
 

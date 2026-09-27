@@ -439,3 +439,35 @@ class ParentContactDetailsTests(SchoolScopedAPITestCase):
         self.assertEqual(client.get(f"/api/parents/{self.parent.id}/").status_code, 404)
         self.assertEqual(client.patch(f"/api/parents/{self.parent.id}/", {"phone": "0700 000 000"},
                                       format="json").status_code, 404)
+
+
+class GuardianReportCardTests(GuardianStudentPortalTests):
+    """Parents download their own child's finalized report card, and never see staff notes."""
+
+    def test_reports_leave_out_the_staff_progress_summary(self):
+        rows = self.guardian_client.get(f"/api/guardian-students/{self.child.id}/reports/").data
+        self.assertEqual(rows[0]["report_comment"], "Well done.")
+        self.assertNotIn("progress_summary", rows[0])
+
+    def test_parent_downloads_a_finalized_report_card(self):
+        response = self.guardian_client.get(
+            f"/api/guardian-students/{self.child.id}/report-card/", {"term": self.report.term_id})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+        self.assertIn("report-card-amina-otieno", response["Content-Disposition"])
+        self.assertTrue(ActivityLog.objects.filter(action="report.downloaded").exists())
+
+    def test_no_card_for_unfinalized_reports_or_other_children(self):
+        self.report.status = "submitted"
+        self.report.save()
+        url = f"/api/guardian-students/{self.child.id}/report-card/"
+        self.assertEqual(self.guardian_client.get(url, {"term": self.report.term_id}).status_code, 404)
+        self.assertEqual(self.guardian_client.get(url, {"term": "abc"}).status_code, 404)
+        other = f"/api/guardian-students/{self.other_child.id}/report-card/"
+        self.assertEqual(self.guardian_client.get(other, {"term": self.report.term_id}).status_code, 404)
+
+    def test_staff_cannot_use_the_parent_download(self):
+        response = self.client_a.get(f"/api/guardian-students/{self.child.id}/report-card/",
+                                     {"term": self.report.term_id})
+        self.assertEqual(response.status_code, 403)
