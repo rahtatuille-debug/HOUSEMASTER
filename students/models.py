@@ -30,6 +30,11 @@ class School(models.Model):
                  ("ib", "International Baccalaureate"), ("american", "American")],
         help_text="Chosen in the setup wizard. See students.presets.",
     )
+    country = models.CharField(
+        max_length=10, default="ke",
+        choices=[("ke", "Kenya"), ("gb", "United Kingdom"), ("us", "United States"), ("other", "Another country")],
+        help_text="Decides the privacy law named in the privacy notice and local formats. See students.presets.",
+    )
     # Shown on report cards and to parents.
     motto = models.CharField(max_length=255, blank=True)
     address = models.TextField(blank=True)

@@ -22,7 +22,7 @@ from gradebook.levels import SCALES
 from gradebook.models import Subject, Term
 
 from .models import School, SchoolClass, YearGroup
-from .presets import SYSTEMS, catalogue
+from .presets import COUNTRIES, SYSTEMS, catalogue
 
 MAX_PROGRESS_CHARS = 50_000
 
@@ -41,6 +41,7 @@ class RegisterSchoolSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
     accept_privacy = serializers.BooleanField()
+    country = serializers.ChoiceField(choices=list(COUNTRIES), required=False, default="ke")
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -69,7 +70,7 @@ def register_school(request):
     name = " ".join(v["name"].split())
     first, _, last = name.partition(" ")
     with transaction.atomic():
-        school = School.objects.create(name=" ".join(v["school_name"].split()))
+        school = School.objects.create(name=" ".join(v["school_name"].split()), country=v["country"])
         user = User.objects.create_user(username=username_for_email(v["email"]), email=v["email"],
                                         password=v["password"], first_name=first[:150], last_name=last[:150])
         Profile.objects.create(user=user, school=school, role=Profile.Role.ADMIN, display_name=name,
@@ -84,6 +85,7 @@ def _school_state(school):
     return {
         "name": school.name, "motto": school.motto, "address": school.address, "phone": school.phone,
         "email": school.email, "privacy_contact": school.privacy_contact, "report_tone": school.report_tone,
+        "country": school.country,
         "grading_scale": school.grading_scale, "education_system": school.education_system,
         "setup_progress": school.setup_progress, "setup_completed_at": school.setup_completed_at,
     }
@@ -147,6 +149,7 @@ class FinishSetupSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
     email = serializers.EmailField(required=False, allow_blank=True, default="")
     privacy_contact = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    country = serializers.ChoiceField(choices=list(COUNTRIES), required=False, default="ke")
     education_system = serializers.ChoiceField(choices=list(SYSTEMS))
     year_groups = _YearGroupSerializer(many=True)
     subjects = serializers.ListField(child=serializers.CharField(max_length=100), max_length=200)
@@ -190,7 +193,7 @@ def finish_setup(request):
     school = request.user.profile.school
     created = {"year_groups": 0, "classes": 0, "subjects": 0, "terms": 0}
     with transaction.atomic():
-        for field in ("motto", "address", "phone", "email", "privacy_contact", "education_system",
+        for field in ("motto", "address", "phone", "email", "privacy_contact", "country", "education_system",
                       "grading_scale", "report_tone"):
             setattr(school, field, v[field].strip() if isinstance(v[field], str) else v[field])
         school.name = " ".join(v["name"].split())

@@ -171,4 +171,96 @@ def catalogue(today=None):
             for key, s in SYSTEMS.items()
         ],
         "scales": [{"key": k, "label": v, "key_text": levels_key(k)} for k, v in SCALE_LABELS.items()],
+        "countries": [country(code) for code in COUNTRIES],
     }
+
+
+# What each system calls things, so every screen uses the school's own words.
+DEFAULT_VOCAB = {
+    "year_group": "Year group", "year_groups": "Year groups", "class": "Class", "classes": "Classes",
+    "subject": "Subject", "subjects": "Subjects", "term": "Term", "terms": "Terms",
+    "student_id": "Admission no.",
+}
+VOCAB = {
+    "cbc": {**DEFAULT_VOCAB, "year_group": "Grade", "year_groups": "Grades", "class": "Stream", "classes": "Streams",
+            "subject": "Learning area", "subjects": "Learning areas"},
+    "844": {**DEFAULT_VOCAB, "year_group": "Form", "year_groups": "Forms", "class": "Stream", "classes": "Streams"},
+    "british": {**DEFAULT_VOCAB, "year_group": "Year", "year_groups": "Years", "class": "Form", "classes": "Forms",
+                "student_id": "Student ID"},
+    "ib": {**DEFAULT_VOCAB, "student_id": "Student ID"},
+    "american": {**DEFAULT_VOCAB, "year_group": "Grade", "year_groups": "Grades", "class": "Homeroom",
+                 "classes": "Homerooms", "subject": "Course", "subjects": "Courses", "term": "Semester",
+                 "terms": "Semesters", "student_id": "Student ID"},
+}
+
+
+def vocab(system):
+    return VOCAB.get(system, DEFAULT_VOCAB)
+
+
+# Where the school is, which decides the privacy law it follows and local formats.
+# Separate from the education system: a British-curriculum school in Nairobi
+# is still under Kenyan law.
+COUNTRIES = {
+    "ke": {"name": "Kenya", "locale": "en-KE", "phone_example": "+254 712 345 678",
+           "law": "Kenya's Data Protection Act, 2019",
+           "regulator": "the Office of the Data Protection Commissioner (ODPC)"},
+    "gb": {"name": "United Kingdom", "locale": "en-GB", "phone_example": "+44 7700 900123",
+           "law": "the UK GDPR and the Data Protection Act 2018",
+           "regulator": "the Information Commissioner's Office (ICO)"},
+    "us": {"name": "United States", "locale": "en-US", "phone_example": "+1 555 010 0123",
+           "law": "the Family Educational Rights and Privacy Act (FERPA) and your state's student privacy laws",
+           "regulator": "the US Department of Education's Student Privacy Policy Office"},
+    "other": {"name": "Another country", "locale": "en-GB", "phone_example": "+000 000 000 000",
+              "law": "the data protection laws of your country",
+              "regulator": "your national data protection authority"},
+}
+
+
+def country(code):
+    return {"code": code if code in COUNTRIES else "ke", **COUNTRIES.get(code, COUNTRIES["ke"])}
+
+
+# How the AI should write for each system, so drafted report comments and
+# announcements sound like they came from that kind of school.
+REPORT_GUIDANCE = {
+    "cbc": (
+        "The school follows Kenya's Competency Based Curriculum (CBC). Call subjects learning areas and the student "
+        "a learner. Describe performance with the CBC levels given (Exceeding, Meeting, Approaching or Below "
+        "Expectations) rather than raw marks. Where the data supports it, link progress to the CBC core competencies "
+        "(communication and collaboration, critical thinking and problem solving, creativity and imagination, "
+        "citizenship, digital literacy, learning to learn, self-efficacy). Never rank or compare the learner with "
+        "classmates."
+    ),
+    "844": (
+        "The school follows Kenya's 8-4-4 system and prepares students for the KCSE. Use the KCSE letter grades "
+        "given, name the subjects where improvement would most raise the mean grade, and set specific, achievable "
+        "targets for next term."
+    ),
+    "british": (
+        "The school follows the British curriculum (Cambridge, IGCSE and A Level). Comment on attainment using the "
+        "grades given (A* to G or 9 to 1) and finish with clear next steps."
+    ),
+    "ib": (
+        "The school is an International Baccalaureate (IB) school. Use the 1 to 7 grades given, and where the data "
+        "supports it relate progress to IB learner profile attributes (inquirer, knowledgeable, thinker, "
+        "communicator, principled, open-minded, caring, risk-taker, balanced, reflective) and approaches to learning."
+    ),
+    "american": (
+        "The school follows the American system. Refer to courses and the letter grades given (A to F), note "
+        "strengths and areas to improve, and keep the style of a US report card comment."
+    ),
+}
+
+
+def writing_context(school):
+    """Instructions that tell the AI which system, words and spelling this school uses."""
+    words = vocab(school.education_system)
+    spelling = "American English" if school.country == "us" else "British English"
+    lines = [REPORT_GUIDANCE[school.education_system]] if school.education_system in REPORT_GUIDANCE else []
+    lines.append(
+        f"Use the school's own words: a year group is a \"{words['year_group'].lower()}\", a class is a "
+        f"\"{words['class'].lower()}\", a subject is a \"{words['subject'].lower()}\" and a term is a "
+        f"\"{words['term'].lower()}\". Write in {spelling}."
+    )
+    return "\n".join(lines)

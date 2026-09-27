@@ -30,6 +30,11 @@ def _class(request):
     return school_class
 
 
+def _words(request):
+    from students.presets import vocab
+    return vocab(request.user.profile.school.education_system)
+
+
 def _term(request):
     try:
         return Term.objects.get(pk=request.query_params.get("term"), school=request.user.profile.school)
@@ -55,7 +60,7 @@ def _file(content, content_type, filename, request, what):
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_class_list(request):
     school_class = _class(request)
-    content = exports.class_list_xlsx(_students(request, school_class))
+    content = exports.class_list_xlsx(_students(request, school_class), words=_words(request))
     return _file(content, XLSX, f"class-list-{slugify(school_class.name)}.xlsx", request,
                  f"the class list for {school_class.name}")
 
@@ -65,7 +70,7 @@ def export_class_list(request):
 def export_grades(request):
     school_class, term = _class(request), _term(request)
     content = exports.grades_xlsx(_students(request, school_class), term,
-                                  scale=request.user.profile.school.grading_scale)
+                                  scale=request.user.profile.school.grading_scale, words=_words(request))
     return _file(content, XLSX, f"grades-{slugify(school_class.name)}-{slugify(term.name)}.xlsx", request,
                  f"{term.name} grades for {school_class.name}")
 
@@ -81,7 +86,7 @@ def export_attendance(request):
         raise ValidationError("Give a start and end date (YYYY-MM-DD).")
     if end < start or end - start > timedelta(days=400):
         raise ValidationError("The end date must be after the start, and at most about a year later.")
-    content = exports.attendance_xlsx(_students(request, school_class), start, end)
+    content = exports.attendance_xlsx(_students(request, school_class), start, end, words=_words(request))
     return _file(content, XLSX, f"attendance-{slugify(school_class.name)}-{start}-to-{end}.xlsx", request,
                  f"attendance for {school_class.name}, {start} to {end}")
 

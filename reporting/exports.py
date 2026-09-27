@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
+from students.presets import DEFAULT_VOCAB, vocab
 
 from .models import StudentReport
 
@@ -53,7 +54,7 @@ def _workbook_bytes(wb):
     return out.getvalue()
 
 
-def class_list_xlsx(students):
+def class_list_xlsx(students, words=DEFAULT_VOCAB):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     rows = []
@@ -66,7 +67,7 @@ def class_list_xlsx(students):
             "; ".join(g.phone for g in parents if g.phone), s.medical_notes,
         ])
     ws = _sheet(wb, "Class list", [
-        "Admission no.", "Last name", "First name", "Gender", "Date of birth", "House", "Mode of learning",
+        words["student_id"], "Last name", "First name", "Gender", "Date of birth", "House", "Mode of learning",
         "Admission date", "Status", "Parents", "Parent emails", "Parent phones", "Health notes",
     ], rows, widths={"Parents": 28, "Parent emails": 32, "Parent phones": 22, "Health notes": 40})
     for row in ws.iter_rows(min_row=2):
@@ -75,7 +76,7 @@ def class_list_xlsx(students):
     return _workbook_bytes(wb)
 
 
-def grades_xlsx(students, term, scale="percent"):
+def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB):
     grades = Grade.objects.filter(student__in=students, term=term).select_related("subject")
     by_student = defaultdict(dict)
     subjects = set()
@@ -93,7 +94,7 @@ def grades_xlsx(students, term, scale="percent"):
         if level_for(0, scale):  # CBC schools also get the level for the average
             row.append(level_for(average, scale))
         rows.append(row)
-    headers = ["Admission no.", "Last name", "First name", *subjects, "Average"]
+    headers = [words["student_id"], "Last name", "First name", *subjects, "Average"]
     if level_for(0, scale):
         headers.append("Level")
     wb = openpyxl.Workbook()
@@ -102,7 +103,7 @@ def grades_xlsx(students, term, scale="percent"):
     return _workbook_bytes(wb)
 
 
-def attendance_xlsx(students, start, end):
+def attendance_xlsx(students, start, end, words=DEFAULT_VOCAB):
     records = AttendanceRecord.objects.filter(student__in=students, date__gte=start, date__lte=end)
     by_student = defaultdict(dict)
     days = set()
@@ -122,11 +123,11 @@ def attendance_xlsx(students, start, end):
                         counts["late"], counts["excused"], rate])
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    _sheet(wb, "Summary", ["Admission no.", "Last name", "First name", "Days recorded", "Present", "Absent",
+    _sheet(wb, "Summary", [words["student_id"], "Last name", "First name", "Days recorded", "Present", "Absent",
                            "Late", "Excused", "Attendance % (present or late)"],
            summary, widths={"Attendance % (present or late)": 30})
     grid = [[s.external_id, _name(s), *[letters.get(by_student[s.id].get(d), "") for d in days]] for s in students]
-    ws = _sheet(wb, "By day", ["Admission no.", "Student", *[d.strftime("%a %d %b") for d in days]], grid,
+    ws = _sheet(wb, "By day", [words["student_id"], "Student", *[d.strftime("%a %d %b") for d in days]], grid,
                 widths={"Student": 26})
     ws.append([])
     ws.append(["P = present, A = absent, L = late, E = excused"])
@@ -151,6 +152,7 @@ class _ReportPDF(FPDF):
 
 def reports_pdf(school, students, term):
     """One page per student with a finalized report for the term. Returns (bytes, count)."""
+    words = vocab(school.education_system)
     reports = {
         r.student_id: r
         for r in StudentReport.objects.filter(student__in=students, term=term, status="finalized")
@@ -196,11 +198,11 @@ def reports_pdf(school, students, term):
         pdf.set_font("Serif", "", 11)
         pdf.set_text_color(*ink)
         klass = s.school_class
-        details = [f"Term: {term.name}"]
+        details = [f"{words['term']}: {term.name}"]
         if klass:
-            details.append(f"Class: {klass.year_group.name} · {klass.name}")
+            details.append(f"{words['class']}: {klass.year_group.name} · {klass.name}")
         if s.external_id:
-            details.append(f"Admission no.: {s.external_id}")
+            details.append(f"{words['student_id']}: {s.external_id}")
         pdf.cell(0, 7, "   |   ".join(details), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 

@@ -23,6 +23,8 @@ from messaging.models import Conversation, Message
 from reporting.exports import _sheet, _workbook_bytes
 from reporting.models import StudentReport
 
+from .presets import vocab
+
 REMOVED_FIRST, REMOVED_LAST = "Removed", "student"
 REMOVED_NAME = f"{REMOVED_FIRST} {REMOVED_LAST}"
 
@@ -34,6 +36,7 @@ def _when(value):
 def family_export(student):
     """An Excel workbook of everything held about this student and their parents."""
     klass = student.school_class
+    words = vocab(student.school.education_system)
     guardians = list(student.guardians.select_related("user"))
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -42,9 +45,9 @@ def family_export(student):
         ["School", student.school.name],
         ["First name", student.first_name],
         ["Last name", student.last_name],
-        ["Admission no.", student.external_id],
-        ["Year group", klass.year_group.name if klass else ""],
-        ["Class", klass.name if klass else ""],
+        [words["student_id"], student.external_id],
+        [words["year_group"], klass.year_group.name if klass else ""],
+        [words["class"], klass.name if klass else ""],
         ["House", student.house],
         ["Gender", student.get_gender_display() if student.gender else ""],
         ["Date of birth", student.date_of_birth],

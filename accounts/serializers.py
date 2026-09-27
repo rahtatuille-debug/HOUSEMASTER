@@ -121,10 +121,15 @@ class ProfileNameSerializer(serializers.Serializer):
 class InvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
     privacy_contact = serializers.CharField(source="school.privacy_contact", read_only=True)
+    country = serializers.SerializerMethodField(read_only=True)
+
+    def get_country(self, obj):
+        from students.presets import country
+        return country(obj.school.country)
 
     class Meta:
         model = Invite
-        fields = ["school_name", "privacy_contact", "role", "email", "status"]
+        fields = ["school_name", "privacy_contact", "country", "role", "email", "status"]
 
 
 class AcceptInviteSerializer(serializers.Serializer):

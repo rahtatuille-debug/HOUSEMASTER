@@ -67,11 +67,17 @@ class GuardianInviteSerializer(SchoolScopedRelatedFieldsMixin, serializers.Model
 class GuardianInvitePreviewSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
     privacy_contact = serializers.CharField(source="school.privacy_contact", read_only=True)
+    country = serializers.SerializerMethodField(read_only=True)
+
+    def get_country(self, obj):
+        from students.presets import country
+        return country(obj.school.country)
+
     student_names = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = GuardianInvite
-        fields = ["school_name", "privacy_contact", "email", "student_names", "status"]
+        fields = ["school_name", "privacy_contact", "country", "email", "student_names", "status"]
 
     def get_student_names(self, obj):
         return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]
@@ -191,7 +197,7 @@ PHONE_RE = re.compile(r"^\+?[0-9 ()\-]{7,25}$")
 def _clean_phone(value):
     value = " ".join(value.split())
     if value and (not PHONE_RE.match(value) or sum(c.isdigit() for c in value) < 7):
-        raise serializers.ValidationError("Enter a phone number, e.g. +254 712 345 678.")
+        raise serializers.ValidationError("Enter a phone number with its country code, e.g. +254 712 345 678 or +44 7700 900123.")
     return value
 
 

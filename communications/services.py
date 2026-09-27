@@ -2,6 +2,7 @@
 import os
 
 from reporting.services import MODEL, TONE_GUIDANCE
+from students.presets import writing_context
 
 
 def _build_prompt(*, school, summary, audience_label, target_label=None):
@@ -11,6 +12,8 @@ def _build_prompt(*, school, summary, audience_label, target_label=None):
         audience_context = f"{audience_label}: {target_label}"
 
     return f"""You are helping {school.name} prepare an official school announcement.
+
+{writing_context(school)}
 
 The administrator or teacher's brief is:
 {summary}

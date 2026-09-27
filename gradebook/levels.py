@@ -98,8 +98,11 @@ def levels_key(scale):
 
 
 def school_summary(school):
-    """The school details every signed-in page needs, including its grading scale."""
+    """The school details every signed-in page needs: grading scale, words to use and country."""
+    from students.presets import country, vocab
+
     return {"id": school.id, "name": school.name, "grading_scale": school.grading_scale,
             "levels": levels(school.grading_scale), "education_system": school.education_system,
             "privacy_contact": school.privacy_contact,
-            "setup_completed": school.setup_completed_at is not None}
+            "setup_completed": school.setup_completed_at is not None,
+            "vocab": vocab(school.education_system), "country": country(school.country)}

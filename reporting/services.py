@@ -9,6 +9,9 @@ import os
 
 from gradebook.models import Grade
 from attendance.models import AttendanceRecord
+from gradebook.levels import level_for
+from students.presets import vocab, writing_context
+
 from .models import StudentReport
 
 MODEL = "gemini-3.6-flash"
@@ -29,9 +32,15 @@ def _build_student_context(student, term):
         date__lte=term.end_date if term.end_date else None,
     ) if term.start_date and term.end_date else AttendanceRecord.objects.none()
 
-    grade_lines = [
-        f"- {g.subject.name}: {g.score}/{g.max_score}" for g in grades
-    ] or ["- No grades recorded this term."]
+    scale = student.school.grading_scale
+    words = vocab(student.school.education_system)
+
+    def line(g):
+        percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
+        level = level_for(percent, scale)
+        return f"- {g.subject.name}: {g.score}/{g.max_score}" + (f" ({percent:.0f}%, {level})" if level else "")
+
+    grade_lines = [line(g) for g in grades] or ["- No grades recorded this term."]
 
     total = attendance.count()
     if total:
@@ -47,7 +56,7 @@ def _build_student_context(student, term):
 
     return (
         f"Student: {student.first_name} {student.last_name}\n"
-        f"Term: {term.name}\n\n"
+        f"{words['term']}: {term.name}\n\n"
         f"Grades:\n" + "\n".join(grade_lines) + "\n\n"
         f"Attendance:\n{attendance_summary}"
     )
@@ -58,6 +67,8 @@ def _build_prompt(student, term, tone):
     tone_instruction = TONE_GUIDANCE.get(tone, TONE_GUIDANCE["formal"])
 
     return f"""You are helping a teacher prepare a student progress report from the data below.
+
+{writing_context(student.school)}
 
 {context}
 
