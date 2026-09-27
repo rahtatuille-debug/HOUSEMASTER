@@ -30,3 +30,17 @@ def send_password_reset_email(reset_token):
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[reset_token.user.email],
     )
+
+
+def send_staff_invite_email(invite, invited_by_name):
+    """Email a staff member their invite link, once the invite is saved (in the background)."""
+    from guardians.notifications import send_after_commit
+
+    school = invite.school
+    body = (
+        f"Hello {invite.name or 'there'},\n\n{invited_by_name} has invited you to join {school.name} on "
+        f"HouseMaster as {'an admin' if invite.role == 'admin' else 'a teacher'}.\n\n"
+        f"Create your account here (the link works until {invite.expires_at:%d %B %Y}):\n"
+        f"{settings.FRONTEND_URL}/invite/{invite.token}\n"
+    )
+    send_after_commit([(f"You're invited to join {school.name} on HouseMaster", body, invite.email)])

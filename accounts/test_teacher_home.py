@@ -55,3 +55,24 @@ class TeacherHomeTests(SchoolScopedAPITestCase):
         data = self.client_a.patch("/api/teacher-home/", {"hidden": True}, format="json").data
         self.assertTrue(data["checklist"]["hidden"])
         self.assertEqual(self.client_a.patch("/api/teacher-home/", {"hidden": "no"}, format="json").status_code, 400)
+
+
+from django.core import mail
+from django.test import override_settings
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", NOTIFICATIONS_IN_BACKGROUND=False)
+class StaffInviteEmailTests(SchoolScopedAPITestCase):
+    def test_a_single_invite_emails_the_link(self):
+        admin = self.authed_client(self.admin_a)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = admin.post("/api/invites/", {"name": "Sunset Teacher", "email": "sunset@school.com",
+                                                    "role": "teacher"}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["sunset@school.com"])
+        self.assertIn(f"/invite/{response.data['token']}", mail.outbox[0].body)
+        with self.captureOnCommitCallbacks(execute=True):
+            renewed = admin.post(f"/api/invites/{response.data['id']}/renew/").data
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn(f"/invite/{renewed['token']}", mail.outbox[1].body)

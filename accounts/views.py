@@ -12,7 +12,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from activity.services import log_activity
 from gradebook.levels import school_summary
 
-from .emails import send_admin_password_reset
+from .emails import send_admin_password_reset, send_staff_invite_email
 
 from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
@@ -71,6 +71,7 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             summary=f"Invited {invite.name} ({invite.email}) to join as {invite.get_role_display().lower()}",
             email=invite.email, role=invite.role,
         )
+        send_staff_invite_email(invite, self.request.user.profile.name)
 
     @action(detail=True, methods=["post"])
     def renew(self, request, pk=None):
@@ -82,6 +83,7 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             school=invite.school, actor=request.user, action="staff_invite.renewed", target=invite,
             summary=f"Renewed the staff invite for {invite.name} ({invite.email}) with a new link",
         )
+        send_staff_invite_email(invite, request.user.profile.name)
         return Response(self.get_serializer(invite).data)
 
     def perform_destroy(self, instance):
