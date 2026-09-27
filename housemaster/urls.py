@@ -22,7 +22,8 @@ from guardians.views import (
     guardian_me,
 )
 from messaging.views import ConversationViewSet
-from students.setup_views import add_section, finish_setup, preview_report_card, register_school, setup_state
+from students.setup_views import (add_section, complete_setup, finish_setup, preview_report_card, register_school,
+                                  setup_people, setup_state)
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
@@ -83,6 +84,8 @@ urlpatterns = [
     path('api/subject-reports/', class_subject_reports, name='class_subject_reports'),
     path('api/subject-choices/', class_subject_choices, name='class_subject_choices'),
     path('api/setup/finish/', finish_setup, name='finish_setup'),
+    path('api/setup/people/', setup_people, name='setup_people'),
+    path('api/setup/complete/', complete_setup, name='complete_setup'),
     path('api/setup/add-section/', add_section, name='add_section'),
     path('api/setup/preview-report/', preview_report_card, name='preview_report_card'),
     path('api/checklist/', first_week_checklist, name='first_week_checklist'),

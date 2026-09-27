@@ -236,16 +236,41 @@ def import_workbook(file, school, commit):
     }
 
 
-def template_workbook():
-    """An empty workbook with the right sheets, headers and one example row each."""
+def template_workbook(school=None):
+    """
+    An empty workbook with the right sheets, headers and one example row each.
+    For a school, the example uses its own classes, subjects and terms, and a
+    "Classes" sheet lists every class name to copy from.
+    """
+    examples = {k: list(v) for k, v in TEMPLATE_EXAMPLES.items()}
+    classes = []
+    if school is not None:
+        classes = list(SchoolClass.objects.filter(year_group__school=school).select_related("year_group")
+                       .order_by("year_group__order", "year_group__name", "name"))
+        if classes:
+            examples["Students"][3], examples["Students"][4] = classes[0].name, classes[0].year_group.name
+        subject = Subject.objects.filter(school=school).order_by("name").first()
+        term = Term.objects.filter(school=school).order_by("start_date", "name").first()
+        if subject:
+            examples["Grades"][1] = subject.name
+        if term:
+            examples["Grades"][2] = term.name
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for sheet, headers in TEMPLATE.items():
         ws = wb.create_sheet(sheet)
         ws.append(headers)
-        ws.append(TEMPLATE_EXAMPLES[sheet])
+        ws.append(examples[sheet])
         for cell in ws[1]:
             cell.font = openpyxl.styles.Font(bold=True)
         for column, header in zip(ws.columns, headers):
             ws.column_dimensions[column[0].column_letter].width = max(12, len(header) + 4)
+    if classes:
+        ws = wb.create_sheet("Classes")
+        ws.append(["class", "year_group"])
+        for klass in classes:
+            ws.append([klass.name, klass.year_group.name])
+        for cell in ws[1]:
+            cell.font = openpyxl.styles.Font(bold=True)
+        ws.column_dimensions["A"].width = ws.column_dimensions["B"].width = 22
     return wb

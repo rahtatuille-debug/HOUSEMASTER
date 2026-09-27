@@ -36,15 +36,36 @@ EXAMPLES = [
 ROLES = {"teacher": Profile.Role.TEACHER, "admin": Profile.Role.ADMIN, "": Profile.Role.TEACHER}
 
 
-def staff_template():
+def staff_template(school=None):
+    """
+    The staff sheet with example rows. For a school, the examples use its own
+    classes and subjects, and a "Classes and subjects" sheet lists the names
+    the import will recognise.
+    """
+    examples = [list(r) for r in EXAMPLES]
+    classes, subjects = [], []
+    if school is not None:
+        classes = [c.name for c in SchoolClass.objects.filter(year_group__school=school)
+                   .order_by("year_group__order", "year_group__name", "name")]
+        subjects = list(Subject.objects.filter(school=school).order_by("name").values_list("name", flat=True))
+        if classes and subjects:
+            other = classes[1] if len(classes) > 1 else classes[0]
+            examples[0][3] = classes[0]
+            examples[0][4] = f"{other}: {subjects[0]}" + (f"; {classes[0]}: {subjects[1]}" if len(subjects) > 1 else "")
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = SHEET
     ws.append(COLUMNS)
-    for row in EXAMPLES:
+    for row in examples:
         ws.append(row)
     for letter, width in zip("ABCDE", (22, 30, 10, 22, 50)):
         ws.column_dimensions[letter].width = width
+    if classes or subjects:
+        lists = wb.create_sheet("Classes and subjects")
+        lists.append(["class", "subject"])
+        for i in range(max(len(classes), len(subjects))):
+            lists.append([classes[i] if i < len(classes) else None, subjects[i] if i < len(subjects) else None])
+        lists.column_dimensions["A"].width = lists.column_dimensions["B"].width = 28
     return wb
 
 

@@ -107,6 +107,8 @@ def school_summary(school):
             "levels": levels(school.grading_scale), "education_system": school.education_system,
             "privacy_contact": school.privacy_contact,
             "setup_completed": school.setup_completed_at is not None,
+            "setup_stage": ("done" if school.setup_completed_at else
+                            "people" if school.structure_completed_at else "structure"),
             "vocab": school_vocab(school), "country": country(school.country),
             "report_extras": REPORT_EXTRAS.get(school.education_system, []),
             "subject_fields": SUBJECT_FIELDS.get(school.education_system, [])}

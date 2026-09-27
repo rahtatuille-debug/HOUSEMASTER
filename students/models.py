@@ -46,6 +46,9 @@ class School(models.Model):
     # The school's own words where they differ from its system's, e.g.
     # {"term": "Quarter", "terms": "Quarters"}. See students.presets.school_vocab.
     vocab_overrides = models.JSONField(default=dict, blank=True)
+    # Setup has two parts: the structure (system, classes, subjects, terms), then
+    # people (staff, students, parents). The school opens once both are done.
+    structure_completed_at = models.DateTimeField(null=True, blank=True)
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     # The admin hid the first-week checklist on the home page.
     checklist_hidden = models.BooleanField(default=False)

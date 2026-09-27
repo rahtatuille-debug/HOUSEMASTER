@@ -81,6 +81,13 @@ def register_school(request):
     return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)
 
 
+def setup_stage(school):
+    """Where a school is in setup: "structure", then "people", then "done"."""
+    if school.setup_completed_at:
+        return "done"
+    return "people" if school.structure_completed_at else "structure"
+
+
 def _school_state(school):
     return {
         "name": school.name, "motto": school.motto, "address": school.address, "phone": school.phone,
@@ -88,6 +95,7 @@ def _school_state(school):
         "country": school.country,
         "grading_scale": school.grading_scale, "education_system": school.education_system,
         "setup_progress": school.setup_progress, "setup_completed_at": school.setup_completed_at,
+        "setup_stage": setup_stage(school),
     }
 
 
@@ -237,7 +245,8 @@ def finish_setup(request):
                 school=school, name=" ".join(item["name"].split()), defaults={"weight": item["weight"], "order": order})
             created["assessment_types"] += made
         first_time = school.setup_completed_at is None
-        school.setup_completed_at = school.setup_completed_at or timezone.now()
+        # A new school moves on to adding its people; it opens once they're in (see complete_setup).
+        school.structure_completed_at = school.structure_completed_at or timezone.now()
         school.setup_progress = {}
         school.save()
         log_activity(
@@ -356,3 +365,55 @@ def preview_report_card(request):
     response = HttpResponse(pdf, content_type="application/pdf")
     response["Content-Disposition"] = 'inline; filename="sample-report-card.pdf"'
     return response
+
+
+def people_status(school, admin=None):
+    """What's in place for setup's people steps, and whether each required step is done."""
+    from accounts.models import Invite, Profile
+    from guardians.models import ClassSignupLink, Guardian, GuardianInvite
+
+    staff = Profile.objects.filter(school=school).exclude(user=admin).count()
+    staff_invites = Invite.objects.filter(school=school, accepted_at__isnull=True).count()
+    students = school.students.filter(is_active=True).count()
+    classes = SchoolClass.objects.filter(year_group__school=school).count()
+    links = ClassSignupLink.objects.filter(school=school, is_active=True).count()
+    parents = Guardian.objects.filter(school=school).count()
+    parent_invites = GuardianInvite.objects.filter(school=school, accepted_at__isnull=True).count()
+    return {
+        "stage": setup_stage(school),
+        "staff": {"accounts": staff, "invites": staff_invites, "done": staff + staff_invites > 0},
+        "students": {"count": students, "done": students > 0},
+        "parents": {"classes": classes, "links": links, "accounts": parents, "invites": parent_invites,
+                    "done": links + parents + parent_invites > 0},
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+def setup_people(request):
+    """Progress through setup's people steps (staff, students, parents)."""
+    return Response(people_status(request.user.profile.school, request.user))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+def complete_setup(request):
+    """Open the school once its structure is set up and staff, students and parents have been added."""
+    school = request.user.profile.school
+    status = people_status(school, request.user)
+    if status["stage"] == "structure":
+        raise serializers.ValidationError("Finish setting up the school's classes, subjects and terms first.")
+    missing = [what for key, what in (("staff", "invite at least one member of staff"),
+                                      ("students", "add your students"),
+                                      ("parents", "turn on a sign-up link or invite a parent"))
+               if not status[key]["done"]]
+    if missing:
+        raise serializers.ValidationError(f"Before opening the school, {', '.join(missing)}.")
+    if school.setup_completed_at is None:
+        school.setup_completed_at = timezone.now()
+        school.save(update_fields=["setup_completed_at"])
+        log_activity(school=school, actor=request.user, action="school.setup_completed",
+                     summary=f"Finished setup: {status['staff']['accounts'] + status['staff']['invites']} staff, "
+                             f"{status['students']['count']} students and {status['parents']['links']} class sign-up "
+                             f"links")
+    return Response(people_status(school, request.user))

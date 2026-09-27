@@ -91,11 +91,14 @@ class SetupWizardTests(SchoolScopedAPITestCase):
         self.school_a.refresh_from_db()
         self.assertEqual((self.school_a.education_system, self.school_a.grading_scale, self.school_a.motto),
                          ("cbc", "cbc8", "Rise and shine"))
-        self.assertIsNotNone(self.school_a.setup_completed_at)
+        # The structure is done; the school opens once its people are added.
+        self.assertIsNotNone(self.school_a.structure_completed_at)
+        self.assertIsNone(self.school_a.setup_completed_at)
         self.assertEqual(set(SchoolClass.objects.filter(year_group__school=self.school_a).values_list("name", flat=True)),
                          {"7 East", "7 West", "Grade 8"})
         self.assertEqual(Term.objects.get(school=self.school_a, name="Term 2 2026").start_date.isoformat(), "2026-04-28")
-        self.assertTrue(self.admin.get("/api/me/").data["school"]["setup_completed"])
+        school = self.admin.get("/api/me/").data["school"]
+        self.assertEqual((school["setup_completed"], school["setup_stage"]), (False, "people"))
         self.assertTrue(ActivityLog.objects.filter(action="school.setup_finished").exists())
 
     def test_finishing_twice_does_not_duplicate(self):

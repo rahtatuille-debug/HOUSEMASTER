@@ -136,9 +136,24 @@ def signup_links(request):
     GET: every class with its sign-up link (if any) and how many requests
     are waiting. POST {school_class, action: "create" | "renew" | "off"}:
     turn a class's link on, replace it with a new one, or turn it off.
+    POST {action: "create_all"}: turn on a link for every class.
     """
     school = request.user.profile.school
-    if request.method == "POST":
+    if request.method == "POST" and request.data.get("action") == "create_all":
+        # Every class that has no link yet (or a turned-off one) gets one.
+        classes = SchoolClass.objects.filter(year_group__school=school)
+        turned_on = 0
+        for klass in classes:
+            link, made = ClassSignupLink.objects.get_or_create(
+                school_class=klass, defaults={"school": school, "created_by": request.user})
+            if made or not link.is_active:
+                link.is_active = True
+                link.save(update_fields=["is_active"])
+                turned_on += 1
+        if turned_on:
+            log_activity(school=school, actor=request.user, action="signup_link.create_all",
+                         summary=f"Turned on parent sign-up links for {turned_on} classes")
+    elif request.method == "POST":
         klass = _class(request, request.data.get("school_class"))
         action = request.data.get("action")
         link = ClassSignupLink.objects.filter(school_class=klass).first()

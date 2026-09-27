@@ -21,7 +21,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 def import_template(request):
     """An empty workbook with the right sheets and columns, and an example row."""
     out = BytesIO()
-    template_workbook().save(out)
+    template_workbook(request.user.profile.school).save(out)
     response = HttpResponse(out.getvalue(), content_type=XLSX)
     response["Content-Disposition"] = 'attachment; filename="housemaster-import-template.xlsx"'
     return response
@@ -66,7 +66,7 @@ def staff_import_template(request):
     from accounts.staff_import import staff_template
 
     out = BytesIO()
-    staff_template().save(out)
+    staff_template(request.user.profile.school).save(out)
     response = HttpResponse(out.getvalue(), content_type=XLSX)
     response["Content-Disposition"] = 'attachment; filename="housemaster-staff-template.xlsx"'
     return response
