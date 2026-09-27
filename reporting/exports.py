@@ -181,6 +181,16 @@ def reports_pdf(school, students, term):
         pdf.set_text_color(*navy)
         pdf.set_font("Serif", "B", 11)
         pdf.cell(0, 8, school.name.upper(), new_x="LMARGIN", new_y="NEXT")
+        # The school's motto and contact details, when set during setup.
+        contact = " · ".join(x for x in (" ".join(school.address.split()), school.phone, school.email) if x)
+        if school.motto or contact:
+            pdf.set_font("Serif", "", 8)
+            pdf.set_text_color(90, 90, 90)
+            for line in (school.motto, contact):
+                if line:
+                    pdf.cell(0, 4.5, line, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(*navy)
+            pdf.ln(1)
         pdf.set_font("Serif", "B", 20)
         pdf.cell(0, 11, _name(s), new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Serif", "", 11)

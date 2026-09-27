@@ -138,7 +138,11 @@ class Command(BaseCommand):
         rng = random.Random(2026)
         today = timezone.localdate()
         now = timezone.now()
-        school = School.objects.create(name=SCHOOL_NAME, report_tone="warm")
+        school = School.objects.create(
+            name=SCHOOL_NAME, report_tone="warm", education_system="cbc", motto="Learning together, growing together",
+            address="Ngong Road, Nairobi", phone="+254 000 100 200", email=f"office@{DOMAIN}",
+            setup_completed_at=timezone.now(),
+        )
 
         # Hashing is deliberately slow, so hash the shared demo password once.
         password_hash = make_password(password)

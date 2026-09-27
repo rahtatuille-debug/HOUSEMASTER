@@ -1,5 +1,7 @@
 from django.db import models
 
+from gradebook.levels import SCALE_LABELS
+
 
 class School(models.Model):
     """A tenant school using HouseMaster."""
@@ -14,19 +16,29 @@ class School(models.Model):
         default="formal",
         help_text="School-level tone setting for AI-generated report comments (v1: per-school, not per-teacher).",
     )
-    class GradingScale(models.TextChoices):
-        CBC4 = "cbc4", "CBC: 4 levels (EE, ME, AE, BE)"
-        CBC8 = "cbc8", "CBC junior school: 8 levels (EE1 to BE2)"
-        PERCENT = "percent", "Percentages only"
-
     grading_scale = models.CharField(
-        max_length=10, choices=GradingScale.choices, default=GradingScale.CBC4,
+        max_length=10, choices=list(SCALE_LABELS.items()), default="cbc4",
         help_text="Which performance levels to show next to percentages. See gradebook.levels.",
     )
     privacy_contact = models.CharField(
         max_length=255, blank=True,
         help_text="Who people contact about their personal data (Kenya Data Protection Act), e.g. an email address.",
     )
+    education_system = models.CharField(
+        max_length=20, blank=True,
+        choices=[("cbc", "CBC"), ("844", "8-4-4"), ("british", "British / Cambridge"),
+                 ("ib", "International Baccalaureate"), ("american", "American")],
+        help_text="Chosen in the setup wizard. See students.presets.",
+    )
+    # Shown on report cards and to parents.
+    motto = models.CharField(max_length=255, blank=True)
+    address = models.TextField(blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    # The setup wizard: a school can't use the app until its first admin
+    # finishes it. Their choices so far are kept so they can come back later.
+    setup_progress = models.JSONField(default=dict, blank=True)
+    setup_completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

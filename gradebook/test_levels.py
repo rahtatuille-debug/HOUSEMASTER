@@ -86,7 +86,9 @@ class SchoolLevelTests(SchoolScopedAPITestCase):
         ann = Student.objects.get(first_name="Ann")
         StudentReport.objects.create(student=ann, term=self.term, progress_summary="s", report_comment="c",
                                      status="finalized")
-        for scale in ("cbc4", "cbc8", "percent"):
+        self.school_a.motto, self.school_a.address = "Learning together", "Box 1\nNakuru"
+        self.school_a.phone, self.school_a.email = "+254 700 000 000", "office@alpha.test"
+        for scale in ("cbc4", "cbc8", "kcse", "igcse", "igcse9", "ib", "american", "percent"):
             self.school_a.grading_scale = scale
             content, count = reports_pdf(self.school_a, [ann], self.term)
             self.assertEqual(count, 1)

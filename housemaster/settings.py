@@ -128,6 +128,8 @@ REST_FRAMEWORK = {
         # Starting AI reports for a whole class counts once here, not per report.
         'ai_class_report_generation': os.environ.get('AI_CLASS_REPORT_GENERATION_RATE', '5/hour'),
         'ai_announcement_drafting': os.environ.get('AI_ANNOUNCEMENT_DRAFTING_RATE', '30/hour'),
+        # New school sign-ups per IP address.
+        'school_registration': os.environ.get('SCHOOL_REGISTRATION_RATE', '5/hour'),
     },
 }
 

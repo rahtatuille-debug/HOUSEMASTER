@@ -6,7 +6,8 @@ from .models import School, YearGroup, SchoolClass, Student
 class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
-        fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "created_at"]
+        fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "motto",
+                  "address", "phone", "email", "created_at"]
 
 
 class YearGroupSerializer(serializers.ModelSerializer):
