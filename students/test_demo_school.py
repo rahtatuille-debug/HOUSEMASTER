@@ -81,3 +81,24 @@ class DemoSchoolTests(SchoolScopedAPITestCase):
         first_id = School.objects.get(name=SCHOOL_NAME).id
         self.assertIn("Deleted the old", run("--reset"))
         self.assertNotEqual(School.objects.get(name=SCHOOL_NAME).id, first_id)
+
+
+class DemoAfterMigrateTests(SchoolScopedAPITestCase):
+    """Deploys run migrate, which builds the demo when DEMO_PASSWORD is set."""
+
+    def migrate_hook(self, argv, password):
+        from django.apps import apps
+
+        from .apps import seed_demo_after_migrate
+        with patch.dict(os.environ, {"DEMO_PASSWORD": password}), patch("sys.argv", argv), \
+                patch("sys.stdout", StringIO()):
+            seed_demo_after_migrate(sender=apps.get_app_config("students"))
+
+    def test_migrate_builds_the_demo_when_the_password_is_set(self):
+        self.migrate_hook(["manage.py", "migrate"], PASSWORD)
+        self.assertTrue(School.objects.filter(name=SCHOOL_NAME).exists())
+
+    def test_nothing_happens_without_a_password_or_outside_migrate(self):
+        self.migrate_hook(["manage.py", "migrate"], "")
+        self.migrate_hook(["manage.py", "test"], PASSWORD)
+        self.assertFalse(School.objects.filter(name=SCHOOL_NAME).exists())
