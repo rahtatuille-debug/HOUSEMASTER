@@ -7,7 +7,8 @@ from rest_framework.throttling import ScopedRateThrottle
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.permissions import HasSchoolProfile
+from accounts.scoping import assigned_class_ids, is_admin
 from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
@@ -25,7 +26,11 @@ from .services import generate_announcement_text
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
-    """Draft, publish and archive one-way administrative announcements."""
+    """
+    Draft, publish and archive one-way announcements. Admins can write to any
+    audience. Teachers can write, publish and archive their own announcements
+    to the parents of a class they teach, without needing approval.
+    """
 
     queryset = Announcement.objects.select_related(
         "school", "year_group", "school_class", "created_by"
@@ -43,9 +48,8 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in {"list", "retrieve"}:
             return [IsAuthenticated(), CanViewAnnouncements()]
-        if self.action == "generate_text":
-            return [IsAuthenticated(), HasSchoolProfile()]
-        return [IsSchoolAdmin()]
+        # Teachers are limited to their own class announcements below.
+        return [IsAuthenticated(), HasSchoolProfile()]
 
     def get_queryset(self):
         if hasattr(self.request.user, "guardian"):
@@ -68,12 +72,13 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset().filter(school=school)
         if self.request.user.profile.role == "admin":
             return queryset
-        # Today, staff membership is the only recipient relationship in the
-        # product. Parent and class-targeted announcements remain private to
-        # admins until parent accounts/teaching assignments are added.
+        # Teachers see staff notices, anything published to a class they
+        # teach, and their own announcements at any stage.
         return queryset.filter(
-            status=Announcement.Status.PUBLISHED,
-            audience=Announcement.Audience.ALL_STAFF,
+            Q(status=Announcement.Status.PUBLISHED, audience=Announcement.Audience.ALL_STAFF)
+            | Q(status=Announcement.Status.PUBLISHED, audience=Announcement.Audience.SCHOOL_CLASS,
+                school_class_id__in=assigned_class_ids(self.request.user))
+            | Q(created_by=self.request.user)
         )
 
     def _validate_targets(self, serializer):
@@ -85,8 +90,25 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         if school_class and school_class.year_group.school_id != school.id:
             raise PermissionDenied("school_class does not belong to your school.")
 
+    def _check_teacher_audience(self, serializer):
+        """Teachers may only address the parents of a class they teach."""
+        if is_admin(self.request.user):
+            return
+        instance = serializer.instance
+        data = serializer.validated_data
+        audience = data.get("audience", instance.audience if instance else None)
+        school_class = data.get("school_class", instance.school_class if instance else None)
+        if audience != Announcement.Audience.SCHOOL_CLASS or school_class is None \
+                or school_class.id not in set(assigned_class_ids(self.request.user)):
+            raise PermissionDenied("Teachers can only send announcements to a class they teach.")
+
+    def _check_can_manage(self, announcement):
+        if not (is_admin(self.request.user) or announcement.created_by_id == self.request.user.id):
+            raise PermissionDenied("You can only change announcements you wrote.")
+
     def perform_create(self, serializer):
         self._validate_targets(serializer)
+        self._check_teacher_audience(serializer)
         announcement = serializer.save(school=self.request.user.profile.school, created_by=self.request.user)
         log_activity(
             school=announcement.school, actor=self.request.user, action="announcement.created",
@@ -94,14 +116,17 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        self._check_can_manage(serializer.instance)
         if serializer.instance.status != Announcement.Status.DRAFT:
             raise ValidationError("Only draft announcements can be edited.")
         self._validate_targets(serializer)
+        self._check_teacher_audience(serializer)
         serializer.save()
 
     @action(detail=True, methods=["post"])
     def publish(self, request, pk=None):
         announcement = self.get_object()
+        self._check_can_manage(announcement)
         if announcement.status != Announcement.Status.DRAFT:
             raise ValidationError("Only draft announcements can be published.")
         announcement.publish()
@@ -115,6 +140,7 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def archive(self, request, pk=None):
         announcement = self.get_object()
+        self._check_can_manage(announcement)
         if announcement.status != Announcement.Status.PUBLISHED:
             raise ValidationError("Only published announcements can be archived.")
         announcement.archive()

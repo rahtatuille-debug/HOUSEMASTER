@@ -71,7 +71,7 @@ class AnnouncementAPITests(SchoolScopedAPITestCase):
         self.assertNotIn(parent_notice.id, ids)
         self.assertEqual(len(ids), 1)
 
-    def test_teacher_cannot_author_or_publish(self):
+    def test_teacher_cannot_write_to_all_staff(self):
         response = self.client_a.post(
             "/api/announcements/",
             {"title": "No", "body": "No", "audience": Announcement.Audience.ALL_STAFF},
@@ -342,3 +342,76 @@ class UrgentAlertEmailTests(UrgentAlertTests):
         self.assertEqual((response.data["emailed_count"], response.data["email_failed_count"]), (0, 3))
         parent = self.authed_client(self.p7a)
         self.assertEqual(len(parent.get("/api/alerts/active/").data), 1)
+
+
+class TeacherClassAnnouncementTests(SchoolScopedAPITestCase):
+    """Teachers write and publish to the parents of their own classes, with no approval step."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin_client = self.authed_client(self.admin_a)
+        year = YearGroup.objects.create(school=self.school_a, name="Year 7")
+        self.my_class = SchoolClass.objects.create(year_group=year, name="7A")
+        self.other_class = SchoolClass.objects.create(year_group=year, name="7B")
+        self.assign(self.user_a, self.my_class, None)
+
+    def write(self, client=None, **overrides):
+        payload = {"title": "Trip on Friday", "body": "Bring a packed lunch.",
+                   "audience": Announcement.Audience.SCHOOL_CLASS, "school_class": self.my_class.id}
+        payload.update(overrides)
+        return (client or self.client_a).post("/api/announcements/", payload)
+
+    def test_teacher_writes_edits_publishes_and_archives_own_class_announcement(self):
+        created = self.write()
+        self.assertEqual(created.status_code, 201)
+        url = f"/api/announcements/{created.data['id']}/"
+        self.assertEqual(self.client_a.patch(url, {"body": "Bring a packed lunch and a hat."}).status_code, 200)
+        published = self.client_a.post(f"{url}publish/")
+        self.assertEqual(published.status_code, 200)
+        self.assertEqual(published.data["status"], Announcement.Status.PUBLISHED)
+        self.assertEqual(self.client_a.post(f"{url}archive/").data["status"], Announcement.Status.ARCHIVED)
+
+    def test_teacher_cannot_write_to_other_classes_or_wider_audiences(self):
+        self.assertEqual(self.write(school_class=self.other_class.id).status_code, 403)
+        self.assertEqual(self.write(audience=Announcement.Audience.ALL_PARENTS, school_class="").status_code, 403)
+        self.assertEqual(self.write(audience=Announcement.Audience.YEAR_GROUP, school_class="",
+                                    year_group=self.my_class.year_group.id).status_code, 403)
+        self.assertEqual(Announcement.objects.count(), 0)
+
+    def test_teacher_cannot_move_a_draft_to_a_class_they_dont_teach(self):
+        url = f"/api/announcements/{self.write().data['id']}/"
+        response = self.client_a.patch(url, {"school_class": self.other_class.id})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Announcement.objects.get().school_class, self.my_class)
+
+    def test_teacher_cannot_touch_someone_elses_announcement(self):
+        admins = self.write(client=self.admin_client)
+        url = f"/api/announcements/{admins.data['id']}/"
+        # An admin's draft isn't visible to the teacher at all.
+        self.assertEqual(self.client_a.patch(url, {"title": "Mine now"}).status_code, 404)
+        self.assertEqual(self.client_a.post(f"{url}publish/").status_code, 404)
+        # Once published to their class they can read it, but not archive it.
+        self.admin_client.post(f"{url}publish/")
+        self.assertEqual(self.client_a.get(url).status_code, 200)
+        self.assertEqual(self.client_a.post(f"{url}archive/").status_code, 403)
+        self.assertEqual(Announcement.objects.get().status, Announcement.Status.PUBLISHED)
+
+    def test_teacher_sees_own_drafts_and_published_notices_for_their_classes(self):
+        own_draft = self.write().data["id"]
+        mine = Announcement.objects.create(
+            school=self.school_a, title="Admin to 7A", body="x", audience=Announcement.Audience.SCHOOL_CLASS,
+            school_class=self.my_class, status=Announcement.Status.PUBLISHED, created_by=self.admin_a)
+        not_mine = Announcement.objects.create(
+            school=self.school_a, title="Admin to 7B", body="x", audience=Announcement.Audience.SCHOOL_CLASS,
+            school_class=self.other_class, status=Announcement.Status.PUBLISHED, created_by=self.admin_a)
+        admin_draft = Announcement.objects.create(
+            school=self.school_a, title="Admin draft", body="x", audience=Announcement.Audience.SCHOOL_CLASS,
+            school_class=self.my_class, created_by=self.admin_a)
+        ids = {row["id"] for row in self.client_a.get("/api/announcements/").data}
+        self.assertEqual(ids, {own_draft, mine.id})
+        self.assertNotIn(not_mine.id, ids)
+        self.assertNotIn(admin_draft.id, ids)
+
+    def test_other_schools_teacher_cannot_see_it(self):
+        announcement_id = self.write().data["id"]
+        self.assertEqual(self.client_b.get(f"/api/announcements/{announcement_id}/").status_code, 404)
