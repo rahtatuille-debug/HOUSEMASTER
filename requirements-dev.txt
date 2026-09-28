@@ -5,3 +5,4 @@ pypdf==6.19.0      # reads the sample report card PDFs in students/test_preview.
 tblib==3.2.2       # lets the parallel test runner report a failing test's traceback
 pip-audit==2.10.1  # known-vulnerability check on requirements.txt
 ruff==0.16.9       # lint (CI reports it, not blocking yet)
+dnspython==2.8.0   # scripts/check_email_dns.py (email authentication records)
