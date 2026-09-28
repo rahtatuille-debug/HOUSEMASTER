@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from accounts.emails import send_admin_password_reset
-from accounts.throttles import InviteIPThrottle
+from accounts.throttles import InviteIPThrottle, InviteSendRecipientThrottle, InviteSendUserThrottle
 from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
@@ -37,6 +37,7 @@ class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = GuardianInvite.objects.all()
     serializer_class = GuardianInviteSerializer
     permission_classes = [HasSchoolProfile, IsSchoolAdmin]
+    throttle_classes = [InviteSendUserThrottle, InviteSendRecipientThrottle]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def perform_create(self, serializer):

@@ -186,6 +186,10 @@ REST_FRAMEWORK = {
         # links and password-reset confirmation (token-guessing endpoints).
         'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
         'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
+        # Invite emails (new or renewed): per admin, and per recipient address
+        # across all schools, so invites can't flood someone's inbox.
+        'invite_send_user': os.environ.get('INVITE_SEND_USER_RATE', '100/hour'),
+        'invite_send_recipient': os.environ.get('INVITE_SEND_RECIPIENT_RATE', '5/day'),
     },
     # How many proxies sit in front of the app and append to
     # X-Forwarded-For. Without it DRF trusts the whole header, so anyone can
