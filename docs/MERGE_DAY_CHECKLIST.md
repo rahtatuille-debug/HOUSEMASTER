@@ -52,6 +52,8 @@ Merge each pull request, wait for the deploy, do its check, then go on.
 - [ ] **B13. Backend follow-up 4** (`claude/followup-4-docs-and-scripts`): documents and scripts only.
 - [ ] **B14. Smoke check.** Run `scripts/smoke_check.py` against production.
   *Check:* 0 failed. Warnings expected: report-only CSP until C4.
+- [ ] **B15. Browser smoke tests (optional).** In the frontend repository: `cd e2e && npm install && node run.mjs --frontend https://<frontend> --api https://<backend>` with test accounts in `E2E_*` variables (e2e/README.md). Read-only unless you add `--allow-mutations`.
+  *Check:* all pass (roles without accounts are skipped).
 
 ## C. After deploy
 
@@ -76,7 +78,7 @@ Merge each pull request, wait for the deploy, do its check, then go on.
 - [ ] **D5. DPIA** ([DRAFT_DPIA.md](legal/DRAFT_DPIA.md)) completed and signed by the school.
 - [ ] **D6. Real email delivery.** Set up SPF, DKIM and DMARC with your email provider (it shows the records and the DKIM **selector** on its "domain authentication" page), then `python scripts/check_email_dns.py <domain> --dkim-selector <selector> --provider <provider>`.
   *Check:* 0 failed; then send yourself an invite and a password reset from the live site and confirm they arrive in the inbox, not spam.
-- [ ] **D7. Real parent messaging check** with two parent accounts of different families at a test school: each sees only their own child, can message only that child's teachers and the admins, and never sees the other parent.
+- [ ] **D7. Real parent messaging check** with two parent accounts of different families at a test school: each sees only their own child, can message only that child's teachers and the admins, and never sees the other parent. The frontend's `e2e` suite automates it (`E2E_PARENT_*`, `E2E_PARENT2_*`; add `--allow-mutations` for the refused-message step, test accounts only).
 - [ ] **D8. Guardian checks.** The school adopts [SCHOOL_guardian_verification_procedure.md](legal/SCHOOL_guardian_verification_procedure.md) before linking any parent.
 - [ ] **D9. Hosting (H-10).** Render Starter or higher (then `WEB_CONCURRENCY=2`) and Neon Launch or higher before a second school.
 - [ ] **D10. Stray branch.** Delete `claude/ci-demo-broken-test` on GitHub (Branches → bin icon).
