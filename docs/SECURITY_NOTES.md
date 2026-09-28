@@ -78,3 +78,12 @@ parents' names to other parents of the same class. **Question for
 counsel** (docs/legal/QUESTIONS_FOR_COUNSEL.md): is that covered by the
 school's privacy notice, or should discussions show parents to each other
 only with their consent?
+
+## Fonts are served from our own site (F-2, frontend)
+
+The frontend used to load its fonts from Google Fonts, so every page view
+by a parent, pupil or teacher sent their IP address and browser details to
+Google. The fonts are now bundled with the app (same files, same look), the
+pages contact no third party for them, and the Content-Security-Policy
+allows fonts and styles from the app's own origin only. For a product used
+by families this removes one cross-border transfer (to Google Fonts).
