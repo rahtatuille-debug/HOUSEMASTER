@@ -31,6 +31,18 @@ from students.models import School
 from .models import Invite, PasswordResetToken, Profile
 
 
+def allow_duplicate_emails():
+    """
+    Drop the unique email index (F-13) for the rest of one test, to set up
+    accounts that shared an address before it existed. The test's
+    transaction puts it back.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("DROP INDEX IF EXISTS accounts_user_email_ci_unique")
+
+
 class SchoolScopedAPITestCase(APITestCase):
     """
     Sets up two separate schools, each with one authenticated staff user,
@@ -207,8 +219,9 @@ class PasswordResetTests(SchoolScopedAPITestCase):
         self.assertEqual(PasswordResetToken.objects.count(), 0)
 
     def test_request_matches_every_account_sharing_that_email(self):
-        # User.email has no uniqueness constraint, so a shared address
-        # should get a reset link for each account that uses it.
+        # Accounts from before the unique email index (F-13) may share an
+        # address; each should still get its own reset link.
+        allow_duplicate_emails()
         self.user_b.email = self.user_a.email
         self.user_b.save(update_fields=["email"])
         response = self.client.post("/api/password-reset/", {"email": self.user_a.email})
@@ -337,6 +350,11 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
 
 class CheckDuplicateEmailsCommandTests(TestCase):
     """The pre-flight report for adding unique=True to User.email."""
+
+    def setUp(self):
+        # The command exists to find accounts that shared an address before
+        # the unique index was added.
+        allow_duplicate_emails()
 
     def run_command(self):
         out = StringIO()
