@@ -137,14 +137,16 @@ class ConversationCreateSerializer(serializers.Serializer):
     STUDENT_NOT_FOUND = "Student not found."
 
     def validate_participant_ids(self, value):
-        from .contacts import messageable_users
+        from .contacts import messageable_users, parents_share_a_child
 
         request = self.context["request"]
         wanted = set(value)
         if request.user.id in wanted:
             raise serializers.ValidationError("You don't need to add yourself as a participant.")
         allowed = set(messageable_users(request.user).filter(id__in=wanted).values_list("id", flat=True))
-        if allowed != wanted:
+        # Parents of different children can't share a direct conversation;
+        # refused with the same answer, so it doesn't reveal who is related.
+        if allowed != wanted or not parents_share_a_child(wanted | {request.user.id}):
             raise serializers.ValidationError(self.PARTICIPANT_NOT_FOUND)
         return value
 

@@ -35,9 +35,12 @@ Invite emails are limited to 100 per hour per admin and 5 per day per
 recipient address across all schools, so invites can't be used to flood
 someone's inbox. Reading and cancelling invites aren't limited.
 
-The bulk staff import creates invites through its own path and is not
-covered by these two limits. It is admin-only; limiting it is left as a
-follow-up.
+The bulk staff import counts against the same two limits, through the
+same counters (`accounts.throttles.reserve_invite_email`). Rows over a limit
+aren't invited; the import lists them as deferred (row numbers only in the
+activity log) and the admin runs the same sheet again later. Every invite
+the import creates counts, whether or not it is emailed, because each one
+is a working sign-up link.
 
 ## One school per parent account
 
@@ -56,3 +59,31 @@ use, and a Content-Security-Policy is being introduced (report-only first).
 Moving the refresh token to an httpOnly cookie is designed in
 [DESIGN_httpOnly_refresh.md](DESIGN_httpOnly_refresh.md) but needs a custom
 domain first.
+
+## Direct conversations don't mix families (B-5)
+
+A direct (non-class) conversation can only contain parents who share at
+least one child: two parents of the same pupil, yes; parents of two
+different pupils, no. Before this, a teacher or admin could put parents of
+different families in one thread, and each then saw the others' names.
+A refused request gets the same "could not be found" answer as an unknown
+ID, so it doesn't reveal who is related to whom. The rule lives in
+`messaging/contacts.py`; direct conversations can't have people added after
+they are created.
+
+Class notices and class discussions still include every parent of the
+class, and in a discussion the parents see each other's names. That is by
+design (it is how a class group works), but it means a school discloses
+parents' names to other parents of the same class. **Question for
+counsel** (docs/legal/QUESTIONS_FOR_COUNSEL.md): is that covered by the
+school's privacy notice, or should discussions show parents to each other
+only with their consent?
+
+## Fonts are served from our own site (F-2, frontend)
+
+The frontend used to load its fonts from Google Fonts, so every page view
+by a parent, pupil or teacher sent their IP address and browser details to
+Google. The fonts are now bundled with the app (same files, same look), the
+pages contact no third party for them, and the Content-Security-Policy
+allows fonts and styles from the app's own origin only. For a product used
+by families this removes one cross-border transfer (to Google Fonts).

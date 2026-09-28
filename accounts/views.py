@@ -23,6 +23,7 @@ from .throttles import (
     InviteSendUserThrottle,
     LoginEmailThrottle,
     LoginIPThrottle,
+    PasswordResetConfirmIPThrottle,
     PasswordResetEmailThrottle,
     PasswordResetIPThrottle,
     TokenRefreshIPThrottle,
@@ -306,8 +307,8 @@ class RequestPasswordResetView(APIView):
 
 class ConfirmPasswordResetView(APIView):
     permission_classes = [AllowAny]
-    # Guessing reset tokens is limited like guessing invite tokens.
-    throttle_classes = [InviteIPThrottle]
+    # Its own per-IP bucket, not shared with invites and sign-up links.
+    throttle_classes = [PasswordResetConfirmIPThrottle]
 
     def post(self, request):
         serializer = ConfirmPasswordResetSerializer(data=request.data)

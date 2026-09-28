@@ -20,7 +20,8 @@ PASSWORD = "Demo-Pass-for-tests"
 
 def run(*args):
     out = StringIO()
-    with patch.dict(os.environ, {"DEMO_PASSWORD": PASSWORD}):
+    # The test runner turns DEBUG off, like production, so allow the seed.
+    with patch.dict(os.environ, {"DEMO_PASSWORD": PASSWORD, "ALLOW_DEMO_SEED": "1"}):
         call_command("seed_demo_school", *args, stdout=out)
     return out.getvalue()
 
@@ -39,7 +40,7 @@ class DemoSchoolTests(SchoolScopedAPITestCase):
         self.assertFalse(School.objects.filter(name=SCHOOL_NAME).exists())
 
     def test_rejects_a_short_password(self):
-        with patch.dict(os.environ, {"DEMO_PASSWORD": "short"}), self.assertRaises(CommandError):
+        with patch.dict(os.environ, {"DEMO_PASSWORD": "short", "ALLOW_DEMO_SEED": "1"}), self.assertRaises(CommandError):
             call_command("seed_demo_school", stdout=StringIO())
 
     def test_builds_a_full_school_and_only_once(self):
@@ -139,7 +140,8 @@ class DemoAfterMigrateTests(SchoolScopedAPITestCase):
         from django.apps import apps
 
         from .apps import seed_demo_after_migrate
-        with patch.dict(os.environ, {"DEMO_PASSWORD": password}), patch("sys.argv", argv), \
+        # The test runner turns DEBUG off, like production, so allow the seed.
+        with patch.dict(os.environ, {"DEMO_PASSWORD": password, "ALLOW_DEMO_SEED": "1"}), patch("sys.argv", argv), \
                 patch("sys.stdout", StringIO()):
             seed_demo_after_migrate(sender=apps.get_app_config("students"))
 

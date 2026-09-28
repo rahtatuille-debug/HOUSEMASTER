@@ -18,6 +18,12 @@ email ever reaches a real person) and share the password in the
 DEMO_PASSWORD environment variable. Without DEMO_PASSWORD it skips, so no
 password is ever stored in the code.
 
+It refuses to create anything when DEBUG is off (production) unless
+ALLOW_DEMO_SEED=1 is set, for a server that exists only for demos: shared
+demo logins must never appear on a server holding real schools. Refusing
+exits normally, so a build command that runs this keeps working. The
+password is never printed.
+
 Usage:
   DEMO_PASSWORD=... python manage.py seed_demo_school [--reset]
 """
@@ -26,6 +32,7 @@ import random
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
@@ -118,6 +125,12 @@ class Command(BaseCommand):
         parser.add_argument("--reset", action="store_true", help="Delete and rebuild the demo school.")
 
     def handle(self, *args, **options):
+        if not settings.DEBUG and os.environ.get("ALLOW_DEMO_SEED") != "1":
+            self.stderr.write(
+                "Refusing to create demo schools: DEBUG is off, so this looks like a production server, and "
+                "demo accounts share one password. Set ALLOW_DEMO_SEED=1 only on a server that exists for demos."
+            )
+            return
         password = os.environ.get("DEMO_PASSWORD", "")
         if not password:
             self.stdout.write("DEMO_PASSWORD isn't set, so the demo school wasn't created.")

@@ -47,7 +47,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `JWT_REFRESH_TOKEN_DAYS` | `3` | Lifetime of a refresh token. Each refresh issues a new one, so active users stay signed in. |
 | `LOGIN_EMAIL_RATE` / `LOGIN_IP_RATE` | `10/hour` / `30/hour` | Failed logins per email / per IP. Successful logins don't count. |
 | `PASSWORD_RESET_EMAIL_RATE` / `PASSWORD_RESET_IP_RATE` | `5/hour` / `20/hour` | Reset requests. |
-| `INVITE_IP_RATE` | `60/hour` | Invite and parent-invite preview/accept, class sign-up links, reset confirmation. |
+| `INVITE_IP_RATE` | `60/hour` | Invite and parent-invite preview/accept, class sign-up links. |
+| `PASSWORD_RESET_CONFIRM_IP_RATE` | `60/hour` | Setting a new password from a reset link, per IP. Its own bucket, so parents joining from a shared school address don't hold up a reset. |
 | `SCHOOL_REGISTRATION_RATE` / `SCHOOL_REGISTRATION_EMAIL_RATE` | `5/hour` / `3/day` | New school sign-ups per IP / per email. |
 | `TOKEN_REFRESH_IP_RATE` | `600/hour` | Token refresh and logout per IP (high because mobile networks share addresses). |
 | `INVITE_SEND_USER_RATE` / `INVITE_SEND_RECIPIENT_RATE` | `100/hour` / `5/day` | Invite emails (new or renewed) per admin / per recipient address across all schools. |
@@ -59,11 +60,22 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `ADMIN_LOGIN_RATE` | `10` | Failed admin sign-ins per client address per hour. |
 | `RETENTION_INACTIVE_STUDENT_YEARS` | unset (off) | Years after a student leaves before `manage.py apply_retention --apply` anonymises them. Counsel decides the period ([DESIGN_data_subject_tooling.md](DESIGN_data_subject_tooling.md)). |
 
+## Set by Render (nothing to do)
+
+| Variable | Used for |
+|---|---|
+| `RENDER_GIT_COMMIT` | `/healthz` reports its first 7 characters as `commit`, so you can see which commit is live. Anything that isn't a git hash is reported as `unknown`. |
+
+`/healthz` answers before the host check and the HTTPS redirect, so Render's
+health check works whatever host it uses; it needs no variable. Set
+Render's **Health Check Path** to `/healthz` (HUMAN_ACTIONS.md, H-4).
+
 ## Must stay unset in production
 
 | Variable | Why |
 |---|---|
-| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs. |
+| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs (also after every `migrate`). With `DJANGO_DEBUG` off the command now refuses and creates nothing unless `ALLOW_DEMO_SEED=1` is also set; it exits normally, so deploys don't fail. |
+| `ALLOW_DEMO_SEED` | Set to `1` only on a server that exists purely for demos, never on one holding real schools. |
 | `ALLOW_REMOTE_TEST_DB` | Lets the test suite create and drop databases on a remote server. |
 | `HOUSEMASTER_SKIP_DOTENV` | Used only by the settings tests. |
 

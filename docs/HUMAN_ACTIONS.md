@@ -100,6 +100,15 @@ would override `gunicorn.conf.py` (F-07). Then set `WEB_CONCURRENCY=1` in
 
 **Check:** the deploy log shows `Using worker: gthread`.
 
+Then, once the backend with `/healthz` is deployed (follow-up 1), set
+**Settings → Health Check Path** to `/healthz`. Render then only switches
+traffic to a new deploy once it answers, and restarts an instance that stops
+answering.
+
+**Check:** `curl -s https://<backend>/healthz` prints
+`{"status": "ok", "commit": "<7 characters>"}`, and the commit matches the
+latest commit on `master` (GitHub shows the first 7 characters).
+
 ## H-5 · Render build command
 
 Render → **Settings → Build Command**:
@@ -208,7 +217,8 @@ past, so check the current Vercel plan rules before switching. Either way,
 - Upgrade Render to a paid instance (no sleeping, more memory; then
   `WEB_CONCURRENCY=2`) and Neon to a plan with a longer restore window.
 - Add an uptime monitor (for example UptimeRobot, free) on the backend's
-  `/api/token/` (expects 405 on GET) and on the frontend, alerting to a phone.
+  `https://<backend>/healthz` (expects 200 and `"status": "ok"`; 503 means
+  the database isn't answering) and on the frontend, alerting to a phone.
 - In Sentry, route new-issue and spike alerts to a phone (email + mobile app).
 
 ## H-11 · Set the Vercel environment (before the frontend compat deploy)

@@ -240,9 +240,26 @@ another. Add a case there for any new endpoint.
 
 ## Next steps
 
-1. Add auth (JWT, matching the pattern used in Cliniq/HMS) and school-scoped
-   permissions so one school's data isn't visible to another's API calls.
-2. Add DRF filtering/pagination as data volume grows.
-3. Stand up Postgres via Neon and point `DATABASES` at it instead of SQLite.
-4. Frontend: a teacher-facing screen to trigger generation and review/edit
-   `StudentReport`s (draft → reviewed → finalized).
+**Done, waiting to be merged.** The production-readiness fixes
+([REMEDIATION_REPORT.md](REMEDIATION_REPORT.md)) and the follow-up hardening
+are in stacked pull requests. Merge them in the order in
+[docs/ROLLOUT.md](docs/ROLLOUT.md), one at a time, doing the checks after
+each step.
+
+**Only the owner can do** ([docs/HUMAN_ACTIONS.md](docs/HUMAN_ACTIONS.md)):
+the Render and Vercel environment, backups and a restore drill, the Render
+health check, branch protection, a paid no-training Gemini tier and the
+data-processing agreements, registration with Kenya's Data Protection
+Commissioner, and paid hosting before a second school.
+
+**Planned, not started:**
+
+- Move the refresh token into an httpOnly cookie once the app has a custom
+  domain ([docs/DESIGN_httpOnly_refresh.md](docs/DESIGN_httpOnly_refresh.md)).
+- Verify email addresses on school sign-up, which removes the "an account
+  with this email already exists" message
+  ([docs/SECURITY_NOTES.md](docs/SECURITY_NOTES.md)).
+- One login for a parent with children at two HouseMaster schools (needs a
+  product decision first).
+- Switch the Content-Security-Policy from report-only to enforcing after a
+  few clean days (HUMAN_ACTIONS.md, H-12).

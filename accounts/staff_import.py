@@ -14,7 +14,15 @@ A class can be written "Grade 7/East" when two year groups share a class
 name. Classes and subjects must already exist. People who already have an
 account or a pending invite at the school are skipped. Preview and import
 run the same code: a preview rolls everything back.
+
+Each invite counts against the same limits as a single invite (per admin
+per hour, per recipient per day; accounts.throttles.reserve_invite_email).
+Rows over a limit are listed as `deferred` and nothing is created for
+them; running the same sheet again later invites them, since the people
+already invited are skipped.
 """
+from collections import Counter
+
 import openpyxl
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
@@ -27,6 +35,7 @@ from students.models import SchoolClass
 
 from .models import Invite, Profile
 from .serializers import email_in_use_at_school
+from .throttles import reserve_invite_email
 
 SHEET = "Staff"
 COLUMNS = ["name", "email", "role", "class_teacher_of", "teaches"]
@@ -75,10 +84,12 @@ class _Rollback(Exception):
 
 
 class _StaffImport:
-    def __init__(self, school, invited_by):
+    def __init__(self, school, invited_by, commit):
         self.school = school
         self.invited_by = invited_by
-        self.errors, self.people, self.skipped = [], [], []
+        self.commit = commit
+        self.pending = Counter()  # a preview's invite counts (it must not use up the real limits)
+        self.errors, self.people, self.skipped, self.deferred = [], [], [], []
         self.classes = list(SchoolClass.objects.filter(year_group__school=school).select_related("year_group"))
         # Keyed by curriculum too: a school running two can have "Mathematics" in each.
         self.subjects = {(s.name.lower(), s.education_system): s for s in Subject.objects.filter(school=school)}
@@ -157,6 +168,10 @@ class _StaffImport:
                 self.skipped.append({"row": number, "name": name, "email": email,
                                      "reason": "already has an account or a pending invite"})
                 continue
+            refusal = reserve_invite_email(self.invited_by, email, record=self.commit, pending=self.pending)
+            if refusal:
+                self.deferred.append({"row": number, "name": name, "reason": refusal})
+                continue
             invite = Invite.objects.create(
                 school=self.school, name=name, email=email, role=ROLES[role_text], invited_by=self.invited_by,
                 assignments=[{"school_class": c.id, "subject": s.id if s else None} for c, s in assignments],
@@ -174,7 +189,7 @@ def import_staff(upload, school, invited_by, commit=False):
     except Exception:
         raise WorkbookError("That file isn't an Excel workbook (.xlsx).")
     ws = wb[SHEET] if SHEET in wb.sheetnames else wb.worksheets[0]
-    job = _StaffImport(school, invited_by)
+    job = _StaffImport(school, invited_by, commit)
     try:
         with transaction.atomic():
             job.run(ws)
@@ -184,4 +199,5 @@ def import_staff(upload, school, invited_by, commit=False):
         for person in job.people:  # nothing was saved, so there are no links yet
             person.pop("token")
             person.pop("invite_id")
-    return {"committed": commit, "people": job.people, "skipped": job.skipped, "errors": job.errors}
+    return {"committed": commit, "people": job.people, "skipped": job.skipped, "deferred": job.deferred,
+            "errors": job.errors}
