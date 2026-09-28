@@ -787,16 +787,13 @@ class DashboardTests(SchoolScopedAPITestCase):
 
 class DashboardWeekendTests(SchoolScopedAPITestCase):
     def test_weekend_shows_fridays_registers(self):
-        from datetime import date
+        from datetime import datetime, timezone as dt_timezone
         from unittest.mock import patch
 
-        class Sunday(date):
-            @classmethod
-            def today(cls):
-                return cls(2026, 9, 27)
-
+        # Sunday 27 September 2026, midday in Nairobi.
+        sunday = datetime(2026, 9, 27, 9, 0, tzinfo=dt_timezone.utc)
         self.make_admin(self.user_a)
-        with patch("accounts.dashboard.date", Sunday):
+        with patch("django.utils.timezone.now", return_value=sunday):
             data = self.client_a.get("/api/dashboard/").data["attendance_today"]
         self.assertEqual(str(data["date"]), "2026-09-25")
         self.assertFalse(data["is_today"])
