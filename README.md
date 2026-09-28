@@ -22,6 +22,7 @@ care of that locally.
 Run the tests with (never against a remote database; the suite refuses to):
 
 ```bash
+./venv/bin/pip install -r requirements-dev.txt   # test-only tools, once
 env -u DATABASE_URL DJANGO_DEBUG=True ./venv/bin/python manage.py test
 ```
 
