@@ -70,6 +70,14 @@ class Grade(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["student", "term"])]
+        # The serializer and the importer check these too; the database is
+        # the last line of defence (F-10).
+        constraints = [
+            models.CheckConstraint(condition=models.Q(max_score__gt=0), name="grade_max_score_positive"),
+            models.CheckConstraint(condition=models.Q(score__gte=0), name="grade_score_not_negative"),
+            models.CheckConstraint(condition=models.Q(score__lte=models.F("max_score")),
+                                   name="grade_score_within_max"),
+        ]
 
     def __str__(self):
         return f"{self.student} - {self.subject} ({self.term}): {self.score}/{self.max_score}"

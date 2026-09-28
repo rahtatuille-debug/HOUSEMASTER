@@ -45,7 +45,11 @@ def _build_student_context(student, term):
     words = words_for(student.school, system)
 
     def line(g):
-        percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
+        if g.max_score <= 0:
+            # Can't happen any more (validation and a database constraint
+            # prevent it), but never let such a mark vanish silently.
+            return f"- {g.subject.name}: {g.score} (no valid maximum, so no percentage)"
+        percent = float(g.score) / float(g.max_score) * 100
         level = level_for(percent, scale)
         return f"- {g.subject.name}: {g.score}/{g.max_score}" + (f" ({percent:.0f}%, {level})" if level else "")
 

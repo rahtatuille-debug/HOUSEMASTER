@@ -68,3 +68,17 @@ class GradeSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerialize
     class Meta:
         model = Grade
         fields = ["id", "student", "subject", "term", "score", "max_score", "assessment_type", "recorded_at"]
+
+    def validate(self, attrs):
+        # Check the pair as it will be saved, so an update to only one of
+        # them can't leave an impossible mark behind.
+        instance = self.instance
+        score = attrs.get("score", instance.score if instance else None)
+        max_score = attrs.get("max_score", instance.max_score if instance else Grade._meta.get_field("max_score").default)
+        if max_score is not None and max_score <= 0:
+            raise serializers.ValidationError({"max_score": "The maximum mark must be more than 0."})
+        if score is not None and score < 0:
+            raise serializers.ValidationError({"score": "A mark can't be below 0."})
+        if score is not None and max_score is not None and score > max_score:
+            raise serializers.ValidationError({"score": f"A mark can't be more than the maximum ({max_score:g})."})
+        return attrs

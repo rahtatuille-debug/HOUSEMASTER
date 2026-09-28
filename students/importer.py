@@ -200,6 +200,12 @@ class _Import:
                 continue
             if student is None:
                 continue
+            from attendance.dates import attendance_date_problem
+
+            problem = attendance_date_problem(self.school, day)
+            if problem:
+                self.error("Attendance", number, f"{day}: {problem}")
+                continue
             from gradebook.locks import locked_term_for_date
 
             locked = locked_term_for_date(self.school, day)
