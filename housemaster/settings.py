@@ -118,6 +118,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# The Django admin's address. Production should use something hard to
+# guess (docs/ENVIRONMENT.md); the default suits local development.
+ADMIN_PATH = os.environ.get('DJANGO_ADMIN_PATH', 'admin/').strip().strip('/') + '/'
+# Failed sign-ins allowed on the admin login page per client address per
+# hour (housemaster/middleware.py).
+ADMIN_LOGIN_RATE = int(os.environ.get('ADMIN_LOGIN_RATE', '10'))
+MIDDLEWARE.insert(MIDDLEWARE.index('django.contrib.sessions.middleware.SessionMiddleware'),
+                  'housemaster.middleware.AdminLoginThrottleMiddleware')
+
 # Temporary diagnostic for finding Render's proxy count (housemaster/middleware.py).
 if os.environ.get('LOG_CLIENT_IP_DEBUG') == '1':
     MIDDLEWARE.insert(0, 'housemaster.middleware.ClientIPDebugMiddleware')
@@ -431,6 +440,12 @@ if SENTRY_DSN:
         send_default_pii=False,
         environment=os.environ.get('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
     )
+
+# Years after a student leaves (their graduated_on date) before
+# `manage.py apply_retention --apply` anonymises them. Unset means off:
+# the period is for counsel to decide (docs/DESIGN_data_subject_tooling.md).
+_retention_years = os.environ.get('RETENTION_INACTIVE_STUDENT_YEARS', '').strip()
+RETENTION_INACTIVE_STUDENT_YEARS = int(_retention_years) if _retention_years else None
 
 # Parent notification emails are sent on a background thread so publishing to
 # a whole school doesn't hold up the request. Tests send them inline.

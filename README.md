@@ -163,15 +163,40 @@ from `draft` → `reviewed` → `finalized` as they work through it.
 
 ## Checking for duplicate emails
 
-Login is by email (case-insensitive), but `User.email` isn't unique at the
-database level yet. Before adding `unique=True`, run:
+Login is by email (case-insensitive), and a unique index on the lower-cased
+email (accounts migration 0013) now stops two accounts sharing one. That
+migration refuses to run while duplicates exist. To find them first:
 
     python manage.py check_duplicate_emails
 
 It changes nothing and only reports two kinds of account: emails shared by
 several accounts, which can't log into the app until they're fixed, and
-accounts with no email. On Render's free tier there's no shell, so append it
-to the build command once and read the output in the build log.
+accounts with no email. On Render's free tier there's no shell, so use
+`scripts/preflight_duplicate_emails.sql` with the read-only backup login
+instead (docs/HUMAN_ACTIONS.md, H-6).
+
+## Deployment
+
+The backend runs on Render (gunicorn, configured by `gunicorn.conf.py`), the
+database on Neon and the frontend on Vercel. In production the app refuses
+to start without its required settings; the full list, and what each guard
+does, is in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+
+**The free tiers are for demos only.** Render's free instance sleeps when
+idle (the first request after a pause takes about a minute, so morning
+registers look broken), has 512 MB of memory and no shell, and Neon's free
+plan keeps only a short restore window. Before real schools use it:
+
+- Render **Starter** or higher (no sleeping; then `WEB_CONCURRENCY=2`);
+- Neon **Launch** or higher (a longer point-in-time restore window);
+- nightly backups switched on and a restore drill done
+  ([docs/BACKUPS.md](docs/BACKUPS.md));
+- an uptime monitor and Sentry alerts that reach a phone.
+
+What only the owner can do (dashboards, secrets, contracts, repository
+settings) is in [docs/HUMAN_ACTIONS.md](docs/HUMAN_ACTIONS.md), the safe order
+for deploying the readiness fixes in [docs/ROLLOUT.md](docs/ROLLOUT.md), and
+what to do when something goes wrong in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Backups
 

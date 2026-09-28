@@ -55,6 +55,9 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `AI_REPORT_GENERATION_RATE`, `AI_CLASS_REPORT_GENERATION_RATE`, `AI_ANNOUNCEMENT_DRAFTING_RATE` | `30/hour`, `5/hour`, `30/hour` | Per-user AI limits. |
 | `NOTIFICATIONS_IN_BACKGROUND` | `true` | Send parent notification emails on a background thread. |
 | `LOG_CLIENT_IP_DEBUG` | unset | `1` logs the first 20 requests' `X-Forwarded-For` for measuring `DRF_NUM_PROXIES`. Turn it off afterwards: it logs IP addresses. |
+| `DJANGO_ADMIN_PATH` | `admin/` | Where the Django admin lives. **Production: set something hard to guess**, e.g. `manage-7f3c2a/`. |
+| `ADMIN_LOGIN_RATE` | `10` | Failed admin sign-ins per client address per hour. |
+| `RETENTION_INACTIVE_STUDENT_YEARS` | unset (off) | Years after a student leaves before `manage.py apply_retention --apply` anonymises them. Counsel decides the period ([DESIGN_data_subject_tooling.md](DESIGN_data_subject_tooling.md)). |
 
 ## Must stay unset in production
 
@@ -65,8 +68,13 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `HOUSEMASTER_SKIP_DOTENV` | Used only by the settings tests. |
 
 `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL` and
-`DJANGO_SUPERUSER_PASSWORD` are read by `manage.py sync_superuser`. If you
-use it, give the superuser a long random password from a password manager.
+`DJANGO_SUPERUSER_PASSWORD` are read by `manage.py sync_superuser`, which
+creates the superuser if it doesn't exist and otherwise leaves it alone. To
+recover a lost password on the free tier (no shell), set
+`SYNC_SUPERUSER_RESET_PASSWORD=true` for **one** deploy: the password is reset
+to `DJANGO_SUPERUSER_PASSWORD` and the deploy log says so loudly. Remove the
+setting straight afterwards. Give the superuser a long random password from a
+password manager.
 
 ## Finding `DRF_NUM_PROXIES`
 
