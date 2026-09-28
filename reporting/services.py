@@ -4,7 +4,13 @@ term into an AI-generated progress summary and draft report comment.
 
 Uses the Gemini API through reporting/ai.py, which bounds every call and
 turns provider failures into AIUnavailable. Requires GEMINI_API_KEY.
+
+No child's identity is ever sent: the prompt calls the student [STUDENT]
+and carries only grades and attendance counts. The real first name is put
+back locally once the text comes back (docs/AI_DATA_FLOW.md).
 """
+import re
+
 from gradebook.models import Grade
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for
@@ -12,6 +18,12 @@ from students.presets import student_section, words_for, writing_context
 
 from .ai import generate_text
 from .models import StudentReport
+
+# What the model calls the student instead of their name.
+PLACEHOLDER = "[STUDENT]"
+# "[STUDENT]" in any case or spacing, or a bare upper-case STUDENT; never the ordinary word "student".
+_PLACEHOLDER_RE = re.compile(r"(?i:\[\s*student\s*\])|\bSTUDENT\b")
+_SENTENCE_START_RE = re.compile(r"(^|[.!?]\s+|\n\s*)the student")
 
 TONE_GUIDANCE = {
     "formal": "Formal, professional register. Avoid contractions and casual phrasing.",
@@ -52,7 +64,7 @@ def _build_student_context(student, term):
         attendance_summary = "- No attendance records for this term's date range."
 
     return (
-        f"Student: {student.first_name} {student.last_name}\n"
+        f"Student: {PLACEHOLDER}\n"
         f"{words['term']}: {term.name}\n\n"
         f"Grades:\n" + "\n".join(grade_lines) + "\n\n"
         f"Attendance:\n{attendance_summary}"
@@ -76,7 +88,9 @@ A 2-4 sentence progress summary covering trends, strengths, and areas to watch. 
 
 COMMENT:
 A 2-4 sentence draft report comment written directly to the student/parent, in this tone: {tone_instruction}
-It should be specific to the data above, not generic. Do not invent facts not present in the data."""
+It should be specific to the data above, not generic. Do not invent facts not present in the data.
+
+The student's name is withheld. Wherever you would use their name, write exactly {PLACEHOLDER}. Do not guess a name, and do not assume their gender."""
 
 
 def _parse_response(text):
@@ -93,6 +107,15 @@ def _parse_response(text):
     return summary, comment
 
 
+def substitute_name(text, first_name):
+    """Put the student's first name back where the model wrote the placeholder (or a variant of it)."""
+    name = (first_name or "").strip()
+    if name:
+        return _PLACEHOLDER_RE.sub(name, text)
+    text = _PLACEHOLDER_RE.sub("the student", text)
+    return _SENTENCE_START_RE.sub(lambda m: m.group(1) + "The student", text)
+
+
 def generate_report(student, term):
     """
     Generate (or regenerate) a StudentReport for this student/term via the AI,
@@ -104,7 +127,7 @@ def generate_report(student, term):
         _build_prompt(student, term, tone),
         missing_key_message="GEMINI_API_KEY is not set. Set it in your environment before generating reports.",
     )
-    summary, comment = _parse_response(text)
+    summary, comment = (substitute_name(part, student.first_name) for part in _parse_response(text))
 
     report, _ = StudentReport.objects.update_or_create(
         student=student,
