@@ -244,13 +244,16 @@ another. Add a case there for any new endpoint.
 ([REMEDIATION_REPORT.md](REMEDIATION_REPORT.md)) and the follow-up hardening
 are in stacked pull requests. Merge them in the order in
 [docs/ROLLOUT.md](docs/ROLLOUT.md), one at a time, doing the checks after
-each step.
+each step. The printable, tickable version of the whole sequence, up to the
+first real children's data, is
+[docs/MERGE_DAY_CHECKLIST.md](docs/MERGE_DAY_CHECKLIST.md).
 
 **Only the owner can do** ([docs/HUMAN_ACTIONS.md](docs/HUMAN_ACTIONS.md)):
 the Render and Vercel environment, backups and a restore drill, the Render
 health check, branch protection, a paid no-training Gemini tier and the
 data-processing agreements, registration with Kenya's Data Protection
-Commissioner, and paid hosting before a second school.
+Commissioner, and paid hosting before a second school. Drafts of the legal
+documents (not legal advice) are in [docs/legal/](docs/legal/README.md).
 
 **Planned, not started:**
 
