@@ -49,7 +49,7 @@ class MessagingTests(SchoolScopedAPITestCase):
 
         listing = self.guardian_client.get("/api/conversations/")
         self.assertEqual(listing.status_code, 200)
-        self.assertEqual(len(listing.data), 1)
+        self.assertEqual(len(listing.data["results"]), 1)
 
         reply = self.guardian_client.post(
             f"/api/conversations/{conv_id}/messages/", {"body": "Thank you for letting me know!"}
@@ -80,7 +80,7 @@ class MessagingTests(SchoolScopedAPITestCase):
 
         # Also shouldn't show up in their list.
         listing = other_client.get("/api/conversations/")
-        self.assertEqual(len(listing.data), 0)
+        self.assertEqual(len(listing.data["results"]), 0)
 
     def test_cannot_add_a_participant_from_another_school(self):
         outside_guardian_user = self.user_b.__class__.objects.create_user(
@@ -103,12 +103,12 @@ class MessagingTests(SchoolScopedAPITestCase):
 
         # Guardian hasn't read it yet.
         listing_before = self.guardian_client.get("/api/conversations/")
-        self.assertEqual(listing_before.data[0]["unread_count"], 1)
+        self.assertEqual(listing_before.data["results"][0]["unread_count"], 1)
 
         self.guardian_client.post(f"/api/conversations/{conv_id}/read/")
 
         listing_after = self.guardian_client.get("/api/conversations/")
-        self.assertEqual(listing_after.data[0]["unread_count"], 0)
+        self.assertEqual(listing_after.data["results"][0]["unread_count"], 0)
 
     def test_contacts_endpoint_returns_the_other_identity_type(self):
         staff_contacts = self.client_a.get("/api/conversations/contacts/")
@@ -166,7 +166,7 @@ class ClassMessageTests(SchoolScopedAPITestCase):
         })
 
     def ids(self, client):
-        return [c["id"] for c in client.get("/api/conversations/").data]
+        return [c["id"] for c in client.get("/api/conversations/").data["results"]]
 
     def test_notice_reaches_every_parent_in_the_class_only(self):
         response = self.send("class_notice")

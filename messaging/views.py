@@ -21,6 +21,7 @@ from .serializers import (
     ConversationSerializer,
     MessageSerializer,
     _display_name,
+    with_list_fields,
 )
 
 
@@ -36,9 +37,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
     serializer_class = ConversationSerializer
     permission_classes = [CanMessage]
     http_method_names = ["get", "post", "head", "options"]
+    # A page at a time, newest first (B-1). The frontend already shipped
+    # follows the pages.
+    pagination_class = LongListPagination
 
     def get_queryset(self):
-        queryset = Conversation.objects.filter(participants=self.request.user).distinct()
+        queryset = with_list_fields(
+            Conversation.objects.filter(participants=self.request.user).distinct(), self.request.user
+        ).order_by("-created_at", "-id")
         guardian = getattr(self.request.user, "guardian", None)
         if guardian is not None:
             # A parent who has left a class loses its class conversations at
@@ -83,7 +89,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         if request.method == "GET":
             # Oldest first, a page at a time (F-14).
-            messages = conversation.messages.select_related("sender").order_by("created_at", "id")
+            messages = conversation.messages.select_related(
+                "sender__profile", "sender__guardian").order_by("created_at", "id")
             paginator = LongListPagination()
             page = paginator.paginate_queryset(messages, request, view=self)
             return paginator.get_paginated_response(MessageSerializer(page, many=True).data)
