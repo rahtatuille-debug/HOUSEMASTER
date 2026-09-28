@@ -75,6 +75,8 @@ class AlertLimitTests(UrgentAlertFixture):
             refused = self.send(title="One more")
         self.assertEqual(codes, [201, 201, 429])
         self.assertIn("Retry-After", refused)
+        self.assertRegex(refused.json()["detail"], r"as many urgent alerts as it can for now\. .* Try again in about \d+ hours?\.$")
+        self.assertNotIn("seconds", refused.json()["detail"])
         self.assertEqual(UrgentAlert.objects.filter(school=self.school_a).count(), 2)
 
     def test_limit_is_per_school_and_shared_by_its_admins(self):
