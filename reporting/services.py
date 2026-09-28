@@ -2,19 +2,16 @@
 Core generation logic for Phase 2 — turns a student's grades + attendance for a
 term into an AI-generated progress summary and draft report comment.
 
-Uses the Gemini API directly (via the `google-genai` package). Requires
-GEMINI_API_KEY to be set in the environment.
+Uses the Gemini API through reporting/ai.py, which bounds every call and
+turns provider failures into AIUnavailable. Requires GEMINI_API_KEY.
 """
-import os
-
 from gradebook.models import Grade
 from attendance.models import AttendanceRecord
 from gradebook.levels import level_for
 from students.presets import student_section, words_for, writing_context
 
+from .ai import generate_text
 from .models import StudentReport
-
-MODEL = "gemini-3.6-flash"
 
 TONE_GUIDANCE = {
     "formal": "Formal, professional register. Avoid contractions and casual phrasing.",
@@ -102,20 +99,11 @@ def generate_report(student, term):
     respecting the student's school's configured report_tone. Returns the
     StudentReport instance (created or updated).
     """
-    from google import genai
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY is not set. Set it in your environment before generating reports."
-        )
-
     tone = student.school.report_tone
-    prompt = _build_prompt(student, term, tone)
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(model=MODEL, contents=prompt)
-    text = response.text
+    text = generate_text(
+        _build_prompt(student, term, tone),
+        missing_key_message="GEMINI_API_KEY is not set. Set it in your environment before generating reports.",
+    )
     summary, comment = _parse_response(text)
 
     report, _ = StudentReport.objects.update_or_create(

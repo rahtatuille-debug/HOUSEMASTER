@@ -1,7 +1,6 @@
 """AI-assisted drafting for announcements. Generated text is never published automatically."""
-import os
-
-from reporting.services import MODEL, TONE_GUIDANCE
+from reporting.ai import generate_text
+from reporting.services import TONE_GUIDANCE
 from students.presets import writing_context
 
 
@@ -46,22 +45,8 @@ def _parse_response(text):
 
 def generate_announcement_text(*, school, summary, audience_label, target_label=None):
     """Generate editable announcement text from a staff member's short brief."""
-    from google import genai
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY is not set. Set it in your environment before generating announcements."
-        )
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=_build_prompt(
-            school=school,
-            summary=summary,
-            audience_label=audience_label,
-            target_label=target_label,
-        ),
+    text = generate_text(
+        _build_prompt(school=school, summary=summary, audience_label=audience_label, target_label=target_label),
+        missing_key_message="GEMINI_API_KEY is not set. Set it in your environment before generating announcements.",
     )
-    return _parse_response(response.text)
+    return _parse_response(text)
