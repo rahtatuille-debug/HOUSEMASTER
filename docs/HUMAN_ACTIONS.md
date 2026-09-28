@@ -193,17 +193,36 @@ rule to you too, so an emergency fix also goes through CI; set it to
 **Check:** `gh api repos/rahtatuille-debug/housemaster/branches/master --jq .protected`
 prints `true`, and a direct `git push` to `master` is refused.
 
-## H-8 · AI provider terms and data-processing agreements (legal)
+## H-8 · AI provider terms, agreements, privacy notices and ODPC registration (legal)
+
+Drafts for all of this are in [legal/](legal/README.md). They are **drafts,
+not legal advice**: the Kenyan primary texts couldn't be read while they
+were written, so every legal point is marked [VERIFY]. Have a Kenyan
+data-protection advocate review them first, starting with
+[QUESTIONS_FOR_COUNSEL.md](legal/QUESTIONS_FOR_COUNSEL.md).
 
 1. Move the Gemini API key to a **paid** tier whose terms say prompts are
-   not used for training, and sign or accept Google's data-processing terms.
-   Replace `GEMINI_API_KEY` on Render.
-2. Sign a data-processing agreement with the pilot school (HouseMaster
-   processes the school's data on its behalf).
-3. Publish the privacy notice, including the AI transfer described in
-   [AI_DATA_FLOW.md](AI_DATA_FLOW.md).
+   not used for training, and accept Google's data-processing terms.
+   Replace `GEMINI_API_KEY` on Render. (Sub-processors:
+   [SUBPROCESSORS.md](legal/SUBPROCESSORS.md); fill in each region and
+   transfer ground marked [TO CONFIRM].)
+2. Sign a data-processing agreement with the pilot school:
+   [DRAFT_data_processing_agreement.md](legal/DRAFT_data_processing_agreement.md).
+3. Publish HouseMaster's privacy notice
+   ([DRAFT_privacy_notice_housemaster.md](legal/DRAFT_privacy_notice_housemaster.md))
+   and give the school the template for its own
+   ([DRAFT_school_privacy_notice_template.md](legal/DRAFT_school_privacy_notice_template.md)),
+   including the AI transfer described in [AI_DATA_FLOW.md](AI_DATA_FLOW.md).
+4. Help the school complete its DPIA ([DRAFT_DPIA.md](legal/DRAFT_DPIA.md))
+   and adopt the guardian checks
+   ([SCHOOL_guardian_verification_procedure.md](legal/SCHOOL_guardian_verification_procedure.md)).
+5. Register with the ODPC:
+   [ODPC_REGISTRATION_GUIDE.md](legal/ODPC_REGISTRATION_GUIDE.md).
 
-Counsel should answer the questions in the audit report's section 7.
+**Check:** counsel has answered QUESTIONS_FOR_COUNSEL.md; the DPA is signed
+by both sides; the notice is published at a public URL and set as the
+school's privacy contact link; the ODPC certificate is downloaded and its
+expiry is in your calendar.
 
 ## H-9 · Repository visibility and the old key
 
