@@ -8,6 +8,7 @@ from rest_framework.response import Response
 
 from accounts.scoping import is_admin
 from activity.services import log_activity
+from housemaster.pagination import LongListPagination
 from students.models import SchoolClass
 
 from .classes import can_post, guardian_class_ids, start_class_conversation, sync_class_participants
@@ -81,8 +82,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conversation = self.get_object()
 
         if request.method == "GET":
-            messages = conversation.messages.select_related("sender")
-            return Response(MessageSerializer(messages, many=True).data)
+            # Oldest first, a page at a time (F-14).
+            messages = conversation.messages.select_related("sender").order_by("created_at", "id")
+            paginator = LongListPagination()
+            page = paginator.paginate_queryset(messages, request, view=self)
+            return paginator.get_paginated_response(MessageSerializer(page, many=True).data)
 
         if not can_post(conversation, request.user):
             raise PermissionDenied("Replies are turned off for this class notice. Message the teacher directly instead.")

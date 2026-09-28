@@ -560,7 +560,7 @@ class TeacherAssignmentScopingTests(SchoolScopedAPITestCase):
     # --- grades
 
     def test_teacher_sees_all_subjects_for_own_class_only(self):
-        ids = {g["id"] for g in self.client_a.get("/api/grades/").data}
+        ids = {g["id"] for g in self.client_a.get("/api/grades/").data["results"]}
         self.assertEqual(ids, {self.art_grade.id})
 
     def test_teacher_can_grade_own_subject_only(self):

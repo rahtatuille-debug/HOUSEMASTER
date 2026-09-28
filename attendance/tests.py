@@ -26,7 +26,7 @@ class AttendanceScopingTests(SchoolScopedAPITestCase):
 
     def test_list_only_returns_own_schools_records(self):
         response = self.client_a.get("/api/attendance/")
-        ids = [row["id"] for row in response.data]
+        ids = [row["id"] for row in response.data["results"]]
         self.assertIn(self.record_a.id, ids)
         self.assertNotIn(self.record_b.id, ids)
 

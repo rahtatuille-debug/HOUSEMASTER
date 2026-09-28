@@ -7,6 +7,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
+from housemaster.pagination import LongListPagination
 
 from .choices import check_takes
 from .locks import check_term_open
@@ -91,8 +92,10 @@ class AssessmentTypeViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, vie
 
 
 class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Grade.objects.all()
+    # Ordered by id so pages are stable (F-14).
+    queryset = Grade.objects.order_by("id")
     serializer_class = GradeSerializer
+    pagination_class = LongListPagination
     filterset_fields = ["student", "subject", "term"]
     school_lookup = "student__school"
 
