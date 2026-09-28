@@ -21,7 +21,9 @@ NOT_FOUND_PARTICIPANT = {"participant_ids": ["One or more participants could not
 NOT_FOUND_STUDENT = {"student": ["Student not found."]}
 
 
-class ContactRulesTests(SchoolScopedAPITestCase):
+class ContactFixture(SchoolScopedAPITestCase):
+    """School A: 7A taught by user_a, 7B by teacher_7b, one parent of a child in each (no tests)."""
+
     def setUp(self):
         super().setUp()
         year = YearGroup.objects.create(school=self.school_a, name="Year 7")
@@ -63,6 +65,8 @@ class ContactRulesTests(SchoolScopedAPITestCase):
             body["student"] = student
         return client.post("/api/conversations/", body, format="json")
 
+
+class ContactRulesTests(ContactFixture):
     # --- parents -------------------------------------------------------
 
     def test_parent_cannot_message_another_parent(self):

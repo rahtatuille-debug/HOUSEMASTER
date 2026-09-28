@@ -13,12 +13,20 @@ path that creates a conversation or lists contacts goes through them:
   member at their school.
 - Staff may only attach children they can see (accounts.scoping).
 - Deactivated accounts and people at other schools are never reachable.
+- A direct conversation never mixes families: every parent in it must share
+  at least one child with every other parent in it (two parents of the same
+  child, yes; parents of two different children, no), so parents don't
+  learn each other's names by being put in the same thread. Staff wanting
+  to reach unrelated parents start separate conversations. Class notices
+  and class discussions (messaging.classes) include a class's parents by
+  design and don't follow this rule. There is no way to add people to a
+  direct conversation after it is created.
 
 Anyone outside these rules is answered exactly like someone who doesn't
 exist, so the endpoints can't be used to discover names or IDs.
 """
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from accounts.models import Profile, TeachingAssignment
 from accounts.scoping import assigned_class_ids, is_admin, visible_students
@@ -63,6 +71,21 @@ def messageable_users(user):
         guardians = messageable_guardian_users(user)
         return User.objects.filter(Q(id__in=staff.values("id")) | Q(id__in=guardians.values("id")))
     return User.objects.none()
+
+
+def parents_share_a_child(user_ids):
+    """
+    True when the parents among `user_ids` have at least one child in
+    common, or when there are fewer than two parents among them.
+    """
+    from guardians.models import Guardian
+
+    guardian_ids = list(Guardian.objects.filter(user_id__in=user_ids).values_list("id", flat=True))
+    if len(guardian_ids) < 2:
+        return True
+    return Student.objects.filter(guardians__id__in=guardian_ids).annotate(
+        shared_by=Count("guardians", filter=Q(guardians__id__in=guardian_ids), distinct=True)
+    ).filter(shared_by=len(guardian_ids)).exists()
 
 
 def contact_list(user):

@@ -59,3 +59,22 @@ use, and a Content-Security-Policy is being introduced (report-only first).
 Moving the refresh token to an httpOnly cookie is designed in
 [DESIGN_httpOnly_refresh.md](DESIGN_httpOnly_refresh.md) but needs a custom
 domain first.
+
+## Direct conversations don't mix families (B-5)
+
+A direct (non-class) conversation can only contain parents who share at
+least one child: two parents of the same pupil, yes; parents of two
+different pupils, no. Before this, a teacher or admin could put parents of
+different families in one thread, and each then saw the others' names.
+A refused request gets the same "could not be found" answer as an unknown
+ID, so it doesn't reveal who is related to whom. The rule lives in
+`messaging/contacts.py`; direct conversations can't have people added after
+they are created.
+
+Class notices and class discussions still include every parent of the
+class, and in a discussion the parents see each other's names. That is by
+design (it is how a class group works), but it means a school discloses
+parents' names to other parents of the same class. **Question for
+counsel** (docs/legal/QUESTIONS_FOR_COUNSEL.md): is that covered by the
+school's privacy notice, or should discussions show parents to each other
+only with their consent?
