@@ -17,8 +17,8 @@ from students.models import SchoolClass, Student
 from gradebook.models import Term
 from .models import StudentReport
 from .serializers import StudentReportSerializer, GenerateReportSerializer
-from .ai import BUSY_MESSAGE, AIUnavailable
-from .services import generate_report
+from .ai import BUSY_MESSAGE, UNUSABLE_MESSAGE, AIUnavailable
+from .services import AIReplyUnusable, generate_report
 
 CLASS_RUN_SALT = "reporting.class-run"
 CLASS_RUN_MAX_AGE = 6 * 60 * 60  # seconds a class run stays usable
@@ -104,6 +104,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         check_term_open(report.term)
         if report.status != "draft":
             raise ValidationError("Only draft reports can be submitted for approval.")
+        if report.missing_content():
+            raise ValidationError(report.missing_content())
         report.status = "submitted"
         report.submitted_by = request.user
         report.submitted_at = timezone.now()
@@ -117,6 +119,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         check_term_open(report.term)
         if report.status == "finalized":
             raise ValidationError("This report is already finalized.")
+        if report.missing_content():
+            raise ValidationError(report.missing_content())
         report.status = "finalized"
         report.finalized_by = request.user
         report.finalized_at = timezone.now()
@@ -177,6 +181,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except AIUnavailable:
             return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIReplyUnusable:
+            return Response({"detail": UNUSABLE_MESSAGE}, status=status.HTTP_502_BAD_GATEWAY)
 
         log_activity(
             school=caller_school, actor=request.user, action="report.generated", target=report,
@@ -270,13 +276,18 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except AIUnavailable:
             return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIReplyUnusable:
+            return Response({"detail": UNUSABLE_MESSAGE}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"skipped": False, "report": StudentReportSerializer(report).data})
 
     @action(detail=False, methods=["post"], url_path="submit-class")
     def submit_class(self, request):
         school_class, term = self._class_and_term(request)
         check_term_open(term)
-        count = self._class_reports(request, school_class, term, "draft").update(
+        drafts = self._class_reports(request, school_class, term, "draft")
+        # Reports with a blank comment or summary stay as drafts to be finished.
+        blank = drafts.blank().count()
+        count = drafts.with_content().update(
             status="submitted", submitted_by=request.user, submitted_at=timezone.now(), edited_at=timezone.now(),
         )
         if count:
@@ -285,14 +296,16 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 target=school_class,
                 summary=f"Submitted {count} {school_class.name} reports for {term.name} for approval",
             )
-        return Response({"count": count})
+        return Response({"count": count, "blank": blank})
 
     @action(detail=False, methods=["post"], url_path="finalize-class", permission_classes=[IsSchoolAdmin])
     def finalize_class(self, request):
         # Only reports a teacher has submitted; drafts still need their review.
         school_class, term = self._class_and_term(request)
         check_term_open(term)
-        reports = self._class_reports(request, school_class, term, "submitted")
+        submitted = self._class_reports(request, school_class, term, "submitted")
+        blank = submitted.blank().count()
+        reports = submitted.with_content()
         ids = list(reports.values_list("id", flat=True))
         count = reports.update(
             status="finalized", finalized_by=request.user, finalized_at=timezone.now(), review_note="",
@@ -306,4 +319,4 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 target=school_class,
                 summary=f"Finalized {count} {school_class.name} reports for {term.name} and released them to parents",
             )
-        return Response({"count": count})
+        return Response({"count": count, "blank": blank})

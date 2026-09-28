@@ -6,11 +6,11 @@ Callers pass in students already limited to what the requester may see
 (accounts.scoping), so this module never decides who sees what.
 """
 from collections import defaultdict
-from datetime import date
 from io import BytesIO
 from pathlib import Path
 
 import openpyxl
+from django.utils import timezone
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -22,6 +22,7 @@ from gradebook.weighting import school_weights, subject_percents
 from students.presets import DEFAULT_VOCAB, words_for
 
 from .models import StudentReport
+from .spreadsheets import append_row
 
 HEADER_FILL = PatternFill("solid", fgColor="1E2F52")
 HEADER_FONT = Font(bold=True, color="FAF7F0")
@@ -36,12 +37,12 @@ def _name(student):
 
 def _sheet(wb, title, headers, rows, widths=None):
     ws = wb.create_sheet(title)
-    ws.append(headers)
+    append_row(ws, headers)
     for cell in ws[1]:
         cell.fill, cell.font = HEADER_FILL, HEADER_FONT
         cell.alignment = Alignment(vertical="center")
     for row in rows:
-        ws.append(row)
+        append_row(ws, row)
     ws.freeze_panes = "A2"
     for i, header in enumerate(headers, start=1):
         width = (widths or {}).get(header) or max(10, min(40, len(str(header)) + 4))
@@ -131,8 +132,8 @@ def attendance_xlsx(students, start, end, words=DEFAULT_VOCAB):
     grid = [[s.external_id, _name(s), *[letters.get(by_student[s.id].get(d), "") for d in days]] for s in students]
     ws = _sheet(wb, "By day", [words["student_id"], "Student", *[d.strftime("%a %d %b") for d in days]], grid,
                 widths={"Student": 26})
-    ws.append([])
-    ws.append(["P = present, A = absent, L = late, E = excused"])
+    append_row(ws, [])
+    append_row(ws, ["P = present, A = absent, L = late, E = excused"])
     return _workbook_bytes(wb)
 
 
@@ -366,6 +367,6 @@ def reports_pdf(school, students, term):
         pdf.set_text_color(*MUTED)
         for part in _key(summary["system"], summary["scale"]):
             pdf.multi_cell(0, 4.5, part, new_x="LMARGIN", new_y="NEXT")
-        finalized = report.finalized_at.date() if report.finalized_at else date.today()
+        finalized = report.finalized_at.date() if report.finalized_at else timezone.localdate()
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output()), count

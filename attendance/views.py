@@ -4,14 +4,17 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.scoping import check_can_see_student, limit_to_visible_students
 from activity.services import log_activity, student_name
 from gradebook.locks import check_date_open
+from housemaster.pagination import LongListPagination
 
 from .models import AttendanceRecord
 from .serializers import AttendanceRecordSerializer
 
 
 class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = AttendanceRecord.objects.all()
+    # Ordered by id so pages are stable (F-14).
+    queryset = AttendanceRecord.objects.order_by("id")
     serializer_class = AttendanceRecordSerializer
+    pagination_class = LongListPagination
     filterset_fields = ["student", "date", "status"]
     school_lookup = "student__school"
 

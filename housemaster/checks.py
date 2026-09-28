@@ -6,7 +6,10 @@ would quietly break it in production. They run with
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
 
-CONSOLE_EMAIL = "django.core.mail.backends.console.EmailBackend"
+UNSENT_EMAIL_BACKENDS = {
+    "django.core.mail.backends.console.EmailBackend",
+    "housemaster.mail.UndeliveredEmailBackend",
+}
 
 
 @register(Tags.security, deploy=True)
@@ -22,10 +25,10 @@ def production_configuration(app_configs, **kwargs):
                  "Set FRONTEND_URL to the Vercel production URL.",
             id="housemaster.E001",
         ))
-    if settings.EMAIL_BACKEND == CONSOLE_EMAIL:
+    if settings.EMAIL_BACKEND in UNSENT_EMAIL_BACKENDS:
         messages.append(Error(
-            "Email is going to the console backend.",
-            hint="Invites and password resets would be written to the server log instead of being sent. "
+            "No email service is configured.",
+            hint="Invites and password resets are not being delivered. "
                  "Set EMAIL_BACKEND, EMAIL_HOST and the related settings.",
             id="housemaster.E002",
         ))

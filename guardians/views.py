@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from accounts.emails import send_admin_password_reset
-from accounts.throttles import InviteIPThrottle
+from accounts.throttles import InviteIPThrottle, InviteSendRecipientThrottle, InviteSendUserThrottle
 from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
@@ -37,6 +37,7 @@ class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = GuardianInvite.objects.all()
     serializer_class = GuardianInviteSerializer
     permission_classes = [HasSchoolProfile, IsSchoolAdmin]
+    throttle_classes = [InviteSendUserThrottle, InviteSendRecipientThrottle]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def perform_create(self, serializer):
@@ -230,8 +231,9 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
     def reports(self, request, pk=None):
         student = self.get_object()
         # Draft and submitted reports are internal staff work. Guardians only see
-        # a report once the school has explicitly finalized it.
-        reports = student.reports.filter(status="finalized").select_related("term").order_by("-generated_at")
+        # a report once the school has explicitly finalized it, and never one
+        # with a blank comment (F-11).
+        reports = student.reports.filter(status="finalized").with_content().select_related("term").order_by("-generated_at")
         return Response(GuardianReportSerializer(reports, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="term-summary")
@@ -240,7 +242,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         from gradebook.systems import term_summary
 
         student = self.get_object()
-        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).first() \
+        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).with_content().first() \
             if str(request.query_params.get("term", "")).isdigit() else None
         if report is None:
             raise NotFound("There's no finalized report for that term.")
@@ -258,7 +260,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         from reporting.exports import reports_pdf
 
         student = self.get_object()
-        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).first() \
+        report = student.reports.filter(status="finalized", term_id=request.query_params.get("term")).with_content().first() \
             if str(request.query_params.get("term", "")).isdigit() else None
         if report is None:
             raise NotFound("There's no finalized report for that term.")

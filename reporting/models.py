@@ -3,6 +3,23 @@ from django.db import models
 from students.models import Student
 from gradebook.models import Term
 
+# Empty, or nothing but spaces, tabs and new lines.
+_BLANK = r"^\s*$"
+
+
+class StudentReportQuerySet(models.QuerySet):
+    """
+    A report with a blank comment or summary must never reach parents (F-11):
+    it can't be submitted or finalized, and parents are never shown one,
+    even if it was finalized before this rule existed.
+    """
+
+    def blank(self):
+        return self.filter(models.Q(report_comment__regex=_BLANK) | models.Q(progress_summary__regex=_BLANK))
+
+    def with_content(self):
+        return self.exclude(pk__in=self.blank().values("pk"))
+
 
 class StudentReport(models.Model):
     """
@@ -57,6 +74,16 @@ class StudentReport(models.Model):
 
     generated_at = models.DateTimeField(auto_now_add=True)
     edited_at = models.DateTimeField(auto_now=True)
+
+    objects = StudentReportQuerySet.as_manager()
+
+    def missing_content(self):
+        """Why this report can't be shared yet, or None if it can."""
+        if not (self.report_comment or "").strip():
+            return "This report has no comment yet. Write one before sending it on."
+        if not (self.progress_summary or "").strip():
+            return "This report has no progress summary yet. Write one before sending it on."
+        return None
 
     class Meta:
         unique_together = ("student", "term")

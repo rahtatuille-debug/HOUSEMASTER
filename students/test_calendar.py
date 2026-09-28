@@ -1,5 +1,5 @@
 """Year group order, graduating years, quarters and a school's own words."""
-from datetime import date
+from django.utils import timezone
 
 from accounts.tests import SchoolScopedAPITestCase
 
@@ -50,5 +50,5 @@ class CalendarTests(SchoolScopedAPITestCase):
         self.admin.post("/api/promotion/", {"moves": moves, "commit": True}, format="json")
         senior.refresh_from_db()
         junior.refresh_from_db()
-        self.assertEqual((senior.is_active, senior.graduated_on), (False, date.today()))
+        self.assertEqual((senior.is_active, senior.graduated_on), (False, timezone.localdate()))
         self.assertEqual((junior.school_class, junior.graduated_on), (c12, None))

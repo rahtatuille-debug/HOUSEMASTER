@@ -3,8 +3,6 @@ A teacher's home page: their classes at a glance, and a getting-started
 checklist that ticks itself as they use HouseMaster for the first time.
 Also records when someone has been through the guided tour.
 """
-from datetime import date
-
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
@@ -76,7 +74,7 @@ def teacher_classes(profile):
             row["class_teacher"] = True
         else:
             row["subjects"].append(a.subject.name)
-    today = date.today()
+    today = timezone.localdate()
     for row in classes.values():
         students = list(school.students.filter(school_class_id=row["id"], is_active=True).values_list("id", flat=True))
         row["students"] = len(students)

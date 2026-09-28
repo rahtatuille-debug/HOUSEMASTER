@@ -8,6 +8,8 @@ the lists cover what's common rather than every variation.
 """
 from datetime import date
 
+from django.utils import timezone
+
 KENYA_TERMS = [("Term 1", (1, 6), (4, 3)), ("Term 2", (4, 28), (8, 1)), ("Term 3", (8, 25), (10, 30))]
 UK_TERMS = [("Autumn term", (9, 3), (12, 12)), ("Spring term", (1, 6), (3, 27)), ("Summer term", (4, 20), (7, 10))]
 US_TERMS = [("Fall semester", (8, 25), (12, 19)), ("Spring semester", (1, 12), (5, 29))]
@@ -140,7 +142,7 @@ SYSTEMS = {
 
 def suggested_terms(system, today=None, terms=None):
     """This school year's terms for a system, with the usual dates, as [{name, start_date, end_date}]."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     terms = terms or SYSTEMS[system]["terms"]
     if SYSTEMS[system]["year_starts"] == "january":
         years = [today.year] * len(terms)

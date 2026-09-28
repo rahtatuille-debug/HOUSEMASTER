@@ -14,6 +14,7 @@ import requests
 
 DEFAULT_MODEL = "gemini-3.6-flash"
 BUSY_MESSAGE = "The writing assistant is busy, please try again in a minute."
+UNUSABLE_MESSAGE = "The writing assistant's answer couldn't be used. Please try again, or write this one yourself."
 
 # A small shared pool, so a call that blows its deadline can be abandoned
 # without holding up the request that made it.

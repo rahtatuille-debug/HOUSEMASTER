@@ -19,6 +19,8 @@ from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
 from .throttles import (
     InviteIPThrottle,
+    InviteSendRecipientThrottle,
+    InviteSendUserThrottle,
     LoginEmailThrottle,
     LoginIPThrottle,
     PasswordResetEmailThrottle,
@@ -92,6 +94,7 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Invite.objects.all()
     serializer_class = InviteSerializer
     permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
+    throttle_classes = [InviteSendUserThrottle, InviteSendRecipientThrottle]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def perform_create(self, serializer):

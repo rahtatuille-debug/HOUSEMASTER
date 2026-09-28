@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date
 
 from django.db.models import Count
+from django.utils import timezone
 
 from accounts.models import TeachingAssignment
 from accounts.scoping import is_admin
@@ -35,7 +36,7 @@ def _group_average(students, term, weights):
 def _age(dob):
     if not dob:
         return None
-    today = date.today()
+    today = timezone.localdate()
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
@@ -102,7 +103,7 @@ def build_profile(student, user):
             "rate": round(attended / total * 100, 1) if total else None,
         }
 
-    today = date.today()
+    today = timezone.localdate()
     current_term = Term.objects.filter(
         school=student.school, start_date__lte=today, end_date__gte=today
     ).first()

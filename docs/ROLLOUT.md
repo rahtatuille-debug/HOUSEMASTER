@@ -104,7 +104,10 @@ F-09 to F-14, F-18, F-19 and the invite part of F-12.
 
 **Before merging:** step 4 reported zeros. The migrations re-check the same
 things and stop with row IDs (never emails) if anything is wrong, which
-fails the deploy and keeps the old version running.
+fails the deploy and keeps the old version running. On PostgreSQL each
+migration commits on its own, so a stopped deploy can leave the unique
+email index added while the grade constraints wait; the old code runs fine
+with it. Fix the rows the message names and deploy again.
 
 **API change:** grades, attendance, the activity log and conversation
 messages now come back a page at a time (`{count, next, previous, results}`).

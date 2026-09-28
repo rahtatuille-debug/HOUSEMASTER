@@ -45,7 +45,11 @@ def _build_student_context(student, term):
     words = words_for(student.school, system)
 
     def line(g):
-        percent = float(g.score) / float(g.max_score) * 100 if g.max_score else None
+        if g.max_score <= 0:
+            # Can't happen any more (validation and a database constraint
+            # prevent it), but never let such a mark vanish silently.
+            return f"- {g.subject.name}: {g.score} (no valid maximum, so no percentage)"
+        percent = float(g.score) / float(g.max_score) * 100
         level = level_for(percent, scale)
         return f"- {g.subject.name}: {g.score}/{g.max_score}" + (f" ({percent:.0f}%, {level})" if level else "")
 
@@ -93,17 +97,22 @@ It should be specific to the data above, not generic. Do not invent facts not pr
 The student's name is withheld. Wherever you would use their name, write exactly {PLACEHOLDER}. Do not guess a name, and do not assume their gender."""
 
 
+class AIReplyUnusable(Exception):
+    """The model answered, but not with a summary and a comment we can use."""
+
+
 def _parse_response(text):
-    """Split the model's SUMMARY:/COMMENT: response into two strings."""
-    summary, comment = "", ""
-    if "SUMMARY:" in text and "COMMENT:" in text:
-        summary_part, comment_part = text.split("COMMENT:", 1)
-        summary = summary_part.split("SUMMARY:", 1)[1].strip()
-        comment = comment_part.strip()
-    else:
-        # Fallback: if the model didn't follow the format, put everything in summary
-        summary = text.strip()
-        comment = ""
+    """
+    Split the model's SUMMARY:/COMMENT: response into two strings. An answer
+    without both parts is refused rather than saved with a blank comment.
+    """
+    if "SUMMARY:" not in text or "COMMENT:" not in text:
+        raise AIReplyUnusable("The answer didn't contain a summary and a comment.")
+    summary_part, comment_part = text.split("COMMENT:", 1)
+    summary = summary_part.split("SUMMARY:", 1)[1].strip()
+    comment = comment_part.strip()
+    if not summary or not comment:
+        raise AIReplyUnusable("The answer had an empty summary or comment.")
     return summary, comment
 
 

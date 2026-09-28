@@ -93,3 +93,33 @@ class RegistrationEmailThrottle(EmailThrottle):
 
 class TokenRefreshIPThrottle(IPThrottle):
     scope = "token_refresh_ip"
+
+
+class InviteSendUserThrottle(SimpleRateThrottle):
+    """Invite emails (new or renewed) one admin can send. Reading and cancelling aren't limited."""
+
+    scope = "invite_send_user"
+
+    def get_cache_key(self, request, view):
+        if request.method != "POST" or not request.user.is_authenticated:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+class InviteSendRecipientThrottle(SimpleRateThrottle):
+    """
+    Invite emails one address can receive, from any school, so invites can't
+    be used to flood someone's inbox. A renewal counts against the invite
+    being renewed.
+    """
+
+    scope = "invite_send_recipient"
+
+    def get_cache_key(self, request, view):
+        if request.method != "POST":
+            return None
+        email = normalise_email(request.data.get("email"))
+        ident = email or (f"{view.basename}-{view.kwargs['pk']}" if view.kwargs.get("pk") else "")
+        if not ident:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": ident}

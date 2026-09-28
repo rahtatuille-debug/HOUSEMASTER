@@ -23,6 +23,7 @@ from django.db import transaction
 
 from attendance.models import AttendanceRecord
 from gradebook.models import Grade, Subject, Term
+from reporting.spreadsheets import append_row
 
 from .models import SchoolClass, Student, YearGroup
 
@@ -199,6 +200,12 @@ class _Import:
                 continue
             if student is None:
                 continue
+            from attendance.dates import attendance_date_problem
+
+            problem = attendance_date_problem(self.school, day)
+            if problem:
+                self.error("Attendance", number, f"{day}: {problem}")
+                continue
             from gradebook.locks import locked_term_for_date
 
             locked = locked_term_for_date(self.school, day)
@@ -265,17 +272,17 @@ def template_workbook(school=None):
     wb.remove(wb.active)
     for sheet, headers in TEMPLATE.items():
         ws = wb.create_sheet(sheet)
-        ws.append(headers)
-        ws.append(examples[sheet])
+        append_row(ws, headers)
+        append_row(ws, examples[sheet])
         for cell in ws[1]:
             cell.font = openpyxl.styles.Font(bold=True)
         for column, header in zip(ws.columns, headers):
             ws.column_dimensions[column[0].column_letter].width = max(12, len(header) + 4)
     if classes:
         ws = wb.create_sheet("Classes")
-        ws.append(["class", "year_group"])
+        append_row(ws, ["class", "year_group"])
         for klass in classes:
-            ws.append([klass.name, klass.year_group.name])
+            append_row(ws, [klass.name, klass.year_group.name])
         for cell in ws[1]:
             cell.font = openpyxl.styles.Font(bold=True)
         ws.column_dimensions["A"].width = ws.column_dimensions["B"].width = 22

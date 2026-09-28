@@ -1,7 +1,8 @@
 """The admin home page: what needs attention at the school today."""
-from datetime import date, timedelta
+from datetime import timedelta
 
 from django.db.models import Count, Q
+from django.utils import timezone
 
 from approvals.models import ChangeRequest
 from attendance.models import AttendanceRecord
@@ -19,7 +20,7 @@ def _invite_row(invite, kind):
 
 
 def build_dashboard(school):
-    today = date.today()
+    today = timezone.localdate()
     # At weekends, show the last school day's registers instead of warning
     # that none were taken today.
     register_day = today - timedelta(days=max(0, today.weekday() - 4))

@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 
 from accounts.tests import SchoolScopedAPITestCase
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 from activity.models import ActivityLog
 from communications.models import Announcement
@@ -314,8 +315,6 @@ class ParentInviteRenewalAndResetTests(SchoolScopedAPITestCase):
 class GuardianStudentProfileTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
-        from datetime import date
-
         from attendance.models import AttendanceRecord
 
         year = YearGroup.objects.create(school=self.school_a, name="Year 7")
@@ -329,7 +328,7 @@ class GuardianStudentProfileTests(SchoolScopedAPITestCase):
         maths = Subject.objects.create(school=self.school_a, name="Maths")
         Grade.objects.create(student=self.child, subject=maths, term=term, score=90)
         Grade.objects.create(student=self.other, subject=maths, term=term, score=10)
-        AttendanceRecord.objects.create(student=self.child, date=date.today(), status="late")
+        AttendanceRecord.objects.create(student=self.child, date=timezone.localdate(), status="late")
         user = User.objects.create_user(username="pm@x.test", email="pm@x.test", password="x")
         Guardian.objects.create(user=user, school=self.school_a, display_name="Pat").students.add(self.child)
         self.parent = self.authed_client(user)

@@ -59,7 +59,7 @@ class MessagingTests(SchoolScopedAPITestCase):
 
         thread = self.client_a.get(f"/api/conversations/{conv_id}/messages/")
         self.assertEqual(thread.status_code, 200)
-        self.assertEqual(len(thread.data), 2)
+        self.assertEqual(thread.data["count"], 2)
 
     def test_non_participant_staff_cannot_see_or_message_the_conversation(self):
         create = self.client_a.post(
@@ -175,7 +175,7 @@ class ClassMessageTests(SchoolScopedAPITestCase):
         self.assertIn(conv_id, self.ids(self.c1))
         self.assertIn(conv_id, self.ids(self.c2))
         self.assertNotIn(conv_id, self.ids(self.c3))
-        self.assertEqual(self.c1.get(f"/api/conversations/{conv_id}/messages/").data[0]["body"], "Trip on Friday")
+        self.assertEqual(self.c1.get(f"/api/conversations/{conv_id}/messages/").data["results"][0]["body"], "Trip on Friday")
 
     def test_parents_cannot_reply_to_a_notice_or_see_other_recipients(self):
         conv_id = self.send("class_notice").data["id"]
@@ -191,7 +191,7 @@ class ClassMessageTests(SchoolScopedAPITestCase):
     def test_discussion_lets_everyone_reply_and_see_each_other(self):
         conv_id = self.send("class_group").data["id"]
         self.assertEqual(self.c1.post(f"/api/conversations/{conv_id}/messages/", {"body": "Can I help?"}).status_code, 201)
-        bodies = [m["body"] for m in self.c2.get(f"/api/conversations/{conv_id}/messages/").data]
+        bodies = [m["body"] for m in self.c2.get(f"/api/conversations/{conv_id}/messages/").data["results"]]
         self.assertEqual(bodies, ["Trip on Friday", "Can I help?"])
         names = {p["name"] for p in self.c2.get(f"/api/conversations/{conv_id}/").data["participants"]}
         self.assertTrue({"Ann Parent", "Ben Parent"} <= names)

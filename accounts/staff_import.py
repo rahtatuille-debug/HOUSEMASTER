@@ -21,6 +21,7 @@ from django.core.validators import validate_email
 from django.db import transaction
 
 from gradebook.models import Subject
+from reporting.spreadsheets import append_row
 from students.importer import MAX_ERRORS, WorkbookError, _rows, _text
 from students.models import SchoolClass
 
@@ -55,16 +56,16 @@ def staff_template(school=None):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = SHEET
-    ws.append(COLUMNS)
+    append_row(ws, COLUMNS)
     for row in examples:
-        ws.append(row)
+        append_row(ws, row)
     for letter, width in zip("ABCDE", (22, 30, 10, 22, 50)):
         ws.column_dimensions[letter].width = width
     if classes or subjects:
         lists = wb.create_sheet("Classes and subjects")
-        lists.append(["class", "subject"])
+        append_row(lists, ["class", "subject"])
         for i in range(max(len(classes), len(subjects))):
-            lists.append([classes[i] if i < len(classes) else None, subjects[i] if i < len(subjects) else None])
+            append_row(lists, [classes[i] if i < len(classes) else None, subjects[i] if i < len(subjects) else None])
         lists.column_dimensions["A"].width = lists.column_dimensions["B"].width = 28
     return wb
 

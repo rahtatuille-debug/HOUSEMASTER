@@ -186,6 +186,10 @@ REST_FRAMEWORK = {
         # links and password-reset confirmation (token-guessing endpoints).
         'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
         'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
+        # Invite emails (new or renewed): per admin, and per recipient address
+        # across all schools, so invites can't flood someone's inbox.
+        'invite_send_user': os.environ.get('INVITE_SEND_USER_RATE', '100/hour'),
+        'invite_send_recipient': os.environ.get('INVITE_SEND_RECIPIENT_RATE', '5/day'),
     },
     # How many proxies sit in front of the app and append to
     # X-Forwarded-For. Without it DRF trusts the whole header, so anyone can
@@ -291,7 +295,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The schools are in Kenya. Times are stored in UTC (USE_TZ), and "today"
+# (timezone.localdate()) is Nairobi's day, so registers taken just after
+# midnight land on the right date.
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
@@ -371,6 +378,11 @@ SIMPLE_JWT = {
 EMAIL_BACKEND = os.environ.get(
     'EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend'
 )
+# In production the console backend would write invite and reset links into
+# the server log. Drop such mail with an ERROR instead; `check --deploy`
+# still reports the missing email setup (housemaster.E002).
+if not DEBUG and EMAIL_BACKEND == 'django.core.mail.backends.console.EmailBackend':
+    EMAIL_BACKEND = 'housemaster.mail.UndeliveredEmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
@@ -391,7 +403,9 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # start at 1 week, raise once confirmed working
+    # 30 days. Raise to a year (31536000) after a clean month. No preload:
+    # that is hard to undo.
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', str(60 * 60 * 24 * 30)))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # Error monitoring (Sentry). Only initializes if SENTRY_DSN is set in the

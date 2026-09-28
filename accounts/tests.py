@@ -31,6 +31,18 @@ from students.models import School
 from .models import Invite, PasswordResetToken, Profile
 
 
+def allow_duplicate_emails():
+    """
+    Drop the unique email index (F-13) for the rest of one test, to set up
+    accounts that shared an address before it existed. The test's
+    transaction puts it back.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("DROP INDEX IF EXISTS accounts_user_email_ci_unique")
+
+
 class SchoolScopedAPITestCase(APITestCase):
     """
     Sets up two separate schools, each with one authenticated staff user,
@@ -207,8 +219,9 @@ class PasswordResetTests(SchoolScopedAPITestCase):
         self.assertEqual(PasswordResetToken.objects.count(), 0)
 
     def test_request_matches_every_account_sharing_that_email(self):
-        # User.email has no uniqueness constraint, so a shared address
-        # should get a reset link for each account that uses it.
+        # Accounts from before the unique email index (F-13) may share an
+        # address; each should still get its own reset link.
+        allow_duplicate_emails()
         self.user_b.email = self.user_a.email
         self.user_b.save(update_fields=["email"])
         response = self.client.post("/api/password-reset/", {"email": self.user_a.email})
@@ -337,6 +350,11 @@ class AcceptInviteTests(SchoolScopedAPITestCase):
 
 class CheckDuplicateEmailsCommandTests(TestCase):
     """The pre-flight report for adding unique=True to User.email."""
+
+    def setUp(self):
+        # The command exists to find accounts that shared an address before
+        # the unique index was added.
+        allow_duplicate_emails()
 
     def run_command(self):
         out = StringIO()
@@ -560,7 +578,7 @@ class TeacherAssignmentScopingTests(SchoolScopedAPITestCase):
     # --- grades
 
     def test_teacher_sees_all_subjects_for_own_class_only(self):
-        ids = {g["id"] for g in self.client_a.get("/api/grades/").data}
+        ids = {g["id"] for g in self.client_a.get("/api/grades/").data["results"]}
         self.assertEqual(ids, {self.art_grade.id})
 
     def test_teacher_can_grade_own_subject_only(self):
@@ -711,7 +729,7 @@ class WholeClassAssignmentTests(SchoolScopedAPITestCase):
 class DashboardTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
-        from datetime import date
+        from django.utils import timezone
 
         from attendance.models import AttendanceRecord
         from gradebook.models import Term
@@ -731,7 +749,7 @@ class DashboardTests(SchoolScopedAPITestCase):
         # The day the home page shows: today, or the last Friday at weekends.
         from datetime import timedelta
 
-        day = date.today() - timedelta(days=max(0, date.today().weekday() - 4))
+        day = timezone.localdate() - timedelta(days=max(0, timezone.localdate().weekday() - 4))
         AttendanceRecord.objects.create(student=self.ann, date=day, status="present")
         AttendanceRecord.objects.create(student=self.ben, date=day, status="absent")
         parent = User.objects.create_user(username="p@x.test", email="p@x.test", password="x")
@@ -769,16 +787,13 @@ class DashboardTests(SchoolScopedAPITestCase):
 
 class DashboardWeekendTests(SchoolScopedAPITestCase):
     def test_weekend_shows_fridays_registers(self):
-        from datetime import date
+        from datetime import datetime, timezone as dt_timezone
         from unittest.mock import patch
 
-        class Sunday(date):
-            @classmethod
-            def today(cls):
-                return cls(2026, 9, 27)
-
+        # Sunday 27 September 2026, midday in Nairobi.
+        sunday = datetime(2026, 9, 27, 9, 0, tzinfo=dt_timezone.utc)
         self.make_admin(self.user_a)
-        with patch("accounts.dashboard.date", Sunday):
+        with patch("django.utils.timezone.now", return_value=sunday):
             data = self.client_a.get("/api/dashboard/").data["attendance_today"]
         self.assertEqual(str(data["date"]), "2026-09-25")
         self.assertFalse(data["is_today"])

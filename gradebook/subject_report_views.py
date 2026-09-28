@@ -5,12 +5,12 @@ summary in their school's system.
 """
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import check_can_grade, visible_students
+from accounts.scoping import assigned_class_ids, check_can_grade, is_admin, visible_students
 from activity.services import log_activity
 from students.models import SchoolClass
 
@@ -57,6 +57,8 @@ def class_subject_reports(request):
     """
     data = request.query_params if request.method == "GET" else request.data
     term, subject, school_class = _lookup(request, data)
+    if not is_admin(request.user) and school_class.id not in set(assigned_class_ids(request.user)):
+        raise PermissionDenied("You don't teach this class.")
     students = visible_students(request.user).filter(school_class=school_class, is_active=True)
     if subject.is_elective:
         students = students.filter(subject_choices__subject=subject)

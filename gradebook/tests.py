@@ -88,7 +88,7 @@ class GradeScopingTests(SchoolScopedAPITestCase):
 
     def test_list_only_returns_own_schools_grades(self):
         response = self.client_a.get("/api/grades/")
-        ids = [row["id"] for row in response.data]
+        ids = [row["id"] for row in response.data["results"]]
         self.assertIn(self.grade_a.id, ids)
         self.assertNotIn(self.grade_b.id, ids)
 
@@ -161,4 +161,4 @@ class GradeScopingTests(SchoolScopedAPITestCase):
         # student doesn't exist for this caller, not error or leak data.
         response = self.client_a.get(f"/api/grades/?student={self.student_b.id}")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
