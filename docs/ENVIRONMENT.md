@@ -74,7 +74,8 @@ Render's **Health Check Path** to `/healthz` (HUMAN_ACTIONS.md, H-4).
 
 | Variable | Why |
 |---|---|
-| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs. |
+| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs (also after every `migrate`). With `DJANGO_DEBUG` off the command now refuses and creates nothing unless `ALLOW_DEMO_SEED=1` is also set; it exits normally, so deploys don't fail. |
+| `ALLOW_DEMO_SEED` | Set to `1` only on a server that exists purely for demos, never on one holding real schools. |
 | `ALLOW_REMOTE_TEST_DB` | Lets the test suite create and drop databases on a remote server. |
 | `HOUSEMASTER_SKIP_DOTENV` | Used only by the settings tests. |
 
