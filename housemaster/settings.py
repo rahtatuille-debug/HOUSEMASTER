@@ -193,6 +193,18 @@ DATABASES = {
     )
 }
 
+# The test runner creates and destroys a whole database. It must never do
+# that on a shared server, so it only runs on SQLite or a local Postgres
+# unless ALLOW_REMOTE_TEST_DB=1 is set on purpose.
+if TESTING and os.environ.get('ALLOW_REMOTE_TEST_DB') != '1':
+    _test_db_host = DATABASES['default'].get('HOST') or ''
+    if _test_db_host not in ('', 'localhost', '127.0.0.1', '::1'):
+        raise ImproperlyConfigured(
+            "Refusing to run the tests against a remote database. Unset DATABASE_URL "
+            "(env -u DATABASE_URL ...) or move .env aside, or set ALLOW_REMOTE_TEST_DB=1 "
+            "if this really is a disposable test server."
+        )
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
