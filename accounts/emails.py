@@ -1,13 +1,28 @@
+import logging
+
 from django.conf import settings
 from django.core.mail import send_mail
+from rest_framework.exceptions import APIException
+
+logger = logging.getLogger(__name__)
+
+
+class ResetEmailNotSent(APIException):
+    status_code = 503
+    default_detail = "The reset email couldn't be sent. Check the email settings, or try again later."
+    default_code = "email_not_sent"
 
 
 def send_admin_password_reset(user):
-    """Email a user a password reset link on an admin's behalf. Returns the token."""
+    """
+    Email a user a password reset link on an admin's behalf. Returns the
+    token. Unlike the public reset form, the admin is told if it wasn't sent.
+    """
     from .models import PasswordResetToken
 
     reset_token = PasswordResetToken.objects.create(user=user)
-    send_password_reset_email(reset_token)
+    if not send_password_reset_email(reset_token):
+        raise ResetEmailNotSent()
     return reset_token
 
 
@@ -18,7 +33,18 @@ def send_password_reset_email(reset_token):
     log — see the EMAIL_* settings for wiring up real SMTP delivery.
     """
     reset_link = f"{settings.FRONTEND_URL}/reset-password/{reset_token.token}"
-    send_mail(
+    try:
+        return _send_reset(reset_token, reset_link) > 0
+    except Exception:
+        # Logged for Sentry without the link. The public reset form still
+        # gets its usual answer: a 500 here, only for real accounts, would
+        # reveal which emails have one. Returns whether it was sent.
+        logger.exception("Password reset email for user %s could not be sent", reset_token.user_id)
+        return False
+
+
+def _send_reset(reset_token, reset_link):
+    return send_mail(
         subject="Reset your HouseMaster password",
         message=(
             f"Hi {reset_token.user.email},\n\n"

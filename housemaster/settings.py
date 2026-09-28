@@ -375,6 +375,11 @@ SIMPLE_JWT = {
 EMAIL_BACKEND = os.environ.get(
     'EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend'
 )
+# In production the console backend would write invite and reset links into
+# the server log. Drop such mail with an ERROR instead; `check --deploy`
+# still reports the missing email setup (housemaster.E002).
+if not DEBUG and EMAIL_BACKEND == 'django.core.mail.backends.console.EmailBackend':
+    EMAIL_BACKEND = 'housemaster.mail.UndeliveredEmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
