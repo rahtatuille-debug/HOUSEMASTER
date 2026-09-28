@@ -729,7 +729,7 @@ class WholeClassAssignmentTests(SchoolScopedAPITestCase):
 class DashboardTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
-        from datetime import date
+        from django.utils import timezone
 
         from attendance.models import AttendanceRecord
         from gradebook.models import Term
@@ -749,7 +749,7 @@ class DashboardTests(SchoolScopedAPITestCase):
         # The day the home page shows: today, or the last Friday at weekends.
         from datetime import timedelta
 
-        day = date.today() - timedelta(days=max(0, date.today().weekday() - 4))
+        day = timezone.localdate() - timedelta(days=max(0, timezone.localdate().weekday() - 4))
         AttendanceRecord.objects.create(student=self.ann, date=day, status="present")
         AttendanceRecord.objects.create(student=self.ben, date=day, status="absent")
         parent = User.objects.create_user(username="p@x.test", email="p@x.test", password="x")

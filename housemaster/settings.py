@@ -295,7 +295,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The schools are in Kenya. Times are stored in UTC (USE_TZ), and "today"
+# (timezone.localdate()) is Nairobi's day, so registers taken just after
+# midnight land on the right date.
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
@@ -400,7 +403,9 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # start at 1 week, raise once confirmed working
+    # 30 days. Raise to a year (31536000) after a clean month. No preload:
+    # that is hard to undo.
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', str(60 * 60 * 24 * 30)))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # Error monitoring (Sentry). Only initializes if SENTRY_DSN is set in the

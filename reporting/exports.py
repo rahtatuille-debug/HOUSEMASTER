@@ -6,11 +6,11 @@ Callers pass in students already limited to what the requester may see
 (accounts.scoping), so this module never decides who sees what.
 """
 from collections import defaultdict
-from datetime import date
 from io import BytesIO
 from pathlib import Path
 
 import openpyxl
+from django.utils import timezone
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -367,6 +367,6 @@ def reports_pdf(school, students, term):
         pdf.set_text_color(*MUTED)
         for part in _key(summary["system"], summary["scale"]):
             pdf.multi_cell(0, 4.5, part, new_x="LMARGIN", new_y="NEXT")
-        finalized = report.finalized_at.date() if report.finalized_at else date.today()
+        finalized = report.finalized_at.date() if report.finalized_at else timezone.localdate()
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output()), count

@@ -1,5 +1,5 @@
 """A teacher's home page, getting-started checklist and guided tour."""
-from datetime import date
+from django.utils import timezone
 
 from gradebook.models import Subject
 
@@ -38,7 +38,7 @@ class TeacherHomeTests(SchoolScopedAPITestCase):
         steps = {s["key"]: s["done"] for s in self.home()["checklist"]["steps"]}
         self.assertEqual(set(steps), {"tour", "register", "marks", "comments", "reports", "message"})
         self.assertFalse(any(steps.values()))
-        self.client_a.post("/api/attendance/", {"student": self.amina.id, "date": date.today().isoformat(),
+        self.client_a.post("/api/attendance/", {"student": self.amina.id, "date": timezone.localdate().isoformat(),
                                                 "status": "present"}, format="json")
         self.assertEqual(self.client_a.post("/api/tour-seen/").status_code, 200)
         data = self.home()
