@@ -130,47 +130,32 @@ class ConversationCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Message can't be empty.")
         return value
 
-    def validate_participant_ids(self, value):
-        request = self.context["request"]
-        caller_school = user_school(request.user)
-        # People at other schools are treated exactly like people who don't
-        # exist, so this can't be used to find out who has an account.
-        users = [u for u in User.objects.filter(id__in=value) if user_school(u) == caller_school]
-        if len(users) != len(set(value)):
-            raise serializers.ValidationError("One or more participants could not be found.")
-        for user in users:
-            if user.id == request.user.id:
-                raise serializers.ValidationError("You don't need to add yourself as a participant.")
-            if not user.is_active:
-                raise serializers.ValidationError("One or more participants' accounts are deactivated.")
-        if hasattr(request.user, "profile"):
-            from .contacts import messageable_guardian_users
+    # Refused people and children get the same answer as ones that don't
+    # exist, so these checks can't be used to discover names or IDs
+    # (messaging/contacts.py has the rules).
+    PARTICIPANT_NOT_FOUND = "One or more participants could not be found."
+    STUDENT_NOT_FOUND = "Student not found."
 
-            parent_ids = {u.id for u in users if hasattr(u, "guardian")}
-            allowed = set(messageable_guardian_users(request.user).filter(id__in=parent_ids)
-                          .values_list("id", flat=True))
-            if parent_ids - allowed:
-                raise serializers.ValidationError(
-                    "You can only message parents of students in the classes you teach."
-                )
+    def validate_participant_ids(self, value):
+        from .contacts import messageable_users
+
+        request = self.context["request"]
+        wanted = set(value)
+        if request.user.id in wanted:
+            raise serializers.ValidationError("You don't need to add yourself as a participant.")
+        allowed = set(messageable_users(request.user).filter(id__in=wanted).values_list("id", flat=True))
+        if allowed != wanted:
+            raise serializers.ValidationError(self.PARTICIPANT_NOT_FOUND)
         return value
 
     def validate_student(self, value):
+        from .contacts import attachable_students
+
         if value is None:
             return value
-        from students.models import Student
-
-        request = self.context["request"]
-        try:
-            student = Student.objects.get(id=value, school=user_school(request.user))
-        except Student.DoesNotExist:
-            raise serializers.ValidationError("Student not found at your school.")
-        if hasattr(request.user, "profile"):
-            from accounts.scoping import visible_students
-
-            if not visible_students(request.user).filter(id=student.id).exists():
-                raise serializers.ValidationError("You don't teach this student's class.")
-        return student.id
+        if not attachable_students(self.context["request"].user).filter(id=value).exists():
+            raise serializers.ValidationError(self.STUDENT_NOT_FOUND)
+        return value
 
 
 class ClassMessageSerializer(serializers.Serializer):

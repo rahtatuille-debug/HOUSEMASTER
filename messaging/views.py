@@ -12,7 +12,7 @@ from students.models import SchoolClass
 
 from .classes import can_post, guardian_class_ids, start_class_conversation, sync_class_participants
 from .models import Conversation, ConversationParticipant, Message
-from .contacts import messageable_guardian_users
+from .contacts import contact_list
 from .permissions import CanMessage, user_school
 from .serializers import (
     ClassMessageSerializer,
@@ -144,20 +144,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def contacts(self, request):
         """
-        Who the caller is allowed to start a new conversation with: the
-        other identity type at their own school (staff see guardians,
-        guardians see staff) — matches the "teacher <-> parent" framing
-        this feature was built for, rather than allowing staff-to-staff
-        DMs here (nothing stops that at the model level if it's wanted
-        later, this endpoint just doesn't surface it as a default contact
-        list yet).
+        Who the caller is offered in the "new message" picker: the other
+        identity type at their own school, narrowed by the rules in
+        messaging/contacts.py (parents see their children's teachers and the
+        admins; teachers see parents of their own pupils).
         """
-        school = user_school(request.user)
-        if hasattr(request.user, "guardian"):
-            users = User.objects.filter(profile__school=school).exclude(id=request.user.id)
-        else:
-            users = messageable_guardian_users(request.user)
-        users = users.filter(is_active=True)
+        users = contact_list(request.user)
         return Response([
             {"id": u.id, "name": _display_name(u)[0], "kind": _display_name(u)[1]} for u in users
         ])
