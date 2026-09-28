@@ -3,6 +3,28 @@
 HouseMaster's data lives in one Neon Postgres database. There are two
 layers of protection.
 
+## Where things stand (checked 2026-09-28)
+
+- **No nightly backup has ever succeeded.** The workflow's runs on
+  2026-09-27 and 2026-09-28 both stopped at "Check the secrets are set",
+  because `BACKUP_DATABASE_URL` and `BACKUP_PASSPHRASE` aren't set. Until
+  they are, the only copy of the data is Neon's short restore window.
+- The scripts themselves work: a full local drill (read-only backup role →
+  encrypted dump → restore into an empty database → row counts compared)
+  passed on 2026-09-28 with 43 tables and 41,107 rows. See "Rehearsing
+  locally" below.
+- Setting this up is the owner's first task: H-1 and H-2 in
+  [HUMAN_ACTIONS.md](HUMAN_ACTIONS.md).
+
+## Recovery targets
+
+Fill these in from the first real drill, and update them each term.
+
+| | Target | Measured at the last drill | Date of that drill |
+|---|---|---|---|
+| **RPO** (most data we can lose) | 24 hours (nightly backup) | | |
+| **RTO** (time to be back up from a backup) | 2 hours | | |
+
 ## 1. Neon's own restore window
 
 Neon keeps a short history of the database and can restore it to an
@@ -38,22 +60,54 @@ file, and the run shows a red cross under the repository's **Actions** tab.
 
 ### One-time setup
 
-1. **Get Neon's direct connection string.** Neon console → your project →
-   **Connect** (or Dashboard → Connection details). Switch **connection
-   pooling off**; the host must *not* contain `-pooler`. Copy the whole
-   `postgresql://...` string. (`pg_dump` doesn't work reliably through the
-   pooler.)
+1. **Create a read-only login for backups.** The backup only reads, so it
+   gets its own role that can't change anything, even if its password
+   leaks. Neon console → your project → **Connect**: switch **connection
+   pooling off** (the host must *not* contain `-pooler`; `pg_dump` doesn't
+   work reliably through the pooler) and copy the owner's connection string.
+   Then, from a computer with `psql`:
+
+   ```bash
+   BACKUP_ROLE_PASSWORD="$(openssl rand -hex 24)"
+   psql "postgresql://neondb_owner:...@ep-xxx.region.aws.neon.tech/neondb?sslmode=require" \
+     -v backup_password="$BACKUP_ROLE_PASSWORD" -v app_owner=neondb_owner -v dbname=neondb \
+     -f scripts/create_backup_role.sql
+   ```
+
+   The file explains every grant. Your backup connection string is the same
+   direct string with `neondb_owner:<owner password>` replaced by
+   `housemaster_backup:$BACKUP_ROLE_PASSWORD`. Check it can't write:
+   `psql "<backup string>" -c "delete from students_student"` must fail with
+   "cannot execute DELETE in a read-only transaction".
 2. **Make a backup passphrase.** A long random phrase, e.g. five or six
    random words. **Save it in your password manager now.** If it's lost,
    every backup is unreadable, and nobody can recover it.
 3. **Add both as repository secrets.** GitHub → the HOUSEMASTER repository →
    **Settings → Secrets and variables → Actions → New repository secret**:
-   - `BACKUP_DATABASE_URL` = the direct connection string from step 1
+   - `BACKUP_DATABASE_URL` = the read-only backup connection string from step 1
    - `BACKUP_PASSPHRASE` = the passphrase from step 2
 4. **Run it once by hand.** **Actions** tab → **Database backup** → **Run
    workflow**. It should finish green in a few minutes, with an
    "OK: ... tables and ... rows restored and match" line in the
    "Prove the backup restores" step.
+
+### Optional: a copy outside GitHub
+
+GitHub keeps each backup for 90 days, and GitHub is also where the code
+lives. To keep a copy somewhere else, create a bucket with any
+S3-compatible storage (AWS S3, Cloudflare R2, Backblaze B2) and a key that
+can only write to it, then add these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `BACKUP_S3_BUCKET` | the bucket name (setting this switches the step on) |
+| `BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY` | the key |
+| `BACKUP_S3_REGION` | the region, or leave unset for `auto` (R2) |
+| `BACKUP_S3_ENDPOINT` | only for non-AWS storage, e.g. `https://<account>.r2.cloudflarestorage.com` |
+
+The files are already encrypted with the passphrase. Set a lifecycle rule
+on the bucket to delete old copies after however long counsel says to keep
+them.
 
 ### Things to know
 
@@ -102,3 +156,42 @@ Do this once a term, so you know the steps work:
 2. Create a throwaway Neon branch (or use any empty Postgres database).
 3. Run `scripts/verify_backup.sh` against it as in step 3.
 4. Delete the throwaway branch.
+
+## Restore drill checklist (every term)
+
+- [ ] `BACKUP_DATABASE_URL` (the read-only role) and `BACKUP_PASSPHRASE` are
+      set as repository secrets; the passphrase is also in a password
+      manager outside GitHub.
+- [ ] A manual **Run workflow** finishes green, including "Prove the backup
+      restores".
+- [ ] Download the artifact, decrypt it on your own computer and restore
+      into a fresh local Postgres with `scripts/verify_backup.sh`.
+- [ ] Run `scripts/row_counts.sh` against production (read-only role) and
+      against the restore; the counts match within the backup window.
+- [ ] Point a local copy of the app at the restore and open one student's
+      report card.
+- [ ] Record the time to restore (RTO) and the backup's age (RPO) in the
+      table at the top of this file.
+- [ ] Confirm a copy exists outside GitHub (the optional bucket, or a
+      download kept somewhere safe).
+- [ ] Put the next drill in the calendar.
+
+## Rehearsing locally
+
+The whole chain can be tried against a local Postgres with no production
+access (this is how the scripts were checked on 2026-09-28):
+
+```bash
+# a throwaway database with realistic data
+createdb hm_source && createdb hm_restore
+DJANGO_DEBUG=True DATABASE_URL=postgresql://localhost/hm_source python manage.py migrate
+DJANGO_DEBUG=True DATABASE_URL=postgresql://localhost/hm_source DEMO_PASSWORD=Local-Demo-Only-123 \
+  python manage.py seed_demo_school
+# read-only role (the connecting role needs CREATEROLE, as Neon's owner has)
+psql postgresql://localhost/hm_source -v backup_password=local-only -v app_owner="$USER" \
+  -v dbname=hm_source -f scripts/create_backup_role.sql
+# back up with the read-only role, then restore and compare
+export BACKUP_PASSPHRASE=local-only-passphrase
+DATABASE_URL=postgresql://housemaster_backup:local-only@localhost/hm_source scripts/backup_db.sh /tmp/drill
+scripts/verify_backup.sh /tmp/drill/*.tar.gpg postgresql://localhost/hm_restore
+```
