@@ -6,24 +6,27 @@ from django.core.management.base import BaseCommand
 
 class Command(BaseCommand):
     """
-    Creates a superuser from DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD env
-    vars if one doesn't exist yet, and re-syncs the password to match the
-    current env var value if it does. Meant to be run on every deploy
-    (see build command) so a free-tier host with no shell access always
-    has a known-working login, even if the env var value changes later —
-    unlike `createsuperuser --noinput`, which only sets the password once
-    and then errors out (harmlessly) on every subsequent run.
+    Creates a superuser from the DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD
+    env vars if one doesn't exist yet. Safe to run on every deploy (the
+    free tier has no shell): an existing superuser is left alone, so a
+    password changed in the admin stays changed and the env var isn't a
+    standing way in.
 
-    No-ops quietly if the username/password env vars aren't set, so it's
-    safe to leave in the build command permanently.
+    To recover a lost password on a host with no shell, set
+    SYNC_SUPERUSER_RESET_PASSWORD=true for one deploy: the password is then
+    reset to DJANGO_SUPERUSER_PASSWORD, with a loud line in the deploy log.
+    Remove the setting (and ideally the password variable) straight after.
+
+    No-ops quietly if the username/password env vars aren't set.
     """
 
-    help = "Create or password-sync a superuser from DJANGO_SUPERUSER_* env vars."
+    help = "Create a superuser from DJANGO_SUPERUSER_* env vars if missing (reset only when asked)."
 
     def handle(self, *args, **options):
         username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
         password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
         email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "")
+        reset = os.environ.get("SYNC_SUPERUSER_RESET_PASSWORD", "").strip().lower() == "true"
 
         if not username or not password:
             self.stdout.write(
@@ -31,23 +34,31 @@ class Command(BaseCommand):
             )
             return
 
-        user, created = User.objects.get_or_create(
-            username=username, defaults={"email": email}
-        )
-        user.email = email
-        user.set_password(password)
-        user.is_staff = True
-        user.is_superuser = True
-        user.save()
+        user = User.objects.filter(username=username).first()
+        if user is None:
+            User.objects.create_superuser(username=username, email=email, password=password)
+            self.stdout.write(self.style.SUCCESS(f"Created superuser {username!r}."))
+        elif reset:
+            user.set_password(password)
+            user.is_staff = True
+            user.is_superuser = True
+            user.save()
+            self.stdout.write(self.style.WARNING(
+                f"!!! SUPERUSER PASSWORD RESET for {username!r} from DJANGO_SUPERUSER_PASSWORD "
+                "(SYNC_SUPERUSER_RESET_PASSWORD=true). Every session of this account has ended. "
+                "Now remove SYNC_SUPERUSER_RESET_PASSWORD from the environment. !!!"
+            ))
+        else:
+            self.stdout.write(
+                f"Superuser {username!r} already exists; its password was left unchanged. "
+                "Set SYNC_SUPERUSER_RESET_PASSWORD=true for one deploy to reset it."
+            )
 
-        self.stdout.write(
-            self.style.SUCCESS(f"Synced superuser {username!r} (created={created}).")
-        )
         if not email:
             self.stdout.write(
                 self.style.WARNING(
                     "DJANGO_SUPERUSER_EMAIL isn't set — this superuser can still use "
-                    "/admin/ (username-based login), but can't log into the app itself, "
+                    "the admin (username-based login), but can't log into the app itself, "
                     "since that now authenticates by email."
                 )
             )

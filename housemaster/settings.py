@@ -118,6 +118,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# The Django admin's address. Production should use something hard to
+# guess (docs/ENVIRONMENT.md); the default suits local development.
+ADMIN_PATH = os.environ.get('DJANGO_ADMIN_PATH', 'admin/').strip().strip('/') + '/'
+# Failed sign-ins allowed on the admin login page per client address per
+# hour (housemaster/middleware.py).
+ADMIN_LOGIN_RATE = int(os.environ.get('ADMIN_LOGIN_RATE', '10'))
+MIDDLEWARE.insert(MIDDLEWARE.index('django.contrib.sessions.middleware.SessionMiddleware'),
+                  'housemaster.middleware.AdminLoginThrottleMiddleware')
+
 # Temporary diagnostic for finding Render's proxy count (housemaster/middleware.py).
 if os.environ.get('LOG_CLIENT_IP_DEBUG') == '1':
     MIDDLEWARE.insert(0, 'housemaster.middleware.ClientIPDebugMiddleware')

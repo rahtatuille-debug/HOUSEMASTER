@@ -1,6 +1,7 @@
 """
 URL configuration for housemaster project.
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -70,7 +71,7 @@ router.register(r"activity", ActivityLogViewSet)
 router.register(r"change-requests", ChangeRequestViewSet)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path(settings.ADMIN_PATH, admin.site.urls),
     path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     path('api/logout/', LogoutView.as_view(), name='logout'),
