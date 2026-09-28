@@ -20,6 +20,7 @@ from io import StringIO
 
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APITestCase
@@ -42,6 +43,9 @@ class SchoolScopedAPITestCase(APITestCase):
     """
 
     def setUp(self):
+        # Rate-limit counters live in the cache, which isn't reset between
+        # tests, so start every test with empty counters.
+        cache.clear()
         self.school_a = School.objects.create(name="Alpha Academy", report_tone="formal")
         self.school_b = School.objects.create(name="Beta College", report_tone="warm")
 

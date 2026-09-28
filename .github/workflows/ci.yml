@@ -1,0 +1,66 @@
+# Runs on every push and pull request. Make these checks required on master
+# (docs/HUMAN_ACTIONS.md, H-7) so nothing reaches production untested.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Local-development mode for the ordinary checks. The production
+      # settings step below switches DEBUG off. Nothing here is a real secret.
+      DJANGO_DEBUG: "True"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Django system checks
+        run: python manage.py check
+
+      - name: Production settings checks
+        # Production-like environment. Fails on any ERROR (for example the
+        # email backend or FRONTEND_URL still on their local defaults).
+        env:
+          DJANGO_DEBUG: "False"
+          SECRET_KEY: ci-only-${{ github.run_id }}-not-a-real-key-0123456789abcdefghijklmnopqrstuvwxyz
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DJANGO_ALLOWED_HOSTS: api.example.org
+          CORS_ALLOWED_ORIGINS: https://app.example.org
+          FRONTEND_URL: https://app.example.org
+          EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+          EMAIL_HOST: smtp.example.org
+          DRF_NUM_PROXIES: "1"
+        run: python manage.py check --deploy --fail-level ERROR
+
+      - name: No missing migrations
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Known vulnerabilities in dependencies
+        run: pip-audit -r requirements.txt
+
+      - name: Tests
+        # SQLite, no DATABASE_URL: the suite never touches a real database.
+        run: python manage.py test --parallel auto --noinput

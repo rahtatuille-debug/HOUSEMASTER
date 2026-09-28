@@ -16,38 +16,62 @@ import os
 import sys
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
+# Local development reads a .env file. Tests of the settings themselves set
+# HOUSEMASTER_SKIP_DOTENV=1 so a developer's .env can't leak into them.
+if os.environ.get('HOUSEMASTER_SKIP_DOTENV') != '1':
+    load_dotenv(BASE_DIR / '.env')
+
+# True while `manage.py test` is running.
+TESTING = sys.argv[1:2] == ['test']
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# Reads SECRET_KEY from the environment in production (set this in Render's
-# dashboard); falls back to the old insecure dev key so local dev with no
-# .env still works out of the box, same pattern as DATABASE_URL below.
-SECRET_KEY = os.environ.get(
-    'SECRET_KEY', 'django-insecure-y9g=yf*er$t!1v1kye1bc523&6b_1(*by6&%v^nlrj232-bu0^'
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
-# Defaults to True (local dev), so this is opt-out, not opt-in — Render
-# MUST set DJANGO_DEBUG=False explicitly, or the deployment is still
-# running with DEBUG=True.
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
+# Off unless DJANGO_DEBUG=True is set explicitly. Local development sets it
+# in .env (see .env.example). With DEBUG off the settings below refuse to
+# start on a missing or unsafe value instead of quietly using a default.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
+
+
+def _production_setting_error(name, problem):
+    return ImproperlyConfigured(
+        f"{name} {problem}. Set it in the environment (see docs/ENVIRONMENT.md). "
+        "For local development put DJANGO_DEBUG=True in .env instead."
+    )
+
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# It signs every login token, so production must supply its own. The
+# development key below is only ever used with DEBUG on.
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
+if DEBUG and not SECRET_KEY:
+    SECRET_KEY = 'django-insecure-local-development-only-never-use-this-in-production'
+if not DEBUG:
+    if not SECRET_KEY:
+        raise _production_setting_error('SECRET_KEY', 'is not set')
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure'):
+        raise _production_setting_error(
+            'SECRET_KEY', "must be at least 50 random characters and must not start with 'django-insecure'"
+        )
 
 # Comma-separated list of allowed hostnames in production, e.g.
 # "housemaster-api.onrender.com". Local dev values always included.
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + [
+_env_allowed_hosts = [
     host.strip()
     for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
+if not DEBUG and not _env_allowed_hosts:
+    raise _production_setting_error('DJANGO_ALLOWED_HOSTS', 'is empty')
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + _env_allowed_hosts
 
 
 # Application definition
@@ -61,6 +85,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    # Rotated and signed-out refresh tokens are remembered here so they
+    # can't be used again.
+    'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'corsheaders',
     'accounts',
@@ -91,9 +118,24 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Temporary diagnostic for finding Render's proxy count (housemaster/middleware.py).
+if os.environ.get('LOG_CLIENT_IP_DEBUG') == '1':
+    MIDDLEWARE.insert(0, 'housemaster.middleware.ClientIPDebugMiddleware')
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {'console': {'class': 'logging.StreamHandler'}},
+        'loggers': {'housemaster.client_ip': {'handlers': ['console'], 'level': 'INFO'}},
+    }
+
+_num_proxies = os.environ.get('DRF_NUM_PROXIES', '').strip()
+DRF_NUM_PROXIES = int(_num_proxies) if _num_proxies else None
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # simplejwt's JWT authentication, refusing tokens issued before a
+        # password change or deactivation (accounts/tokens.py).
+        'accounts.authentication.VersionedJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -128,9 +170,29 @@ REST_FRAMEWORK = {
         # Starting AI reports for a whole class counts once here, not per report.
         'ai_class_report_generation': os.environ.get('AI_CLASS_REPORT_GENERATION_RATE', '5/hour'),
         'ai_announcement_drafting': os.environ.get('AI_ANNOUNCEMENT_DRAFTING_RATE', '30/hour'),
-        # New school sign-ups per IP address.
+        # New school sign-ups per IP address, and per email address.
         'school_registration': os.environ.get('SCHOOL_REGISTRATION_RATE', '5/hour'),
+        'school_registration_email': os.environ.get('SCHOOL_REGISTRATION_EMAIL_RATE', '3/day'),
+        # Brute-force and mail-bombing limits on the public endpoints
+        # (accounts/throttles.py). Each is per IP address, and where the
+        # request names an account, per email address too. Only failed
+        # logins count. Schools and mobile networks put many people behind
+        # one address, so the per-IP limits are deliberately generous.
+        'login_ip': os.environ.get('LOGIN_IP_RATE', '30/hour'),
+        'login_email': os.environ.get('LOGIN_EMAIL_RATE', '10/hour'),
+        'password_reset_ip': os.environ.get('PASSWORD_RESET_IP_RATE', '20/hour'),
+        'password_reset_email': os.environ.get('PASSWORD_RESET_EMAIL_RATE', '5/hour'),
+        # Invite previews and acceptance, parent invites, class sign-up
+        # links and password-reset confirmation (token-guessing endpoints).
+        'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
+        'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
     },
+    # How many proxies sit in front of the app and append to
+    # X-Forwarded-For. Without it DRF trusts the whole header, so anyone can
+    # pick their own "IP address" and dodge the per-IP limits. Production
+    # must set DRF_NUM_PROXIES (docs/ENVIRONMENT.md explains how to find the
+    # right value with LOG_CLIENT_IP_DEBUG).
+    'NUM_PROXIES': DRF_NUM_PROXIES,
 }
 
 ROOT_URLCONF = 'housemaster.urls'
@@ -155,12 +217,11 @@ WSGI_APPLICATION = 'housemaster.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-# Reads DATABASE_URL from the environment (see .env / .env.example).
-# Falls back to local SQLite if DATABASE_URL isn't set, so this still works
-# out of the box for anyone who hasn't configured Postgres yet.
+# Reads DATABASE_URL from the environment (see .env / .env.example). Local
+# development without one uses SQLite; production must set it, so a missing
+# value can never quietly start the app on an empty SQLite file.
+if not DEBUG and not os.environ.get('DATABASE_URL'):
+    raise _production_setting_error('DATABASE_URL', 'is not set')
 
 DATABASES = {
     'default': dj_database_url.config(
@@ -169,6 +230,31 @@ DATABASES = {
         ssl_require=False,  # the Neon URL itself carries ?sslmode=require
     )
 }
+
+# The test runner creates and destroys a whole database. It must never do
+# that on a shared server, so it only runs on SQLite or a local Postgres
+# unless ALLOW_REMOTE_TEST_DB=1 is set on purpose.
+if TESTING and os.environ.get('ALLOW_REMOTE_TEST_DB') != '1':
+    _test_db_host = DATABASES['default'].get('HOST') or ''
+    if _test_db_host not in ('', 'localhost', '127.0.0.1', '::1'):
+        raise ImproperlyConfigured(
+            "Refusing to run the tests against a remote database. Unset DATABASE_URL "
+            "(env -u DATABASE_URL ...) or move .env aside, or set ALLOW_REMOTE_TEST_DB=1 "
+            "if this really is a disposable test server."
+        )
+
+
+# Cache. The rate limits keep their counters here. The default in-memory
+# cache is per process and is emptied on every restart (which the free tier
+# does whenever it sleeps), so production should set THROTTLE_CACHE=db and
+# run `manage.py createcachetable` in the build (docs/HUMAN_ACTIONS.md, H-5).
+if os.environ.get('THROTTLE_CACHE', '').strip().lower() == 'db':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'housemaster_cache',
+        }
+    }
 
 
 # Password validation
@@ -189,6 +275,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 10},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -249,13 +336,26 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
     if origin.strip()
 ]
+if not DEBUG:
+    if not CORS_ALLOWED_ORIGINS:
+        raise _production_setting_error('CORS_ALLOWED_ORIGINS', 'is empty')
+    if any('*' in o or 'localhost' in o or '127.0.0.1' in o for o in CORS_ALLOWED_ORIGINS):
+        raise _production_setting_error(
+            'CORS_ALLOWED_ORIGINS', "must list the real frontend origins only (no '*', localhost or 127.0.0.1)"
+        )
 
 
 from datetime import timedelta  # noqa: E402
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_MINUTES', '60'))),
+    # Every refresh hands out a new refresh token and retires the old one,
+    # so someone who keeps using the app stays signed in while a stolen
+    # refresh token stops working after a few days at most.
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_DAYS', '3'))),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'TOKEN_REFRESH_SERIALIZER': 'accounts.tokens.VersionedTokenRefreshSerializer',
     # Record each login on User.last_login, shown on the admin's staff and
     # parent lists.
     'UPDATE_LAST_LOGIN': True,

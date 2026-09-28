@@ -17,6 +17,7 @@ from students.models import SchoolClass, Student
 from gradebook.models import Term
 from .models import StudentReport
 from .serializers import StudentReportSerializer, GenerateReportSerializer
+from .ai import BUSY_MESSAGE, AIUnavailable
 from .services import generate_report
 
 CLASS_RUN_SALT = "reporting.class-run"
@@ -174,6 +175,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             report = generate_report(student, term)
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIUnavailable:
+            return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         log_activity(
             school=caller_school, actor=request.user, action="report.generated", target=report,
@@ -265,6 +268,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             report = generate_report(student, term)
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIUnavailable:
+            return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({"skipped": False, "report": StudentReportSerializer(report).data})
 
     @action(detail=False, methods=["post"], url_path="submit-class")

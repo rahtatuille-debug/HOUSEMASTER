@@ -18,6 +18,10 @@ jobs:
   backup:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # Optional copy outside GitHub (docs/BACKUPS.md). Leave the secret
+      # unset to skip it.
+      BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
     services:
       # Throwaway database the backup is restored into, to prove it works.
       restore-test:
@@ -70,3 +74,21 @@ jobs:
           path: backups/*.tar.gpg
           retention-days: 90
           if-no-files-found: error
+
+      - name: Copy the encrypted backup outside GitHub (optional)
+        # Runs only when the BACKUP_S3_BUCKET secret is set. Works with any
+        # S3-compatible storage (AWS S3, Cloudflare R2, Backblaze B2...).
+        # The file is already encrypted with BACKUP_PASSPHRASE.
+        if: env.BACKUP_S3_BUCKET != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.BACKUP_S3_REGION || 'auto' }}
+          BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+        run: |
+          endpoint_args=()
+          [ -n "$BACKUP_S3_ENDPOINT" ] && endpoint_args=(--endpoint-url "$BACKUP_S3_ENDPOINT")
+          for file in backups/*.tar.gpg; do
+            aws s3 cp "${endpoint_args[@]}" --only-show-errors "$file" "s3://$BACKUP_S3_BUCKET/housemaster/$(basename "$file")"
+          done
+          echo "Copied to s3://$BACKUP_S3_BUCKET/housemaster/"

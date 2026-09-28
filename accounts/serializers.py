@@ -10,6 +10,7 @@ from activity.services import log_activity
 from .emails import send_password_reset_email
 from .mixins import SchoolScopedRelatedFieldsMixin, requester_school
 from .models import Invite, PasswordResetToken, Profile, TeachingAssignment, username_for_email
+from .tokens import VersionedRefreshToken
 
 
 def email_in_use_at_school(email, school):
@@ -285,3 +286,5 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
 
     username_field = "email"
+    # Tokens carry the account's session version (accounts/tokens.py).
+    token_class = VersionedRefreshToken

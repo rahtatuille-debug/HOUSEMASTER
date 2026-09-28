@@ -5,11 +5,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from accounts.emails import send_admin_password_reset
+from accounts.throttles import InviteIPThrottle
+from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
@@ -275,6 +276,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
 
 class GuardianInvitePreviewView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def get(self, request, token):
         try:
@@ -286,6 +288,7 @@ class GuardianInvitePreviewView(APIView):
 
 class AcceptGuardianInviteView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def post(self, request):
         serializer = AcceptGuardianInviteSerializer(data=request.data)
@@ -295,8 +298,7 @@ class AcceptGuardianInviteView(APIView):
             school=user.guardian.school, actor=user, action="parent_invite.accepted", target=user.guardian,
             summary=f"Parent {user.guardian.name} accepted their invite",
         )
-        refresh = RefreshToken.for_user(user)
-        return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)
+        return Response(tokens_for(user), status=201)
 
 
 @api_view(["GET", "PATCH"])

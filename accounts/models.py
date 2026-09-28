@@ -189,3 +189,17 @@ class PasswordResetToken(models.Model):
 
     def __str__(self):
         return f"Password reset for {self.user.email} ({'used' if self.is_used else 'pending'})"
+
+
+class UserSecurity(models.Model):
+    """
+    Per-user session state. Every login token carries `token_version`; when
+    it moves on (password changed or reset, account deactivated) every
+    token issued before stops working. See accounts/tokens.py.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="security")
+    token_version = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"Session state for user {self.user_id}"
