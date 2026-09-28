@@ -170,6 +170,7 @@ requests go in this order. The printable version of the whole sequence is
 | 12 | Backend follow-up 3: urgent alerts always emailed, per-school alert limits, test alerts, class-message limit | backend `claude/followup-3-communications` | step 11 |
 | 13 | Frontend follow-up 2: paged screens, School time zone in Setup, test alerts | frontend `claude/followup-2-lists-and-timezone` | steps 11 and 12 |
 | 14 | Backend follow-up 4: merge-day checklist, smoke and email-DNS scripts, legal drafts | backend `claude/followup-4-docs-and-scripts` | step 12 (documents and scripts only) |
+| 15 | Frontend follow-up 3: build tools upgraded (Vite 8, Vitest 5), browser smoke tests in `e2e/` | frontend `claude/followup-3-toolchain` | step 13; Vercel building with Node 22.12 or later |
 
 ## Step 9 · Backend follow-up 1
 
@@ -226,3 +227,14 @@ only.
 ## Step 14 · Backend follow-up 4
 
 Documents and scripts only; nothing changes in the running app.
+
+## Step 15 · Frontend follow-up 3
+
+**Before merging:** Vercel → Settings → Build and Deployment → Node.js
+Version is 22.x or later (the new build tools need Node 22.12 or later; the
+build fails cleanly on older Node, and the live site stays as it was).
+
+**Watch:** the deploy builds; every page looks and works as before (the
+app itself doesn't change). The `e2e/` folder isn't deployed or run in CI.
+
+**Rollback:** revert the merge.

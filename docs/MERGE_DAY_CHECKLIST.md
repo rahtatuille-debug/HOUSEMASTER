@@ -50,9 +50,11 @@ Merge each pull request, wait for the deploy, do its check, then go on.
 - [ ] **B12. Frontend follow-up 2** (`claude/followup-2-lists-and-timezone`), only after B10 and B11.
   *Check:* Setup → School time zone shows `Africa/Nairobi`; Urgent alerts → **Send a test alert to staff** reaches staff (banner and email marked TEST) and no parent. *Undo:* revert.
 - [ ] **B13. Backend follow-up 4** (`claude/followup-4-docs-and-scripts`): documents and scripts only.
-- [ ] **B14. Smoke check.** Run `scripts/smoke_check.py` against production.
+- [ ] **B14. Frontend follow-up 3** (`claude/followup-3-toolchain`): newer build tools and the `e2e/` smoke tests. First check Vercel → Settings → Build and Deployment → Node.js Version is 22.x or later.
+  *Check:* the deploy builds; pages look and work as before. *Undo:* revert.
+- [ ] **B15. Smoke check.** Run `scripts/smoke_check.py` against production.
   *Check:* 0 failed. Warnings expected: report-only CSP until C4.
-- [ ] **B15. Browser smoke tests (optional).** In the frontend repository: `cd e2e && npm install && node run.mjs --frontend https://<frontend> --api https://<backend>` with test accounts in `E2E_*` variables (e2e/README.md). Read-only unless you add `--allow-mutations`.
+- [ ] **B16. Browser smoke tests (optional).** In the frontend repository: `cd e2e && npm install && node run.mjs --frontend https://<frontend> --api https://<backend>` with test accounts in `E2E_*` variables (e2e/README.md). Read-only unless you add `--allow-mutations`.
   *Check:* all pass (roles without accounts are skipped).
 
 ## C. After deploy
