@@ -35,9 +35,12 @@ Invite emails are limited to 100 per hour per admin and 5 per day per
 recipient address across all schools, so invites can't be used to flood
 someone's inbox. Reading and cancelling invites aren't limited.
 
-The bulk staff import creates invites through its own path and is not
-covered by these two limits. It is admin-only; limiting it is left as a
-follow-up.
+The bulk staff import counts against the same two limits, through the
+same counters (`accounts.throttles.reserve_invite_email`). Rows over a limit
+aren't invited; the import lists them as deferred (row numbers only in the
+activity log) and the admin runs the same sheet again later. Every invite
+the import creates counts, whether or not it is emailed, because each one
+is a working sign-up link.
 
 ## One school per parent account
 

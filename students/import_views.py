@@ -99,14 +99,19 @@ def import_staff(request):
         result = run_import(upload, school, request.user, commit=commit)
     except WorkbookError as exc:
         raise ValidationError({"file": str(exc)})
-    if commit and result["people"]:
+    if commit and (result["people"] or result["deferred"]):
+        # Deferred rows by number only: no names or addresses in the log.
+        deferred_rows = [d["row"] for d in result["deferred"]]
         log_activity(
             school=school, actor=request.user, action="staff.imported",
             summary=f'Imported "{upload.name}": invited {len(result["people"])} staff'
-                    + (" and emailed their invite links" if send_emails else ""),
+                    + (" and emailed their invite links" if send_emails and result["people"] else "")
+                    + (f"; rows {', '.join(map(str, deferred_rows))} deferred (invite limit reached)"
+                       if deferred_rows else ""),
             invited=len(result["people"]), skipped=len(result["skipped"]), errors=len(result["errors"]),
+            deferred_rows=deferred_rows,
         )
-        if send_emails:
+        if send_emails and result["people"]:
             messages = [(
                 f"You're invited to join {school.name} on HouseMaster",
                 f"Hello {p['name']},\n\n{request.user.profile.name} has invited you to join {school.name} on "
