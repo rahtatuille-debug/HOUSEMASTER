@@ -52,7 +52,7 @@ variable (not `localStorage`). A page reload gets a new one from
 
 **Refresh:** `POST /api/token/refresh/` with no body reads the cookie,
 rotates as today (blacklist the old one, set a new cookie) and returns a
-new access token. `POST /api/token/logout/` blacklists the cookie's token
+new access token. Logout moves to `POST /api/token/logout/` (inside the cookie's path; `/api/logout/` stays as an alias during the migration) and blacklists the cookie's token
 and clears the cookie.
 
 **CSRF:** the refresh and logout endpoints accept a cookie, so they need
