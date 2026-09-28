@@ -8,10 +8,25 @@ attendance, Excel import) plus Phase 2 (AI-generated reporting).
 ```bash
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
+cp .env.example .env                          # sets DJANGO_DEBUG=True, SQLite
 ./venv/bin/python manage.py migrate
 ./venv/bin/python manage.py createsuperuser   # for /admin/
 ./venv/bin/python manage.py runserver
 ```
+
+The app runs in production mode unless `DJANGO_DEBUG=True` is set, and in
+production mode it refuses to start without its required settings (see
+[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)). The `.env` copied above takes
+care of that locally.
+
+Run the tests with (never against a remote database; the suite refuses to):
+
+```bash
+env -u DATABASE_URL DJANGO_DEBUG=True ./venv/bin/python manage.py test
+```
+
+Dependencies are pinned. Edit `requirements.in`, then regenerate
+`requirements.txt` with `pip-compile --strip-extras requirements.in`.
 
 Admin: http://localhost:8000/admin/
 API root: http://localhost:8000/api/ (schools, school-classes, students, subjects,

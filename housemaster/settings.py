@@ -16,38 +16,62 @@ import os
 import sys
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
+# Local development reads a .env file. Tests of the settings themselves set
+# HOUSEMASTER_SKIP_DOTENV=1 so a developer's .env can't leak into them.
+if os.environ.get('HOUSEMASTER_SKIP_DOTENV') != '1':
+    load_dotenv(BASE_DIR / '.env')
+
+# True while `manage.py test` is running.
+TESTING = sys.argv[1:2] == ['test']
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# Reads SECRET_KEY from the environment in production (set this in Render's
-# dashboard); falls back to the old insecure dev key so local dev with no
-# .env still works out of the box, same pattern as DATABASE_URL below.
-SECRET_KEY = os.environ.get(
-    'SECRET_KEY', 'django-insecure-y9g=yf*er$t!1v1kye1bc523&6b_1(*by6&%v^nlrj232-bu0^'
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
-# Defaults to True (local dev), so this is opt-out, not opt-in — Render
-# MUST set DJANGO_DEBUG=False explicitly, or the deployment is still
-# running with DEBUG=True.
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
+# Off unless DJANGO_DEBUG=True is set explicitly. Local development sets it
+# in .env (see .env.example). With DEBUG off the settings below refuse to
+# start on a missing or unsafe value instead of quietly using a default.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
+
+
+def _production_setting_error(name, problem):
+    return ImproperlyConfigured(
+        f"{name} {problem}. Set it in the environment (see docs/ENVIRONMENT.md). "
+        "For local development put DJANGO_DEBUG=True in .env instead."
+    )
+
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# It signs every login token, so production must supply its own. The
+# development key below is only ever used with DEBUG on.
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
+if DEBUG and not SECRET_KEY:
+    SECRET_KEY = 'django-insecure-local-development-only-never-use-this-in-production'
+if not DEBUG:
+    if not SECRET_KEY:
+        raise _production_setting_error('SECRET_KEY', 'is not set')
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure'):
+        raise _production_setting_error(
+            'SECRET_KEY', "must be at least 50 random characters and must not start with 'django-insecure'"
+        )
 
 # Comma-separated list of allowed hostnames in production, e.g.
 # "housemaster-api.onrender.com". Local dev values always included.
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + [
+_env_allowed_hosts = [
     host.strip()
     for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
+if not DEBUG and not _env_allowed_hosts:
+    raise _production_setting_error('DJANGO_ALLOWED_HOSTS', 'is empty')
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + _env_allowed_hosts
 
 
 # Application definition
@@ -155,12 +179,11 @@ WSGI_APPLICATION = 'housemaster.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-# Reads DATABASE_URL from the environment (see .env / .env.example).
-# Falls back to local SQLite if DATABASE_URL isn't set, so this still works
-# out of the box for anyone who hasn't configured Postgres yet.
+# Reads DATABASE_URL from the environment (see .env / .env.example). Local
+# development without one uses SQLite; production must set it, so a missing
+# value can never quietly start the app on an empty SQLite file.
+if not DEBUG and not os.environ.get('DATABASE_URL'):
+    raise _production_setting_error('DATABASE_URL', 'is not set')
 
 DATABASES = {
     'default': dj_database_url.config(
@@ -249,6 +272,13 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
     if origin.strip()
 ]
+if not DEBUG:
+    if not CORS_ALLOWED_ORIGINS:
+        raise _production_setting_error('CORS_ALLOWED_ORIGINS', 'is empty')
+    if any('*' in o or 'localhost' in o or '127.0.0.1' in o for o in CORS_ALLOWED_ORIGINS):
+        raise _production_setting_error(
+            'CORS_ALLOWED_ORIGINS', "must list the real frontend origins only (no '*', localhost or 127.0.0.1)"
+        )
 
 
 from datetime import timedelta  # noqa: E402
