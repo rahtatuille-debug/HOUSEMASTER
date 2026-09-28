@@ -153,3 +153,88 @@ calls the export and removal endpoints.
 ## Step 8 · Enforce the CSP
 
 H-12, after several clean days of step 6.
+
+---
+
+# The follow-up releases
+
+After step 8 (or alongside it, once step 7 is live), the follow-up pull
+requests go in this order. The printable version of the whole sequence is
+[MERGE_DAY_CHECKLIST.md](MERGE_DAY_CHECKLIST.md).
+
+| Step | What | Repository / branch | Needs first |
+|---|---|---|---|
+| 9 | Backend follow-up 1: reset contract test, bulk-import invite limits, own bucket for reset confirmation, no mixed families in direct messages, `/healthz`, demo seed guard, cleanups | backend `claude/followup-1-hardening` | step 7 |
+| 10 | Frontend follow-up 1: "Forgot password" fixed, self-hosted fonts and tighter CSP, refresh without Web Locks, deferred import rows | frontend `claude/followup-1-fixes` | step 6 (works with any backend) |
+| 11 | Backend follow-up 2: the remaining long lists paged (conversations always; reports, announcements, change requests when asked), per-school time zone | backend `claude/followup-2-lists-and-timezone` | step 9 |
+| 12 | Backend follow-up 3: urgent alerts always emailed, per-school alert limits, test alerts, class-message limit | backend `claude/followup-3-communications` | step 11 |
+| 13 | Frontend follow-up 2: paged screens, School time zone in Setup, test alerts | frontend `claude/followup-2-lists-and-timezone` | steps 11 and 12 |
+| 14 | Backend follow-up 4: merge-day checklist, smoke and email-DNS scripts, legal drafts | backend `claude/followup-4-docs-and-scripts` | step 12 (documents and scripts only) |
+| 15 | Frontend follow-up 3: build tools upgraded (Vite 8, Vitest 5), browser smoke tests in `e2e/` | frontend `claude/followup-3-toolchain` | step 13; Vercel building with Node 22.12 or later |
+
+## Step 9 · Backend follow-up 1
+
+**After deploy:** set Render → Settings → Health Check Path to `/healthz`
+(H-4). If `DEMO_PASSWORD` is set on Render, the demo schools are no longer
+created or rebuilt there (the deploy still succeeds); remove the variable.
+
+**Rollback:** revert the merge. No migrations.
+
+## Step 10 · Frontend follow-up 1
+
+**Watch:** "Forgot password" sends a reset email; pages look the same (the
+fonts are now served by the app); no CSP reports in the console.
+
+**Rollback:** revert the merge.
+
+## Step 11 · Backend follow-up 2
+
+**Migration:** `students.0012_school_timezone` adds `School.timezone` with
+the default `Africa/Nairobi`, so it can't fail on existing rows and every
+school keeps today's behaviour. No pre-check needed.
+
+**API change:** conversations come back a page at a time; the frontend
+already deployed follows the pages. Reports, announcements and change
+requests are unchanged unless a client asks for a page.
+
+**Rollback:** revert; `python manage.py migrate students 0011` removes the
+column if wanted (not needed: older code ignores it).
+
+## Step 12 · Backend follow-up 3
+
+**Migration:** `communications.0004_urgent_alert_is_test` adds a boolean
+with a default. No pre-check needed.
+
+**Behaviour change:** every urgent alert is emailed as well as shown in the
+app (the old "also email" box stops mattering); at most 10 alerts and 5
+test alerts per school per day (`ALERT_SCHOOL_RATE`,
+`ALERT_TEST_SCHOOL_RATE`).
+
+**Rollback:** revert; `migrate communications 0003` if wanted.
+
+## Step 13 · Frontend follow-up 2
+
+**Before merging:** steps 11 and 12 are live. Against an older backend the
+time-zone setting would appear to save but change nothing, and a test alert
+would go to staff as an ordinary alert titled "Test alert".
+
+**Watch:** Setup shows School time zone; Approvals, Reports and
+Announcements show "Show N more" on long lists; a test alert reaches staff
+only.
+
+**Rollback:** revert the merge.
+
+## Step 14 · Backend follow-up 4
+
+Documents and scripts only; nothing changes in the running app.
+
+## Step 15 · Frontend follow-up 3
+
+**Before merging:** Vercel → Settings → Build and Deployment → Node.js
+Version is 22.x or later (the new build tools need Node 22.12 or later; the
+build fails cleanly on older Node, and the live site stays as it was).
+
+**Watch:** the deploy builds; every page looks and works as before (the
+app itself doesn't change). The `e2e/` folder isn't deployed or run in CI.
+
+**Rollback:** revert the merge.

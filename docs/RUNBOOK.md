@@ -87,8 +87,13 @@ what isn't.
   24 hours**, even if the picture is incomplete.
 - Counsel decides whether the regulator and parents must be told, and by
   when (for example 72 hours under the Kenya Data Protection Act and UK
-  GDPR). The school is usually the one that notifies them; HouseMaster
-  supports it with the facts.
+  GDPR [VERIFY]). The school is usually the one that notifies them;
+  HouseMaster supports it with the facts.
+- Use the notices in
+  [legal/DRAFT_breach_notification_templates.md](legal/DRAFT_breach_notification_templates.md):
+  HouseMaster to the school (within 24 hours under the draft data
+  processing agreement), the school to the ODPC, and the school to the
+  people affected.
 
 ## 6. Recover
 
