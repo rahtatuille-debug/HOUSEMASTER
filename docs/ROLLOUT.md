@@ -18,12 +18,11 @@ and not before it.
 | 5 | Backend Phase 2 | backend `claude/remediation-phase-2` |
 | 6 | Frontend Phase 2 | frontend `claude/remediation-phase-2` |
 | 7 | Backend Phase 3 | backend `claude/remediation-phase-3` |
-| 8 | Frontend Phase 3 | frontend `claude/remediation-phase-3` |
-| 9 | Owner flips the CSP to enforcing after a few clean days | H-12 |
+| 8 | Owner flips the CSP to enforcing after a few clean days | H-12 |
 
 Backend branches are stacked: Phase 2 contains Phase 1, and Phase 3
 contains both. Merge them in order, and each pull request's diff shrinks to
-its own changes once the one before is merged. The same goes for the
+its own changes once the one before is merged. The same goes for the two
 frontend branches.
 
 ---
@@ -135,23 +134,22 @@ break anything.
 
 ## Step 7 · Backend Phase 3
 
-F-16 (export and anonymise one child's data, retention command, dry-run by
-default), F-17 (configurable admin path, admin login throttle,
-`sync_superuser` no longer resets the password on each deploy) and F-20
-documentation.
+F-16 (fuller family export, also as JSON; removal also scrubs subject
+comments and conversations about the child; a retention command that is off
+and a dry run by default), F-17 (configurable admin path, admin login
+throttle, `sync_superuser` no longer resets the password on each deploy) and
+F-20 documentation.
 
 **Before merging:** decide the admin path and set `DJANGO_ADMIN_PATH` on
 Render (for example `manage-7f3c2a/`). If you rely on `sync_superuser` to
 reset a forgotten password, read the note in [ENVIRONMENT.md](ENVIRONMENT.md)
 about `SYNC_SUPERUSER_RESET_PASSWORD`.
 
-**Rollback:** revert the merge. The Phase 3 migration only adds columns.
+**Rollback:** revert the merge. Phase 3 has no migrations.
 
-## Step 8 · Frontend Phase 3
+No frontend change is needed: the existing Data protection panel already
+calls the export and removal endpoints.
 
-Buttons for "Export this student's data" and "Anonymise this student" on
-the student profile (admins only).
-
-## Step 9 · Enforce the CSP
+## Step 8 · Enforce the CSP
 
 H-12, after several clean days of step 6.
