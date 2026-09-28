@@ -55,7 +55,9 @@ class PrivacyNoticeTests(SchoolScopedAPITestCase):
         self.assertEqual(response.data["privacy_contact"], "dpo@alpha.test")
 
 
-class FamilyDataTests(SchoolScopedAPITestCase):
+class FamilyDataFixture(SchoolScopedAPITestCase):
+    """A family (Amina, her mum, and her dad who also has Brian) with data everywhere."""
+
     def setUp(self):
         super().setUp()
         self.admin = self.authed_client(self.admin_a)
@@ -102,12 +104,15 @@ class FamilyDataTests(SchoolScopedAPITestCase):
         return (client or self.admin).post(f"/api/students/{self.kid.id}/remove-personal-data/",
                                            {"confirm_name": name})
 
+
+class FamilyDataTests(FamilyDataFixture):
     def test_export_contains_everything_held(self):
         response = self.admin.get(f"/api/students/{self.kid.id}/data-export/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("personal-data-amina-otieno.xlsx", response["Content-Disposition"])
         wb = openpyxl.load_workbook(BytesIO(response.content))
-        self.assertEqual(wb.sheetnames, ["Student", "Parents", "Grades", "Attendance", "Reports", "Messages"])
+        self.assertEqual(wb.sheetnames, ["Student", "Parents", "Grades", "Attendance", "Reports", "Messages",
+                                         "Subject comments", "About the student"])
         student = {row[0]: row[1] for row in wb["Student"].iter_rows(min_row=2, values_only=True)}
         self.assertEqual((student["First name"], student["Health notes"], student["Photo held"]),
                          ("Amina", "Asthma", "Yes"))

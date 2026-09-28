@@ -187,7 +187,7 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
     # Data protection requests (Kenya Data Protection Act). Admins only.
     @action(detail=True, methods=["get"], url_path="data-export", permission_classes=[HasSchoolProfile, IsSchoolAdmin])
     def data_export(self, request, pk=None):
-        """Everything held about this student and their parents, as an Excel workbook."""
+        """Everything held about this student and their parents, as an Excel workbook (or JSON with ?format=json)."""
         from django.utils.text import slugify
 
         from .privacy import family_export
@@ -197,6 +197,10 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             school=student.school, actor=request.user, action="student.data_exported", target=student,
             summary=f"Exported all personal data held about {student_name(student)} and their parents",
         )
+        if request.query_params.get("format") == "json":
+            from .privacy import family_export_data
+
+            return Response(family_export_data(student))
         response = HttpResponse(
             family_export(student),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

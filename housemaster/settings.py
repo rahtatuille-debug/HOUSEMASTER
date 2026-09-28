@@ -432,6 +432,12 @@ if SENTRY_DSN:
         environment=os.environ.get('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
     )
 
+# Years after a student leaves (their graduated_on date) before
+# `manage.py apply_retention --apply` anonymises them. Unset means off:
+# the period is for counsel to decide (docs/DESIGN_data_subject_tooling.md).
+_retention_years = os.environ.get('RETENTION_INACTIVE_STUDENT_YEARS', '').strip()
+RETENTION_INACTIVE_STUDENT_YEARS = int(_retention_years) if _retention_years else None
+
 # Parent notification emails are sent on a background thread so publishing to
 # a whole school doesn't hold up the request. Tests send them inline.
 NOTIFICATIONS_IN_BACKGROUND = os.environ.get('NOTIFICATIONS_IN_BACKGROUND', 'true').lower() == 'true' \
