@@ -20,7 +20,7 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `DJANGO_ALLOWED_HOSTS` | The Render hostname, e.g. `housemaster-api.onrender.com`, plus any custom domain, comma-separated | Refuses to start if empty. |
 | `CORS_ALLOWED_ORIGINS` | The exact Vercel production origin(s), e.g. `https://housemaster.vercel.app` | Refuses to start if empty or if it lists `*`, `localhost` or `127.0.0.1`. |
 | `FRONTEND_URL` | The Vercel production origin (used in invite and password-reset links) | Deploy check error `housemaster.E001` if it isn't an https production address. |
-| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` | Deploy check error `housemaster.E002` while email goes to the console (links would be printed to the log instead of sent). |
+| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` | Deploy check error `housemaster.E002`. Without it, production mail is dropped with an ERROR in the log and Sentry (never printed, so no link leaks), and nothing reaches anyone. |
 | `EMAIL_HOST`, `EMAIL_PORT` (587), `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` (`true`) | Your SMTP provider's values | Invites and resets aren't delivered. |
 | `DEFAULT_FROM_EMAIL` | An address on a domain you have verified with the SMTP provider | Default `noreply@housemaster.local` lands in spam. |
 | `DRF_NUM_PROXIES` | The number of proxies in front of the app (measure it, see below; expected `1` on Render) | Deploy check warning `housemaster.W001`. Without it anyone can dodge the per-IP rate limits by sending their own `X-Forwarded-For` header. |
@@ -50,6 +50,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `INVITE_IP_RATE` | `60/hour` | Invite and parent-invite preview/accept, class sign-up links, reset confirmation. |
 | `SCHOOL_REGISTRATION_RATE` / `SCHOOL_REGISTRATION_EMAIL_RATE` | `5/hour` / `3/day` | New school sign-ups per IP / per email. |
 | `TOKEN_REFRESH_IP_RATE` | `600/hour` | Token refresh and logout per IP (high because mobile networks share addresses). |
+| `INVITE_SEND_USER_RATE` / `INVITE_SEND_RECIPIENT_RATE` | `100/hour` / `5/day` | Invite emails (new or renewed) per admin / per recipient address across all schools. |
+| `SECURE_HSTS_SECONDS` | `2592000` (30 days) | How long browsers must use HTTPS. Raise to `31536000` after a clean month. |
 | `AI_REPORT_GENERATION_RATE`, `AI_CLASS_REPORT_GENERATION_RATE`, `AI_ANNOUNCEMENT_DRAFTING_RATE` | `30/hour`, `5/hour`, `30/hour` | Per-user AI limits. |
 | `NOTIFICATIONS_IN_BACKGROUND` | `true` | Send parent notification emails on a background thread. |
 | `LOG_CLIENT_IP_DEBUG` | unset | `1` logs the first 20 requests' `X-Forwarded-For` for measuring `DRF_NUM_PROXIES`. Turn it off afterwards: it logs IP addresses. |
