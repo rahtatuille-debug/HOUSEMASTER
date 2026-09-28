@@ -104,7 +104,10 @@ class UrgentAlert(models.Model):
     ended_at = models.DateTimeField(
         null=True, blank=True, help_text="When the sender or an admin ended the alert; its banner then disappears."
     )
-    # Set when the sender ticked "also email everyone".
+    # A test sent to staff only (B-9): marked "TEST" in the banner and email.
+    is_test = models.BooleanField(default=False)
+    # Every alert is emailed as well (B-9); this is set when the emails have
+    # gone, with how many were sent and how many failed.
     emailed_at = models.DateTimeField(null=True, blank=True)
     emailed_count = models.PositiveIntegerField(default=0)
     email_failed_count = models.PositiveIntegerField(default=0)

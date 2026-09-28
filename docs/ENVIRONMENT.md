@@ -52,6 +52,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `SCHOOL_REGISTRATION_RATE` / `SCHOOL_REGISTRATION_EMAIL_RATE` | `5/hour` / `3/day` | New school sign-ups per IP / per email. |
 | `TOKEN_REFRESH_IP_RATE` | `600/hour` | Token refresh and logout per IP (high because mobile networks share addresses). |
 | `INVITE_SEND_USER_RATE` / `INVITE_SEND_RECIPIENT_RATE` | `100/hour` / `5/day` | Invite emails (new or renewed) per admin / per recipient address across all schools. |
+| `ALERT_SCHOOL_RATE` / `ALERT_TEST_SCHOOL_RATE` | `10/day` / `5/day` | Urgent alerts one school can send, and test alerts (their own budget, so testing never uses up a real emergency's). A refused or invalid alert doesn't count. |
+| `CLASS_MESSAGE_RATE` | `30/hour` | Messages to a whole class, per sender. |
 | `SECURE_HSTS_SECONDS` | `2592000` (30 days) | How long browsers must use HTTPS. Raise to `31536000` after a clean month. |
 | `AI_REPORT_GENERATION_RATE`, `AI_CLASS_REPORT_GENERATION_RATE`, `AI_ANNOUNCEMENT_DRAFTING_RATE` | `30/hour`, `5/hour`, `30/hour` | Per-user AI limits. |
 | `NOTIFICATIONS_IN_BACKGROUND` | `true` | Send parent notification emails on a background thread. |

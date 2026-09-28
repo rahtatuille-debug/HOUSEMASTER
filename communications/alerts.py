@@ -44,15 +44,18 @@ def email_alert(alert, users):
     from activity.services import display_name
 
     sender = display_name(alert.created_by) if alert.created_by else alert.school.name
+    test_note = ("This is a test of HouseMaster's urgent alerts, sent to staff only. No action is needed.\n\n"
+                 if alert.is_test else "")
     body = (
-        f"URGENT from {alert.school.name}\n\n"
+        f"{test_note}URGENT from {alert.school.name}\n\n"
         f"{alert.title}\n\n"
         f"{alert.body}\n\n"
         f"Sent by {sender}.\n"
         f"Open HouseMaster to confirm you've seen this: {settings.FRONTEND_URL}\n"
     )
     messages = [
-        EmailMessage(subject=f"URGENT: {alert.title} ({alert.school.name})", body=body,
+        EmailMessage(subject=f"{'TEST: ' if alert.is_test else ''}URGENT: {alert.title} ({alert.school.name})",
+                     body=body,
                      from_email=settings.DEFAULT_FROM_EMAIL, to=[u.email])
         for u in users if u.email
     ]
@@ -67,3 +70,24 @@ def email_alert(alert, users):
     except Exception:
         logging.getLogger(__name__).exception("Couldn't connect to the email server for an urgent alert")
     return sent, len(messages) - sent
+
+
+def email_alert_later(alert, users):
+    """
+    Email the alert once it is saved, off the request thread, so an alert to
+    a whole school can't time out the request. emailed_at and the counts are
+    filled in when sending has finished.
+    """
+    from django.utils import timezone
+
+    from guardians.notifications import _run_after_commit
+
+    user_ids = [u.id for u in users]
+
+    def send():
+        fresh = UrgentAlert.objects.select_related("school", "created_by").get(pk=alert.pk)
+        sent, failed = email_alert(fresh, User.objects.filter(id__in=user_ids))
+        UrgentAlert.objects.filter(pk=alert.pk).update(
+            emailed_at=timezone.now(), emailed_count=sent, email_failed_count=failed)
+
+    _run_after_commit(send)
