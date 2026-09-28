@@ -1,0 +1,6 @@
+# Tools for running the checks and tests (CI and local development).
+# Production installs only requirements.txt.
+-r requirements.txt
+pypdf==6.19.0      # reads the sample report card PDFs in students/test_preview.py
+tblib==3.2.2       # lets the parallel test runner report a failing test's traceback
+pip-audit==2.10.1  # known-vulnerability check on requirements.txt
