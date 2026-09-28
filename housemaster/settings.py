@@ -118,6 +118,19 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Temporary diagnostic for finding Render's proxy count (housemaster/middleware.py).
+if os.environ.get('LOG_CLIENT_IP_DEBUG') == '1':
+    MIDDLEWARE.insert(0, 'housemaster.middleware.ClientIPDebugMiddleware')
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {'console': {'class': 'logging.StreamHandler'}},
+        'loggers': {'housemaster.client_ip': {'handlers': ['console'], 'level': 'INFO'}},
+    }
+
+_num_proxies = os.environ.get('DRF_NUM_PROXIES', '').strip()
+DRF_NUM_PROXIES = int(_num_proxies) if _num_proxies else None
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         # simplejwt's JWT authentication, refusing tokens issued before a
@@ -157,9 +170,29 @@ REST_FRAMEWORK = {
         # Starting AI reports for a whole class counts once here, not per report.
         'ai_class_report_generation': os.environ.get('AI_CLASS_REPORT_GENERATION_RATE', '5/hour'),
         'ai_announcement_drafting': os.environ.get('AI_ANNOUNCEMENT_DRAFTING_RATE', '30/hour'),
-        # New school sign-ups per IP address.
+        # New school sign-ups per IP address, and per email address.
         'school_registration': os.environ.get('SCHOOL_REGISTRATION_RATE', '5/hour'),
+        'school_registration_email': os.environ.get('SCHOOL_REGISTRATION_EMAIL_RATE', '3/day'),
+        # Brute-force and mail-bombing limits on the public endpoints
+        # (accounts/throttles.py). Each is per IP address, and where the
+        # request names an account, per email address too. Only failed
+        # logins count. Schools and mobile networks put many people behind
+        # one address, so the per-IP limits are deliberately generous.
+        'login_ip': os.environ.get('LOGIN_IP_RATE', '30/hour'),
+        'login_email': os.environ.get('LOGIN_EMAIL_RATE', '10/hour'),
+        'password_reset_ip': os.environ.get('PASSWORD_RESET_IP_RATE', '20/hour'),
+        'password_reset_email': os.environ.get('PASSWORD_RESET_EMAIL_RATE', '5/hour'),
+        # Invite previews and acceptance, parent invites, class sign-up
+        # links and password-reset confirmation (token-guessing endpoints).
+        'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
+        'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
     },
+    # How many proxies sit in front of the app and append to
+    # X-Forwarded-For. Without it DRF trusts the whole header, so anyone can
+    # pick their own "IP address" and dodge the per-IP limits. Production
+    # must set DRF_NUM_PROXIES (docs/ENVIRONMENT.md explains how to find the
+    # right value with LOG_CLIENT_IP_DEBUG).
+    'NUM_PROXIES': DRF_NUM_PROXIES,
 }
 
 ROOT_URLCONF = 'housemaster.urls'
@@ -211,6 +244,19 @@ if TESTING and os.environ.get('ALLOW_REMOTE_TEST_DB') != '1':
         )
 
 
+# Cache. The rate limits keep their counters here. The default in-memory
+# cache is per process and is emptied on every restart (which the free tier
+# does whenever it sleeps), so production should set THROTTLE_CACHE=db and
+# run `manage.py createcachetable` in the build (docs/HUMAN_ACTIONS.md, H-5).
+if os.environ.get('THROTTLE_CACHE', '').strip().lower() == 'db':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'housemaster_cache',
+        }
+    }
+
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -229,6 +275,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 10},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',

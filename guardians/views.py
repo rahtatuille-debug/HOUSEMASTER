@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 from accounts.emails import send_admin_password_reset
+from accounts.throttles import InviteIPThrottle
 from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
@@ -275,6 +276,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
 
 class GuardianInvitePreviewView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def get(self, request, token):
         try:
@@ -286,6 +288,7 @@ class GuardianInvitePreviewView(APIView):
 
 class AcceptGuardianInviteView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def post(self, request):
         serializer = AcceptGuardianInviteSerializer(data=request.data)

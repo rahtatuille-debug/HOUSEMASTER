@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.throttles import InviteIPThrottle
 from activity.services import log_activity, student_name
 from students.models import SchoolClass, Student
 
@@ -81,7 +82,7 @@ class JoinSerializer(serializers.Serializer):
 
 @api_view(["GET", "POST"])
 @permission_classes([AllowAny])
-@throttle_classes([SignupThrottle])
+@throttle_classes([InviteIPThrottle, SignupThrottle])
 def join(request, token):
     """
     Public. GET: the school and class the link is for. POST: ask to join as

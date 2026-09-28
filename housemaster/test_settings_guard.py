@@ -122,6 +122,11 @@ class DeploySystemCheckTests(SimpleTestCase):
         self.assertIn("housemaster.E002", self.run_deploy_checks())
 
     @override_settings(DEBUG=False, FRONTEND_URL="https://app.example.org",
+                       EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend", DRF_NUM_PROXIES=None)
+    def test_missing_proxy_count_is_a_warning(self):
+        self.assertIn("housemaster.W001", self.run_deploy_checks())
+
+    @override_settings(DEBUG=False, FRONTEND_URL="https://app.example.org",
                        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend", DRF_NUM_PROXIES=1)
     def test_good_configuration_has_no_errors(self):
         from housemaster.checks import production_configuration
@@ -132,3 +137,24 @@ class DeploySystemCheckTests(SimpleTestCase):
                        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend", DRF_NUM_PROXIES=None)
     def test_development_is_left_alone(self):
         self.assertEqual(self.run_deploy_checks(), set())
+
+
+class ClientIPDebugMiddlewareTests(SimpleTestCase):
+    """F-05: LOG_CLIENT_IP_DEBUG lets the owner see Render's real proxy hops."""
+
+    def test_logs_forwarded_for_and_identity_for_the_first_requests_only(self):
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+
+        from housemaster.middleware import ClientIPDebugMiddleware
+
+        middleware = ClientIPDebugMiddleware(lambda request: HttpResponse("ok"))
+        factory = RequestFactory()
+        with self.assertLogs("housemaster.client_ip", level="INFO") as logs:
+            for i in range(25):
+                middleware(factory.get("/api/me/", HTTP_X_FORWARDED_FOR=f"10.0.0.{i}, 203.0.113.9",
+                                       REMOTE_ADDR="10.10.10.10"))
+        self.assertEqual(len(logs.records), ClientIPDebugMiddleware.LIMIT)
+        self.assertIn("10.0.0.0, 203.0.113.9", logs.output[0])
+        self.assertIn("REMOTE_ADDR=10.10.10.10", logs.output[0])
+        self.assertIn("identity=", logs.output[0])

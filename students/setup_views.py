@@ -16,6 +16,7 @@ from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.models import Profile, username_for_email
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.throttles import RegistrationEmailThrottle
 from accounts.tokens import tokens_for
 from activity.services import log_activity
 from gradebook.levels import SCALES
@@ -61,7 +62,7 @@ class RegisterSchoolSerializer(serializers.Serializer):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([RegistrationThrottle])
+@throttle_classes([RegistrationThrottle, RegistrationEmailThrottle])
 def register_school(request):
     """Create a new school and its first admin, and sign them in. The setup wizard comes next."""
     data = RegisterSchoolSerializer(data=request.data)

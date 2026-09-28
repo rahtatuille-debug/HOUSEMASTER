@@ -1,12 +1,12 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from accounts.mixins import SchoolScopedViewSetMixin
 
@@ -17,6 +17,14 @@ from .emails import send_admin_password_reset, send_staff_invite_email
 
 from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
+from .throttles import (
+    InviteIPThrottle,
+    LoginEmailThrottle,
+    LoginIPThrottle,
+    PasswordResetEmailThrottle,
+    PasswordResetIPThrottle,
+    TokenRefreshIPThrottle,
+)
 from .tokens import tokens_for
 from .serializers import (
     AcceptInviteSerializer,
@@ -35,6 +43,26 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     """Login by email + password instead of username + password."""
 
     serializer_class = EmailTokenObtainPairSerializer
+    # Only failed attempts count towards these (accounts/throttles.py).
+    throttle_classes = [LoginIPThrottle, LoginEmailThrottle]
+
+    def get_throttles(self):
+        # Keep the same instances so a failed login can be recorded below.
+        if not hasattr(self, "_throttle_instances"):
+            self._throttle_instances = super().get_throttles()
+        return self._throttle_instances
+
+    def post(self, request, *args, **kwargs):
+        try:
+            return super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            for throttle in self.get_throttles():
+                throttle.record_failure()
+            raise
+
+
+class ThrottledTokenRefreshView(TokenRefreshView):
+    throttle_classes = [TokenRefreshIPThrottle]
 
 
 @api_view(["GET", "PATCH"])
@@ -234,6 +262,7 @@ class TeachingAssignmentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet)
 
 class InvitePreviewView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def get(self, request, token):
         try:
@@ -245,6 +274,7 @@ class InvitePreviewView(APIView):
 
 class AcceptInviteView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [InviteIPThrottle]
 
     def post(self, request):
         serializer = AcceptInviteSerializer(data=request.data)
@@ -260,6 +290,7 @@ class AcceptInviteView(APIView):
 
 class RequestPasswordResetView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [PasswordResetIPThrottle, PasswordResetEmailThrottle]
 
     def post(self, request):
         serializer = RequestPasswordResetSerializer(data=request.data)
@@ -272,6 +303,8 @@ class RequestPasswordResetView(APIView):
 
 class ConfirmPasswordResetView(APIView):
     permission_classes = [AllowAny]
+    # Guessing reset tokens is limited like guessing invite tokens.
+    throttle_classes = [InviteIPThrottle]
 
     def post(self, request):
         serializer = ConfirmPasswordResetSerializer(data=request.data)
@@ -289,6 +322,7 @@ class LogoutView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [TokenRefreshIPThrottle]
 
     def post(self, request):
         token = request.data.get("refresh")
