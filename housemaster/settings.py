@@ -85,6 +85,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    # Rotated and signed-out refresh tokens are remembered here so they
+    # can't be used again.
+    'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'corsheaders',
     'accounts',
@@ -117,7 +120,9 @@ MIDDLEWARE = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # simplejwt's JWT authentication, refusing tokens issued before a
+        # password change or deactivation (accounts/tokens.py).
+        'accounts.authentication.VersionedJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -296,8 +301,14 @@ if not DEBUG:
 from datetime import timedelta  # noqa: E402
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_MINUTES', '60'))),
+    # Every refresh hands out a new refresh token and retires the old one,
+    # so someone who keeps using the app stays signed in while a stolen
+    # refresh token stops working after a few days at most.
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_DAYS', '3'))),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'TOKEN_REFRESH_SERIALIZER': 'accounts.tokens.VersionedTokenRefreshSerializer',
     # Record each login on User.last_login, shown on the admin's staff and
     # parent lists.
     'UPDATE_LAST_LOGIN': True,

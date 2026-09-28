@@ -8,3 +8,6 @@ class AccountsConfig(AppConfig):
     def ready(self):
         # Registers the project's deploy checks (housemaster/checks.py).
         from housemaster import checks  # noqa: F401
+
+        # Ends a user's sessions when their password changes (accounts/tokens.py).
+        from . import signals  # noqa: F401

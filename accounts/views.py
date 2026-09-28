@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -16,6 +17,7 @@ from .emails import send_admin_password_reset, send_staff_invite_email
 
 from .models import Invite, Profile, TeachingAssignment
 from .permissions import HasSchoolProfile, IsSchoolAdmin
+from .tokens import tokens_for
 from .serializers import (
     AcceptInviteSerializer,
     ConfirmPasswordResetSerializer,
@@ -253,8 +255,7 @@ class AcceptInviteView(APIView):
             summary=f"{user.profile.name} accepted their invite and joined as "
             f"{user.profile.get_role_display().lower()}",
         )
-        refresh = RefreshToken.for_user(user)
-        return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)
+        return Response(tokens_for(user), status=201)
 
 
 class RequestPasswordResetView(APIView):
@@ -277,3 +278,24 @@ class ConfirmPasswordResetView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"detail": "Password has been reset. You can now log in."})
+
+
+class LogoutView(APIView):
+    """
+    Signs out one session by retiring its refresh token. Needs no access
+    token (it may already have expired) and always answers the same way,
+    whether or not the token was valid, so it can be retried safely.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        token = request.data.get("refresh")
+        if not isinstance(token, str) or not token:
+            raise ValidationError({"refresh": "This field is required."})
+        try:
+            RefreshToken(token).blacklist()
+        except TokenError:
+            pass
+        return Response({"detail": "Signed out."})

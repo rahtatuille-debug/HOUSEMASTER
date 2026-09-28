@@ -13,10 +13,10 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import Profile, username_for_email
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.tokens import tokens_for
 from activity.services import log_activity
 from gradebook.levels import SCALES
 from gradebook.models import AssessmentType, Subject, Term
@@ -77,8 +77,7 @@ def register_school(request):
                                privacy_accepted_at=timezone.now())
         log_activity(school=school, actor=user, action="school.registered",
                      summary=f"{name} registered {school.name} on HouseMaster")
-    refresh = RefreshToken.for_user(user)
-    return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)
+    return Response(tokens_for(user), status=201)
 
 
 def setup_stage(school):
