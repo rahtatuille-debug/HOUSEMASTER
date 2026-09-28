@@ -1,5 +1,4 @@
 """Everything the student profile page shows, gathered in one place."""
-from collections import defaultdict
 from datetime import date
 
 from django.db.models import Count
@@ -8,7 +7,6 @@ from django.utils import timezone
 from accounts.models import TeachingAssignment
 from accounts.scoping import is_admin
 from activity.models import ActivityLog
-from activity.services import display_name
 from attendance.models import AttendanceRecord
 from gradebook.models import Grade, Term
 from gradebook.weighting import school_weights, student_average, subject_percents

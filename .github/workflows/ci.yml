@@ -61,6 +61,12 @@ jobs:
       - name: Known vulnerabilities in dependencies
         run: pip-audit -r requirements.txt
 
+      - name: Lint (not blocking yet)
+        # Pyflakes rules only (unused imports, undefined names). Reported but
+        # not failing the build until the existing warnings are cleared.
+        continue-on-error: true
+        run: ruff check --select F --output-format github .
+
       - name: Tests
         # SQLite, no DATABASE_URL: the suite never touches a real database.
         run: python manage.py test --parallel auto --noinput
