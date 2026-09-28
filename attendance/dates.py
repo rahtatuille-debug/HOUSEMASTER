@@ -1,9 +1,8 @@
 """Which dates attendance can be recorded for (F-10)."""
 from datetime import timedelta
 
-from django.utils import timezone
-
 from gradebook.models import Term
+from students.localtime import school_localdate
 
 # Registers can be taken for today and, for schools that prepare the night
 # before, tomorrow. Anything later is a typing mistake.
@@ -15,7 +14,7 @@ MAX_YEARS_BACK = 5
 
 def attendance_date_problem(school, day):
     """A readable reason `day` can't hold attendance at `school`, or None if it's fine."""
-    today = timezone.localdate()
+    today = school_localdate(school)  # the school's own day (B-4)
     if day > today + timedelta(days=MAX_DAYS_AHEAD):
         return "Attendance can't be recorded for a date in the future."
     earliest = today - timedelta(days=round(365.25 * MAX_YEARS_BACK))

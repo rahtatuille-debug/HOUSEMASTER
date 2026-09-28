@@ -30,6 +30,11 @@ class School(models.Model):
                  ("ib", "International Baccalaureate"), ("american", "American")],
         help_text="Chosen in the setup wizard. See students.presets.",
     )
+    timezone = models.CharField(
+        max_length=64, default="Africa/Nairobi",
+        help_text='IANA time zone name, e.g. "Europe/London". Decides when the school\'s day starts '
+                  '("today" for registers and dashboards). See students.localtime.',
+    )
     country = models.CharField(
         max_length=10, default="ke",
         choices=[("ke", "Kenya"), ("gb", "United Kingdom"), ("us", "United States"), ("other", "Another country")],

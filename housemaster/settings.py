@@ -313,9 +313,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-# The schools are in Kenya. Times are stored in UTC (USE_TZ), and "today"
-# (timezone.localdate()) is Nairobi's day, so registers taken just after
-# midnight land on the right date.
+# Times are stored in UTC (USE_TZ). Each school has its own time zone
+# (School.timezone, default Africa/Nairobi), and "today" for a school comes
+# from students.localtime. This default is only used where no particular
+# school is involved (for example the retention command).
 TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True

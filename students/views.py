@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
@@ -38,6 +38,12 @@ class SchoolViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.Mo
         # School IS the tenant here, not a related object one hop away, so
         # this doesn't use the mixin's generic school_lookup filtering.
         return School.objects.filter(id=self.get_school().id)
+
+    def check_change_request(self, serializer):
+        # The time zone decides what "today" is for every register, so only
+        # an admin sets it; a teacher can't even ask for it (B-4).
+        if "timezone" in serializer.validated_data and not is_admin(self.request.user):
+            raise PermissionDenied("Only an admin can change the school's time zone.")
 
 
 class YearGroupViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):

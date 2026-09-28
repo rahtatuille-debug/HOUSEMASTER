@@ -23,6 +23,7 @@ from activity.services import log_activity
 from gradebook.levels import SCALES
 from gradebook.models import AssessmentType, Subject, Term
 
+from .localtime import school_localdate
 from .models import School, SchoolClass, YearGroup
 from .presets import COUNTRIES, SYSTEMS, catalogue, subject_key
 
@@ -119,7 +120,7 @@ def setup_state(request):
         school.setup_progress = progress
         school.save(update_fields=["setup_progress"])
     return Response({
-        **catalogue(),
+        **catalogue(school_localdate(school)),
         "school": _school_state(school),
         "existing": {
             "year_groups": list(YearGroup.objects.filter(school=school).values_list("name", flat=True)),
