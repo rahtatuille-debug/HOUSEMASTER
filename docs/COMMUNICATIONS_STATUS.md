@@ -1,7 +1,8 @@
 # Communications: what exists (B-9 inventory)
 
 Written before any B-9 code was changed, from the code on
-`claude/followup-2-lists-and-timezone`.
+`claude/followup-2-lists-and-timezone`. The last section lists what B-9
+then added.
 
 ## (a) A teacher messaging all parents of one class in one action
 
@@ -43,3 +44,35 @@ per-school rate limit, and a staff-only test alert.
 | Rate limit | **None**: an admin account could send any number of alerts to every parent | |
 | Test alert | **None** | |
 | Tests | `communications/tests.py`: everyone at own school only; teachers limited to own class parents; parents refused; ending removes the banner; people only see alerts sent to them; other school can't see them; no recipients refused; class alert emails only that class; email failure still sends the alert | |
+
+## What B-9 added
+
+- **Class messages:** a per-sender rate limit (`CLASS_MESSAGE_RATE`, default
+  30 an hour), with the same friendly "please wait" answer as other limits.
+  Email for class messages was **not** added: messages are an in-app inbox
+  today, and emailing parents about every class notice is a product
+  decision (with the parents' opt-out to respect), not a gap in safety.
+- **Urgent alerts:**
+  - Every alert is emailed as well as shown in the app (the `send_email`
+    field is still accepted but no longer needed). Email goes out in the
+    background after the alert is saved, so a whole-school alert can't time
+    out the request; the counts are filled in when sending finishes.
+    A parent's "no notification emails" choice doesn't apply to urgent
+    alerts, and there are no quiet hours or digests that could hold one
+    back (tests pin this down).
+  - A per-school limit: `ALERT_SCHOOL_RATE` (default 10 a day) for real
+    alerts, so a stolen admin login can't flood every parent, and a separate
+    `ALERT_TEST_SCHOOL_RATE` (default 5 a day) for test alerts, so testing
+    never uses up the budget for a real emergency.
+  - **Test alerts:** `POST /api/alerts/` with `"is_test": true` (admins only)
+    goes to all staff and nobody else, whatever audience is given, is
+    marked "TEST" in the banner and email subject, and exercises both
+    channels.
+- Frontend (its own commit on `claude/followup-2-lists-and-timezone` in the
+  frontend repository, the branch plan having no communications branch
+  there): the "also email" box is gone (email is always sent), a "Send a
+  test alert to staff" button, a "TEST" badge, and a friendly message when
+  a limit is reached. That frontend still sends `send_email: true` and, for
+  a test, `audience: "all_staff"`, so against a backend without B-9 it
+  still emails, and a test can only ever reach staff (as an ordinary alert
+  titled "Test alert").

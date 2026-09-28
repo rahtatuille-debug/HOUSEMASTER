@@ -203,6 +203,12 @@ REST_FRAMEWORK = {
         # Reset links are 64 random characters, so this limit is about
         # abuse, not guessing; it is generous for a shared address.
         'password_reset_confirm_ip': os.environ.get('PASSWORD_RESET_CONFIRM_IP_RATE', '60/hour'),
+        # Urgent alerts per school, so a stolen admin login can't flood every
+        # parent; test alerts have their own budget so testing never uses up
+        # a real emergency's (B-9). Class-wide messages per sender.
+        'alert_school': os.environ.get('ALERT_SCHOOL_RATE', '10/day'),
+        'alert_test_school': os.environ.get('ALERT_TEST_SCHOOL_RATE', '5/day'),
+        'class_message': os.environ.get('CLASS_MESSAGE_RATE', '30/hour'),
         'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
         # Invite emails (new or renewed): per admin, and per recipient address
         # across all schools, so invites can't flood someone's inbox.

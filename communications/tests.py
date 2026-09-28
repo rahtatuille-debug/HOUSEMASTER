@@ -2,7 +2,9 @@ from accounts.tests import SchoolScopedAPITestCase
 from students.models import SchoolClass, YearGroup
 from unittest.mock import patch
 
-from .models import Announcement
+from django.test import override_settings
+
+from .models import Announcement, UrgentAlert
 
 
 class AnnouncementAPITests(SchoolScopedAPITestCase):
@@ -183,7 +185,9 @@ class GenerateTextRateLimitTests(SchoolScopedAPITestCase):
         self.assertEqual(response.status_code, 200)
 
 
-class UrgentAlertTests(SchoolScopedAPITestCase):
+class UrgentAlertFixture(SchoolScopedAPITestCase):
+    """School A: an admin, a teacher of 7A, a parent in 7A and one in 7B; a parent at school B (no tests)."""
+
     def setUp(self):
         super().setUp()
         from django.contrib.auth.models import User
@@ -219,6 +223,8 @@ class UrgentAlertTests(SchoolScopedAPITestCase):
     def recipients(self, alert_id):
         return {r["user"] for r in self.admin_client_a.get(f"/api/alerts/{alert_id}/recipients/").data}
 
+
+class UrgentAlertTests(UrgentAlertFixture):
     def test_admin_alerts_everyone_at_their_school_only(self):
         response = self.send()
         self.assertEqual(response.status_code, 201)
@@ -306,21 +312,22 @@ class UrgentAlertTests(SchoolScopedAPITestCase):
         self.assertTrue(ActivityLog.objects.filter(action="alert.sent").exists())
 
 
-class UrgentAlertEmailTests(UrgentAlertTests):
+@override_settings(NOTIFICATIONS_IN_BACKGROUND=False)
+class UrgentAlertEmailTests(UrgentAlertFixture):
     """Reuses UrgentAlertTests' school: an admin, a teacher, parents in 7A and 7B."""
 
-    def test_no_email_unless_ticked(self):
+    # Every alert is emailed now, in the background once it is saved (B-9;
+    # communications/test_alert_safeguards.py covers the rest).
+    def send_and_deliver(self, **body):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.send(**body)
+
+    def test_emails_each_recipient_separately(self):
         from django.core import mail
 
-        self.send()
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_ticked_emails_each_recipient_separately(self):
-        from django.core import mail
-
-        response = self.send(send_email=True)
+        response = self.send_and_deliver(send_email=True)
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["emailed_count"], 3)
+        self.assertEqual(UrgentAlert.objects.get(id=response.data["id"]).emailed_count, 3)
         self.assertEqual(sorted(m.to[0] for m in mail.outbox),
                          sorted([self.user_a.email, self.p7a.email, self.p7b.email]))
         self.assertTrue(all(len(m.to) == 1 and not m.cc and not m.bcc for m in mail.outbox))
@@ -330,16 +337,17 @@ class UrgentAlertEmailTests(UrgentAlertTests):
     def test_class_alert_emails_only_that_class(self):
         from django.core import mail
 
-        self.send(send_email=True, audience="school_class", school_class=self.class_7a.id)
+        self.send_and_deliver(audience="school_class", school_class=self.class_7a.id)
         self.assertEqual([m.to[0] for m in mail.outbox], [self.p7a.email])
 
     def test_email_failure_still_sends_the_alert(self):
         from unittest.mock import patch
 
         with patch("django.core.mail.backends.locmem.EmailBackend.send_messages", side_effect=OSError("down")):
-            response = self.send(send_email=True)
+            response = self.send_and_deliver()
         self.assertEqual(response.status_code, 201)
-        self.assertEqual((response.data["emailed_count"], response.data["email_failed_count"]), (0, 3))
+        alert = UrgentAlert.objects.get(id=response.data["id"])
+        self.assertEqual((alert.emailed_count, alert.email_failed_count), (0, 3))
         parent = self.authed_client(self.p7a)
         self.assertEqual(len(parent.get("/api/alerts/active/").data), 1)
 

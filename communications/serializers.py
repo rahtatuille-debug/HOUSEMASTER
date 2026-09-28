@@ -89,6 +89,8 @@ class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSer
     my_acknowledged_at = serializers.SerializerMethodField()
     recipient_count = serializers.SerializerMethodField()
     acknowledged_count = serializers.SerializerMethodField()
+    # Every alert is emailed now (B-9). Still accepted, and ignored, so an
+    # older frontend that sends it keeps working.
     send_email = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
@@ -96,7 +98,7 @@ class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSer
         fields = [
             "id", "title", "body", "audience", "audience_label", "year_group", "school_class",
             "created_by", "created_by_name", "created_at", "ended_at", "is_active",
-            "my_acknowledged_at", "recipient_count", "acknowledged_count", "send_email",
+            "my_acknowledged_at", "recipient_count", "acknowledged_count", "send_email", "is_test",
             "emailed_at", "emailed_count", "email_failed_count",
         ]
         read_only_fields = ["created_by", "created_at", "ended_at", "emailed_at", "emailed_count",

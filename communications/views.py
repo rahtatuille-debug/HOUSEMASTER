@@ -17,7 +17,8 @@ from guardians.notifications import notify_announcement_published
 from reporting.ai import BUSY_MESSAGE, AIUnavailable
 from housemaster.pagination import PagedOnRequest
 
-from .alerts import alert_recipient_users, email_alert
+from .alerts import alert_recipient_users, email_alert_later
+from .limits import check_alert_budget
 from .models import AlertRecipient, Announcement, UrgentAlert
 from .permissions import CanViewAnnouncements
 from .serializers import (
@@ -243,8 +244,14 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         if profile is None:
             raise PermissionDenied("Only staff can send urgent alerts.")
         data = dict(serializer.validated_data)
-        send_email = data.pop("send_email", False)
-        if not profile.is_admin:
+        data.pop("send_email", None)  # every alert is emailed now (B-9)
+        is_test = data.get("is_test", False)
+        if is_test:
+            # A test goes to staff only, whatever audience was chosen.
+            if not profile.is_admin:
+                raise PermissionDenied("Only an admin can send a test alert.")
+            data.update(audience=UrgentAlert.Audience.ALL_STAFF, year_group=None, school_class=None)
+        elif not profile.is_admin:
             if data["audience"] != UrgentAlert.Audience.SCHOOL_CLASS:
                 raise PermissionDenied("Teachers can only send urgent alerts to the parents of a class they teach.")
             if not profile.assignments.filter(school_class=data["school_class"]).exists():
@@ -253,19 +260,20 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         users = list(alert_recipient_users(alert))
         if not users:
             raise ValidationError("Nobody with an account would receive this alert.")
+        count_it = check_alert_budget(profile.school, is_test)  # 429 if the school's limit is reached
         alert.save()
         AlertRecipient.objects.bulk_create([AlertRecipient(alert=alert, user=u) for u in users])
-        if send_email:
-            sent, failed = email_alert(alert, users)
-            alert.emailed_at = timezone.now()
-            alert.emailed_count, alert.email_failed_count = sent, failed
-            alert.save(update_fields=["emailed_at", "emailed_count", "email_failed_count"])
+        count_it()
+        # Shown in the app straight away, and emailed to everyone too (B-9).
+        email_alert_later(alert, users)
         serializer.instance = alert
-        emailed = f", and emailed {alert.emailed_count}" if send_email else ""
+        people = f'{len(users)} {"person" if len(users) == 1 else "people"}'
         log_activity(
             school=alert.school, actor=self.request.user, action="alert.sent", target=alert,
-            summary=f'Sent the urgent alert "{alert.title}" to {len(users)} '
-            f'{"person" if len(users) == 1 else "people"} ({alert.get_audience_display().lower()}){emailed}',
+            summary=(f'Sent a test urgent alert "{alert.title}" to {people} (all staff), in the app and by email'
+                     if is_test else
+                     f'Sent the urgent alert "{alert.title}" to {people} '
+                     f'({alert.get_audience_display().lower()}), in the app and by email'),
         )
 
     @action(detail=False, methods=["get"])

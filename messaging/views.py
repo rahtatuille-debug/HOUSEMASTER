@@ -15,6 +15,7 @@ from .classes import can_post, guardian_class_ids, start_class_conversation, syn
 from .models import Conversation, ConversationParticipant, Message
 from .contacts import contact_list
 from .permissions import CanMessage, user_school
+from .throttles import ClassMessageThrottle
 from .serializers import (
     ClassMessageSerializer,
     ConversationCreateSerializer,
@@ -105,7 +106,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         )
         return Response(MessageSerializer(message).data, status=201)
 
-    @action(detail=False, methods=["post"], url_path="class")
+    @action(detail=False, methods=["post"], url_path="class", throttle_classes=[ClassMessageThrottle])
     def class_message(self, request):
         """
         Message every parent of one class at once, as a one-way notice
