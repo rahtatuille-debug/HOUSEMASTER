@@ -64,8 +64,13 @@ Pick one:
 
 **Outage**
 
-1. Check Render (deploy failed? instance sleeping or out of memory?),
-   Neon (status page, compute suspended?), Vercel and Sentry.
+1. `curl -s https://<backend>/healthz`: `"status": "ok"` means the app
+   and database answer; `"degraded"` (503) means the app runs but the
+   database doesn't; no answer means the app itself is down or asleep.
+   The `commit` field is the first 7 characters of the commit that is
+   live, so you can tell whether a deploy actually went out. Then check
+   Render (deploy failed? instance sleeping or out of memory?), Neon
+   (status page, compute suspended?), Vercel and Sentry.
 2. A deploy that fails keeps the previous version running. A bad deploy
    that succeeded: revert the merge on `master` / `main`.
 

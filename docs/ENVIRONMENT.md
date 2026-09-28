@@ -60,6 +60,16 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `ADMIN_LOGIN_RATE` | `10` | Failed admin sign-ins per client address per hour. |
 | `RETENTION_INACTIVE_STUDENT_YEARS` | unset (off) | Years after a student leaves before `manage.py apply_retention --apply` anonymises them. Counsel decides the period ([DESIGN_data_subject_tooling.md](DESIGN_data_subject_tooling.md)). |
 
+## Set by Render (nothing to do)
+
+| Variable | Used for |
+|---|---|
+| `RENDER_GIT_COMMIT` | `/healthz` reports its first 7 characters as `commit`, so you can see which commit is live. Anything that isn't a git hash is reported as `unknown`. |
+
+`/healthz` answers before the host check and the HTTPS redirect, so Render's
+health check works whatever host it uses; it needs no variable. Set
+Render's **Health Check Path** to `/healthz` (HUMAN_ACTIONS.md, H-4).
+
 ## Must stay unset in production
 
 | Variable | Why |

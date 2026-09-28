@@ -137,6 +137,10 @@ if os.environ.get('LOG_CLIENT_IP_DEBUG') == '1':
         'loggers': {'housemaster.client_ip': {'handlers': ['console'], 'level': 'INFO'}},
     }
 
+# GET/HEAD /healthz answers before anything else, including the host check
+# and the HTTPS redirect, for Render's health check (housemaster/health.py).
+MIDDLEWARE.insert(0, 'housemaster.health.HealthCheckMiddleware')
+
 _num_proxies = os.environ.get('DRF_NUM_PROXIES', '').strip()
 DRF_NUM_PROXIES = int(_num_proxies) if _num_proxies else None
 
