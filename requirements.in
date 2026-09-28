@@ -1,0 +1,18 @@
+# Top-level dependencies. Edit this file, then regenerate the pinned
+# requirements.txt with:  pip-compile --strip-extras requirements.in
+
+Django>=6.0,<6.1
+djangorestframework>=3.17,<3.18
+openpyxl>=3.1,<3.2
+google-genai>=0.3,<1.0
+djangorestframework-simplejwt>=5.3,<6.0
+django-filter>=24.2,<25.0
+psycopg[binary]>=3.2,<4.0
+dj-database-url>=2.3,<3.0
+python-dotenv>=1.0,<2.0
+django-cors-headers>=4.4,<5.0
+gunicorn>=23.0,<24.0
+whitenoise>=6.7,<7.0
+sentry-sdk>=2.0,<3.0
+Pillow>=11.0,<13.0
+fpdf2>=2.8,<3.0
