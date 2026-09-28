@@ -89,6 +89,11 @@ class InviteIPThrottle(IPThrottle):
     scope = "invite_ip"
 
 
+class PasswordResetConfirmIPThrottle(IPThrottle):
+    """Setting a new password from a reset link. Separate from the invite bucket."""
+    scope = "password_reset_confirm_ip"
+
+
 class RegistrationEmailThrottle(EmailThrottle):
     scope = "school_registration_email"
 

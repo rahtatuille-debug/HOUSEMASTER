@@ -191,9 +191,14 @@ REST_FRAMEWORK = {
         'login_email': os.environ.get('LOGIN_EMAIL_RATE', '10/hour'),
         'password_reset_ip': os.environ.get('PASSWORD_RESET_IP_RATE', '20/hour'),
         'password_reset_email': os.environ.get('PASSWORD_RESET_EMAIL_RATE', '5/hour'),
-        # Invite previews and acceptance, parent invites, class sign-up
-        # links and password-reset confirmation (token-guessing endpoints).
+        # Invite previews and acceptance, parent invites and class sign-up
+        # links (token-guessing endpoints).
         'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
+        # Password-reset confirmation has its own bucket, so parents joining
+        # from a school's shared address can't hold up someone's reset (B-3).
+        # Reset links are 64 random characters, so this limit is about
+        # abuse, not guessing; it is generous for a shared address.
+        'password_reset_confirm_ip': os.environ.get('PASSWORD_RESET_CONFIRM_IP_RATE', '60/hour'),
         'token_refresh_ip': os.environ.get('TOKEN_REFRESH_IP_RATE', '600/hour'),
         # Invite emails (new or renewed): per admin, and per recipient address
         # across all schools, so invites can't flood someone's inbox.

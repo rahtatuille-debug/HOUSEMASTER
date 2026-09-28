@@ -47,7 +47,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `JWT_REFRESH_TOKEN_DAYS` | `3` | Lifetime of a refresh token. Each refresh issues a new one, so active users stay signed in. |
 | `LOGIN_EMAIL_RATE` / `LOGIN_IP_RATE` | `10/hour` / `30/hour` | Failed logins per email / per IP. Successful logins don't count. |
 | `PASSWORD_RESET_EMAIL_RATE` / `PASSWORD_RESET_IP_RATE` | `5/hour` / `20/hour` | Reset requests. |
-| `INVITE_IP_RATE` | `60/hour` | Invite and parent-invite preview/accept, class sign-up links, reset confirmation. |
+| `INVITE_IP_RATE` | `60/hour` | Invite and parent-invite preview/accept, class sign-up links. |
+| `PASSWORD_RESET_CONFIRM_IP_RATE` | `60/hour` | Setting a new password from a reset link, per IP. Its own bucket, so parents joining from a shared school address don't hold up a reset. |
 | `SCHOOL_REGISTRATION_RATE` / `SCHOOL_REGISTRATION_EMAIL_RATE` | `5/hour` / `3/day` | New school sign-ups per IP / per email. |
 | `TOKEN_REFRESH_IP_RATE` | `600/hour` | Token refresh and logout per IP (high because mobile networks share addresses). |
 | `INVITE_SEND_USER_RATE` / `INVITE_SEND_RECIPIENT_RATE` | `100/hour` / `5/day` | Invite emails (new or renewed) per admin / per recipient address across all schools. |
