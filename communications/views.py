@@ -15,6 +15,7 @@ from students.models import SchoolClass, YearGroup
 
 from guardians.notifications import notify_announcement_published
 from reporting.ai import BUSY_MESSAGE, AIUnavailable
+from housemaster.pagination import PagedOnRequest
 
 from .alerts import alert_recipient_users, email_alert
 from .models import AlertRecipient, Announcement, UrgentAlert
@@ -36,9 +37,12 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     """
 
     queryset = Announcement.objects.select_related(
-        "school", "year_group", "school_class", "created_by"
-    )
+        "school", "year_group", "school_class", "created_by__profile"
+    ).order_by("-published_at", "-created_at", "-id")
     serializer_class = AnnouncementSerializer
+    # Pages when asked for (?page= / ?page_size=); the whole list otherwise,
+    # which is what the frontend already deployed expects (B-1).
+    pagination_class = PagedOnRequest
     filterset_fields = ["audience", "status", "year_group", "school_class"]
     http_method_names = ["get", "post", "patch", "head", "options"]
     throttle_scope = "ai_announcement_drafting"

@@ -7,7 +7,14 @@ class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
         fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "vocab_overrides", "motto",
-                  "address", "phone", "email", "created_at"]
+                  "address", "phone", "email", "timezone", "created_at"]
+
+    def validate_timezone(self, value):
+        from .localtime import valid_zones
+
+        if value not in valid_zones():
+            raise serializers.ValidationError('Choose a time zone from the list, e.g. "Africa/Nairobi".')
+        return value
 
     def validate_vocab_overrides(self, value):
         from .presets import clean_vocab_overrides

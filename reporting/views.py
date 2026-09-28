@@ -15,6 +15,7 @@ from guardians.notifications import notify_reports_finalized
 
 from students.models import SchoolClass, Student
 from gradebook.models import Term
+from housemaster.pagination import PagedOnRequest
 from .models import StudentReport
 from .serializers import StudentReportSerializer, GenerateReportSerializer
 from .ai import BUSY_MESSAGE, UNUSABLE_MESSAGE, AIUnavailable
@@ -43,9 +44,15 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     back to draft with a `note`). Only draft and submitted reports can be
     edited, and only draft reports can be regenerated.
     """
-    queryset = StudentReport.objects.all()
+    queryset = StudentReport.objects.select_related(
+        "student__school", "student__school_class__year_group",
+        "submitted_by__profile", "submitted_by__guardian", "finalized_by__profile", "finalized_by__guardian",
+    ).order_by("id")
     serializer_class = StudentReportSerializer
     filterset_fields = ["student", "term", "status"]
+    # Pages when asked for (?page= / ?page_size=); the whole list otherwise,
+    # which is what the frontend already deployed expects (B-1).
+    pagination_class = PagedOnRequest
     school_lookup = "student__school"
     # Only ever actually applied to `generate` (see get_throttles) — the
     # scope name just has to match a key in DEFAULT_THROTTLE_RATES.

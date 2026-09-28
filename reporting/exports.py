@@ -10,7 +10,6 @@ from io import BytesIO
 from pathlib import Path
 
 import openpyxl
-from django.utils import timezone
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -19,6 +18,7 @@ from attendance.models import AttendanceRecord
 from gradebook.levels import level_for, levels_key, with_level
 from gradebook.models import Grade
 from gradebook.weighting import school_weights, subject_percents
+from students.localtime import school_date, school_localdate
 from students.presets import DEFAULT_VOCAB, words_for
 
 from .models import StudentReport
@@ -367,6 +367,7 @@ def reports_pdf(school, students, term):
         pdf.set_text_color(*MUTED)
         for part in _key(summary["system"], summary["scale"]):
             pdf.multi_cell(0, 4.5, part, new_x="LMARGIN", new_y="NEXT")
-        finalized = report.finalized_at.date() if report.finalized_at else timezone.localdate()
+        school = report.student.school
+        finalized = school_date(report.finalized_at, school) if report.finalized_at else school_localdate(school)
         pdf.cell(0, 5, f"Finalized {finalized:%d %B %Y}", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output()), count

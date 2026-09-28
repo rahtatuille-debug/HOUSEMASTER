@@ -16,3 +16,6 @@ whitenoise>=6.7,<7.0
 sentry-sdk>=2.0,<3.0
 Pillow>=11.0,<13.0
 fpdf2>=2.8,<3.0
+# Time-zone data for per-school time zones (students.localtime), so it
+# doesn't depend on the host having it.
+tzdata>=2025.2

@@ -70,6 +70,15 @@ reports it (CI runs that with `--fail-level ERROR`).
 health check works whatever host it uses; it needs no variable. Set
 Render's **Health Check Path** to `/healthz` (HUMAN_ACTIONS.md, H-4).
 
+## Per-school settings (not environment variables)
+
+| Setting | Default | Where |
+|---|---|---|
+| School time zone (`School.timezone`) | `Africa/Nairobi` for every existing and new school | Admins change it in **Setup → School time zone** (or `PATCH /api/schools/<id>/` with `{"timezone": "Europe/London"}`). It decides when the school's day starts: "today" for registers, the dashboard, teacher home, ages on profiles, graduation dates and the date printed on report cards. Teachers can't change it. |
+
+Django's own `TIME_ZONE` stays `Africa/Nairobi` and is only used where no
+particular school is involved (for example `apply_retention`).
+
 ## Must stay unset in production
 
 | Variable | Why |

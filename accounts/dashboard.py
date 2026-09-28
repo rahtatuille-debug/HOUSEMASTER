@@ -2,13 +2,13 @@
 from datetime import timedelta
 
 from django.db.models import Count, Q
-from django.utils import timezone
 
 from approvals.models import ChangeRequest
 from attendance.models import AttendanceRecord
 from communications.models import UrgentAlert
 from guardians.models import GuardianInvite
 from reporting.models import StudentReport
+from students.localtime import school_localdate
 from students.models import SchoolClass, Student
 
 from .models import Invite
@@ -20,7 +20,7 @@ def _invite_row(invite, kind):
 
 
 def build_dashboard(school):
-    today = timezone.localdate()
+    today = school_localdate(school)
     # At weekends, show the last school day's registers instead of warning
     # that none were taken today.
     register_day = today - timedelta(days=max(0, today.weekday() - 4))

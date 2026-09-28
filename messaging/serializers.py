@@ -1,4 +1,6 @@
 from django.contrib.auth.models import User
+from django.db.models import Case, Count, IntegerField, OuterRef, Prefetch, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
 from accounts.mixins import SchoolScopedRelatedFieldsMixin
@@ -59,6 +61,39 @@ class ParticipantSerializer(serializers.Serializer):
         return _display_name(row.user)[1]
 
 
+def _count(queryset):
+    return Coalesce(Subquery(queryset.order_by().values("conversation").annotate(n=Count("id")).values("n")[:1],
+                             output_field=IntegerField()), Value(0))
+
+
+def with_list_fields(queryset, viewer):
+    """
+    Adds what ConversationSerializer shows for each row (members, the last
+    message, the viewer's unread count and the participants' names) in a
+    fixed number of queries, however many conversations there are (B-1).
+    """
+    messages = Message.objects.filter(conversation=OuterRef("pk"))
+    last = messages.order_by("-created_at", "-id")
+    unread = messages.exclude(sender=viewer)
+    read_at = ConversationParticipant.objects.filter(conversation=OuterRef("pk"), user=viewer).values("last_read_at")
+    return queryset.select_related("student", "school_class").annotate(
+        member_total=_count(ConversationParticipant.objects.filter(conversation=OuterRef("pk"))),
+        viewer_read_at=Subquery(read_at[:1]),
+        last_body=Subquery(last.values("body")[:1]),
+        last_at=Subquery(last.values("created_at")[:1]),
+        last_sender=Subquery(last.values("sender_id")[:1]),
+    ).annotate(
+        unread_total=Case(
+            When(viewer_read_at__isnull=True, then=_count(unread)),
+            default=_count(unread.filter(created_at__gt=OuterRef("viewer_read_at"))),
+            output_field=IntegerField(),
+        ),
+    ).prefetch_related(Prefetch(
+        "participant_rows",
+        queryset=ConversationParticipant.objects.select_related("user__profile", "user__guardian").order_by("id"),
+    ))
+
+
 class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
     participants = serializers.SerializerMethodField(read_only=True)
     student_name = serializers.SerializerMethodField(read_only=True)
@@ -87,22 +122,34 @@ class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSe
         viewer = self._viewer()
         return bool(viewer) and can_post(obj, viewer)
 
+    # Lists come from with_list_fields() (annotated, participants
+    # prefetched); a single conversation that wasn't loaded that way (the
+    # one just created) is worked out with its own queries.
+
     def get_member_count(self, obj):
-        return obj.participant_rows.count()
+        total = getattr(obj, "member_total", None)
+        return total if total is not None else obj.participant_rows.count()
 
     def get_participants(self, obj):
-        rows = obj.participant_rows.select_related("user__profile", "user__guardian")
+        if "participant_rows" in getattr(obj, "_prefetched_objects_cache", {}):
+            rows = list(obj.participant_rows.all())
+        else:
+            rows = list(obj.participant_rows.select_related("user__profile", "user__guardian").order_by("id"))
         viewer = self._viewer()
         if obj.kind == Conversation.Kind.CLASS_NOTICE and viewer is not None and not hasattr(viewer, "profile"):
             # Parents don't see who else received a one-way class notice.
-            rows = rows.filter(user__profile__isnull=False)
+            rows = [row for row in rows if hasattr(row.user, "profile")]
         return ParticipantSerializer(rows, many=True).data
 
     def get_student_name(self, obj):
         return f"{obj.student.first_name} {obj.student.last_name}" if obj.student else None
 
     def get_last_message(self, obj):
-        last = obj.messages.order_by("-created_at").first()
+        if hasattr(obj, "last_at"):
+            if obj.last_at is None:
+                return None
+            return {"body": obj.last_body, "created_at": obj.last_at, "sender_id": obj.last_sender}
+        last = obj.messages.order_by("-created_at", "-id").first()
         if not last:
             return None
         return {"body": last.body, "created_at": last.created_at, "sender_id": last.sender_id}
@@ -111,6 +158,8 @@ class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSe
         request = self.context.get("request")
         if not request:
             return 0
+        if hasattr(obj, "unread_total"):
+            return obj.unread_total
         row = obj.participant_rows.filter(user=request.user).first()
         if not row:
             return 0

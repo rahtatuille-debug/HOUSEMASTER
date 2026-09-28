@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from activity.models import ActivityLog
 from attendance.models import AttendanceRecord
 from messaging.models import Message
+from students.localtime import school_localdate
 from students.presets import SHORT_NAMES, section_for, school_vocab
 
 from .permissions import HasSchoolProfile
@@ -74,7 +75,7 @@ def teacher_classes(profile):
             row["class_teacher"] = True
         else:
             row["subjects"].append(a.subject.name)
-    today = timezone.localdate()
+    today = school_localdate(school)
     for row in classes.values():
         students = list(school.students.filter(school_class_id=row["id"], is_active=True).values_list("id", flat=True))
         row["students"] = len(students)

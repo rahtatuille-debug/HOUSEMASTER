@@ -8,11 +8,11 @@ the classes they're in *before* anyone moves, so swaps and chains
 (7A -> 8A while 8A -> 9A) are safe.
 """
 from django.db import transaction
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from activity.services import log_activity
 
+from .localtime import school_localdate
 from .models import SchoolClass, Student
 
 
@@ -57,7 +57,7 @@ def apply_promotion(school, actor, plan):
         ids = [s.id for s in students]
         if to_class is None and from_class.year_group.is_final:
             # Leaving from the final year is graduating; their records stay.
-            Student.objects.filter(id__in=ids).update(is_active=False, graduated_on=timezone.localdate())
+            Student.objects.filter(id__in=ids).update(is_active=False, graduated_on=school_localdate(school))
             summary = f"Graduated {len(ids)} students from {from_class.name}"
         elif to_class is None:
             Student.objects.filter(id__in=ids).update(is_active=False)

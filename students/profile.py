@@ -2,7 +2,6 @@
 from datetime import date
 
 from django.db.models import Count
-from django.utils import timezone
 
 from accounts.models import TeachingAssignment
 from accounts.scoping import is_admin
@@ -13,6 +12,7 @@ from gradebook.weighting import school_weights, student_average, subject_percent
 from guardians.models import GuardianInvite
 from reporting.models import StudentReport
 
+from .localtime import school_localdate
 from .models import Student
 
 
@@ -31,10 +31,10 @@ def _group_average(students, term, weights):
     return _average([student_average(subjects) for subjects in per.values()])
 
 
-def _age(dob):
+def _age(dob, school):
     if not dob:
         return None
-    today = timezone.localdate()
+    today = school_localdate(school)
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
@@ -101,7 +101,7 @@ def build_profile(student, user):
             "rate": round(attended / total * 100, 1) if total else None,
         }
 
-    today = timezone.localdate()
+    today = school_localdate(student.school)
     current_term = Term.objects.filter(
         school=student.school, start_date__lte=today, end_date__gte=today
     ).first()
@@ -147,7 +147,7 @@ def build_profile(student, user):
     profile = {
         "class_name": school_class.name if school_class else None,
         "year_group_name": year_group.name if year_group else None,
-        "age": _age(student.date_of_birth),
+        "age": _age(student.date_of_birth, student.school),
         "teachers": teachers,
         "subjects": subjects,
         "grades_by_term": grades_by_term,

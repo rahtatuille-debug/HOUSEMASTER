@@ -8,6 +8,7 @@ from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import IsSchoolAdmin
 from accounts.scoping import is_admin
 from activity.services import log_activity
+from housemaster.pagination import PagedOnRequest
 
 from . import services
 from .models import ChangeRequest
@@ -26,6 +27,9 @@ class ChangeRequestViewSet(SchoolScopedViewSetMixin, viewsets.ReadOnlyModelViewS
     queryset = ChangeRequest.objects.all()
     serializer_class = ChangeRequestSerializer
     filterset_fields = ["status", "kind"]
+    # Pages when asked for (?page= / ?page_size=); the whole list otherwise,
+    # which is what the frontend already deployed expects (B-1).
+    pagination_class = PagedOnRequest
 
     def get_queryset(self):
         queryset = super().get_queryset()
