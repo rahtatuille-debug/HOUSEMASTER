@@ -16,6 +16,7 @@ from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.models import Profile, username_for_email
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.serializers import create_account
 from accounts.throttles import RegistrationEmailThrottle
 from accounts.tokens import tokens_for
 from activity.services import log_activity
@@ -44,10 +45,12 @@ class RegisterSchoolSerializer(serializers.Serializer):
     accept_privacy = serializers.BooleanField()
     country = serializers.ChoiceField(choices=list(COUNTRIES), required=False, default="ke")
 
+    EMAIL_TAKEN = "An account with this email already exists. Sign in instead."
+
     def validate_email(self, value):
         value = value.strip().lower()
         if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("An account with this email already exists. Sign in instead.")
+            raise serializers.ValidationError(self.EMAIL_TAKEN)
         return value
 
     def validate_password(self, value):
@@ -72,8 +75,9 @@ def register_school(request):
     first, _, last = name.partition(" ")
     with transaction.atomic():
         school = School.objects.create(name=" ".join(v["school_name"].split()), country=v["country"])
-        user = User.objects.create_user(username=username_for_email(v["email"]), email=v["email"],
-                                        password=v["password"], first_name=first[:150], last_name=last[:150])
+        user = create_account("email", RegisterSchoolSerializer.EMAIL_TAKEN,
+                              username=username_for_email(v["email"]), email=v["email"],
+                              password=v["password"], first_name=first[:150], last_name=last[:150])
         Profile.objects.create(user=user, school=school, role=Profile.Role.ADMIN, display_name=name,
                                privacy_accepted_at=timezone.now())
         log_activity(school=school, actor=user, action="school.registered",

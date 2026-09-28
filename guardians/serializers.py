@@ -7,6 +7,7 @@ from rest_framework import serializers
 from accounts.mixins import SchoolScopedRelatedFieldsMixin
 
 from accounts.models import username_for_email
+from accounts.serializers import create_account
 from students.models import Student
 from gradebook.models import Grade
 from reporting.models import StudentReport
@@ -84,6 +85,8 @@ class GuardianInvitePreviewSerializer(serializers.ModelSerializer):
 
 
 class AcceptGuardianInviteSerializer(serializers.Serializer):
+    EMAIL_TAKEN = "An account with this invite's email already exists. Contact the school for help."
+
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
     accept_privacy = serializers.BooleanField(
@@ -105,9 +108,7 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
         if invite.is_expired:
             raise serializers.ValidationError("This invite has expired. Ask the school for a new one.")
         if User.objects.filter(email__iexact=invite.email).exists():
-            raise serializers.ValidationError(
-                "An account with this invite's email already exists. Contact the school for help."
-            )
+            raise serializers.ValidationError(self.EMAIL_TAKEN)
         self._invite = invite
         return value
 
@@ -119,7 +120,8 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
         invite = self._invite
         display_name = invite.name.strip()
         first_name, _, last_name = display_name.partition(" ")
-        user = User.objects.create_user(
+        user = create_account(
+            "token", self.EMAIL_TAKEN,
             username=username_for_email(invite.email),
             email=invite.email,
             password=self.validated_data["password"],

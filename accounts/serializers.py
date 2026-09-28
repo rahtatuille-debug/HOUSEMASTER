@@ -1,5 +1,5 @@
 from django.contrib.auth.models import User
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
@@ -18,6 +18,19 @@ def email_in_use_at_school(email, school):
     return User.objects.filter(email__iexact=email).filter(
         models.Q(profile__school=school) | models.Q(guardian__school=school)
     ).exists()
+
+
+def create_account(field, message, **fields):
+    """
+    Create a User, turning a clash with an existing email (two sign-ups at
+    the same moment, caught by the database's unique index) into the same
+    friendly 400 as the check that runs first, rather than a 500.
+    """
+    try:
+        with transaction.atomic():
+            return User.objects.create_user(**fields)
+    except IntegrityError:
+        raise serializers.ValidationError({field: [message]})
 
 
 def _log_for_user(user, action, what):
@@ -154,6 +167,8 @@ class AcceptInviteSerializer(serializers.Serializer):
     was created, so there's nothing else to choose here.
     """
 
+    EMAIL_TAKEN = "An account with this invite's email already exists. Ask your admin for help."
+
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
     accept_privacy = serializers.BooleanField(
@@ -179,9 +194,7 @@ class AcceptInviteSerializer(serializers.Serializer):
                 "This invite is missing an email address — ask your admin to create a new one."
             )
         if User.objects.filter(email__iexact=invite.email).exists():
-            raise serializers.ValidationError(
-                "An account with this invite's email already exists. Ask your admin for help."
-            )
+            raise serializers.ValidationError(self.EMAIL_TAKEN)
         self._invite = invite
         return value
 
@@ -193,7 +206,8 @@ class AcceptInviteSerializer(serializers.Serializer):
         invite = self._invite
         display_name = invite.name.strip()
         first_name, _, last_name = display_name.partition(" ")
-        user = User.objects.create_user(
+        user = create_account(
+            "token", self.EMAIL_TAKEN,
             username=username_for_email(invite.email),
             email=invite.email,
             password=self.validated_data["password"],
