@@ -14,6 +14,7 @@ from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
+from . import health_notes
 from .invite_emails import send_invite_email
 from .models import Guardian, GuardianInvite
 from .permissions import IsGuardian
@@ -214,7 +215,21 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             "subjects": full["subjects"],
             "attendance": full["attendance"],
             "performance": [{"term": p["term"], "student": p["student"]} for p in full["performance"]],
+            # This parent's latest suggestion for the health notes, if any.
+            "health_notes_request": health_notes.as_data(health_notes.latest(request.user, student)),
         })
+
+    @action(detail=True, methods=["post", "delete"], url_path="health-notes-request")
+    def health_notes_request(self, request, pk=None):
+        """
+        POST {medical_notes, reason?}: suggest new health notes for the school
+        to approve (guardians.health_notes). DELETE: withdraw a waiting one.
+        """
+        student = self.get_object()
+        if request.method == "DELETE":
+            return Response(health_notes.as_data(health_notes.withdraw(request.user, student)))
+        change_request = health_notes.suggest(request.user, student, request.data)
+        return Response(health_notes.as_data(change_request), status=201)
 
     @action(detail=True, methods=["get"])
     def photo(self, request, pk=None):

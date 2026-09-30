@@ -87,3 +87,20 @@ Google. The fonts are now bundled with the app (same files, same look), the
 pages contact no third party for them, and the Content-Security-Policy
 allows fonts and styles from the app's own origin only. For a product used
 by families this removes one cross-border transfer (to Google Fonts).
+
+## Parents suggesting health-note changes
+
+A parent can suggest new health notes for their own child from the child's
+page (`POST /api/guardian-students/<id>/health-notes-request/`, withdraw
+with `DELETE`). Nothing changes until a school admin approves it in
+Approvals: the school is the controller of its records, and one parent
+can't quietly change what the other parent and staff see. The suggestion
+is an ordinary pending change request (`kind` "student", `data` holding
+only `medical_notes`), so approving replays it through the same student
+update as an admin's own edit. Only the health notes can be changed this
+way; anything else sent is ignored. One waiting suggestion per parent and
+child; the child must still be at the school.
+
+The note text is held only in the request's `data`, which the school's
+admins and the parent who sent it can see. Summaries and the activity log
+name the child but never the health details.
