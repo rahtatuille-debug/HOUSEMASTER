@@ -85,7 +85,7 @@ particular school is involved (for example `apply_retention`).
 
 | Variable | Why |
 |---|---|
-| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs (also after every `migrate`). With `DJANGO_DEBUG` off the command now refuses and creates nothing unless `ALLOW_DEMO_SEED=1` is also set; it exits normally, so deploys don't fail. The large demo school (HouseMaster Demo College: about 1,000 students, five years of marks and report cards) is never built on deploy: run `python manage.py seed_large_demo` by hand (in Render's Shell) on a demo server; it takes about a minute and adds about 300,000 rows. |
+| `DEMO_PASSWORD` | Creates demo schools with a shared password when `seed_demo_school` runs (also after every `migrate`). With `DJANGO_DEBUG` off the command now refuses and creates nothing unless `ALLOW_DEMO_SEED=1` is also set; it exits normally, so deploys don't fail. The large demo school (HouseMaster Demo College: about 1,000 students, five years of marks and report cards) is never built on deploy: run `python manage.py seed_large_demo` once on a demo server: in Render's Shell, or (without Shell) by adding ` && python manage.py seed_large_demo` to the end of the Build Command for one deploy. It takes a few minutes and adds about 300,000 rows; once the school exists it only prints "already exists". |
 | `ALLOW_DEMO_SEED` | Set to `1` only on a server that exists purely for demos, never on one holding real schools. |
 | `ALLOW_REMOTE_TEST_DB` | Lets the test suite create and drop databases on a remote server. |
 | `HOUSEMASTER_SKIP_DOTENV` | Used only by the settings tests. |
