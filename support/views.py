@@ -89,8 +89,9 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
             raise ValidationError(f"{student_name(student)} is already marked as needing support.")
         log_activity(school=student.school, actor=user, action="support.opened", target=student,
                      summary=f"Marked {student_name(student)} as needing support")
-        services.notify_parents(concern, user)
-        return Response(self.get_serializer(concern).data, status=201)
+        emailed = services.notify_parents(concern, user)
+        # The email goes after the reply, so say here how many parents it is going to.
+        return Response({**self.get_serializer(concern).data, "parents_emailed": emailed}, status=201)
 
     def partial_update(self, request, *args, **kwargs):
         concern = self.get_object()

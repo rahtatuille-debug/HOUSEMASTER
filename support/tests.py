@@ -110,6 +110,7 @@ class SupportTests(SchoolScopedAPITestCase):
     def test_confirming_marks_the_student_and_tells_the_parent(self):
         response = self.confirm(self.low)
         self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["parents_emailed"], 1)
         concern = SupportConcern.objects.get()
         self.assertEqual((concern.status, concern.source), ("open", "auto"))
         self.assertEqual([r["code"] for r in concern.reasons], ["low_average"])
@@ -122,7 +123,7 @@ class SupportTests(SchoolScopedAPITestCase):
 
     def test_parent_who_turned_off_emails_is_not_emailed(self):
         Guardian.objects.filter(pk=self.parent_record.pk).update(email_notifications=False)
-        self.confirm(self.low)
+        self.assertEqual(self.confirm(self.low).data["parents_emailed"], 0)
         self.assertEqual(mail.outbox, [])
 
     def test_parents_see_a_confirmed_concern_but_never_a_suggestion(self):

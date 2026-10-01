@@ -104,7 +104,7 @@ def parent_view(student):
 
 
 def notify_parents(concern, actor):
-    """A short email to the student's parents; the details stay in HouseMaster."""
+    """A short email to the student's parents; the details stay in HouseMaster. Returns how many are emailed."""
     from django.utils import timezone
 
     from guardians.models import Guardian
@@ -121,9 +121,10 @@ def notify_parents(concern, actor):
         g.user.email,
     ) for g in parents]
     if not messages:
-        return
+        return 0
 
     def done(sent, attempted):
         SupportConcern.objects.filter(pk=concern.pk).update(parents_notified_at=timezone.now())
 
     send_after_commit(messages, on_done=done)
+    return len(messages)
