@@ -265,7 +265,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             if str(request.query_params.get("term", "")).isdigit() else None
         if report is None:
             raise NotFound("There's no finalized report for that term.")
-        summary = term_summary(student, report.term)
+        summary = term_summary(student, report.term, report)
         for row in summary["subjects"]:
             row.pop("subject_id", None)
         return Response(summary)

@@ -72,7 +72,7 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         # The reasons as they stand now, worded with the student's numbers.
-        data = SchoolGrades(student.school)
+        data = SchoolGrades(student.school, recent=True, term_id=term.id if term else None)
         found = {r["code"]: r for r in services.warning_signs(data, term or data.term(None), [student.id])
                  .get(student.id, [])}
         reasons = [found.get(code, {"code": code, "label": services.REASONS[code]}) for code in dict.fromkeys(codes)]
@@ -129,7 +129,7 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         self._open_exists(student)
         user = request.user
         concern = SupportConcern.objects.create(
-            school=student.school, student=student, term=term or SchoolGrades(student.school).term(None),
+            school=student.school, student=student, term=term or SchoolGrades(student.school, recent=True).term(None),
             status=SupportConcern.Status.DISMISSED, source=SupportConcern.Source.AUTO,
             created_by=user, created_by_name=display_name(user), closed_by=user,
             closed_by_name=display_name(user), closed_at=timezone.now(),
@@ -144,7 +144,7 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
 def suggestions(request):
     """?term=<id, optional: the latest graded term>. Students the viewer can see who show warning signs."""
     user = request.user
-    data = SchoolGrades(user.profile.school)
+    data = SchoolGrades(user.profile.school, recent=True, term_id=request.query_params.get("term"))
     term = data.term(request.query_params.get("term"))
     ids = [sid for sid in _visible_ids(user) if sid in data.students]
     found = services.suggestions(data, term, ids)

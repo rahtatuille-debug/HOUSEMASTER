@@ -294,6 +294,7 @@ def reports_pdf(school, students, term):
     reports = {
         r.student_id: r
         for r in StudentReport.objects.filter(student__in=students, term=term, status="finalized")
+        .select_related("school_class__year_group")
     }
     attendance = defaultdict(lambda: defaultdict(int))
     if term.start_date and term.end_date:
@@ -333,10 +334,12 @@ def reports_pdf(school, students, term):
         pdf.set_font("Serif", "", 10.5)
         pdf.set_text_color(*INK)
         klass = s.school_class
-        summary = term_summary(s, term)
+        summary = term_summary(s, term, report)
         words = words_for(school, summary["system"])
         details = [f"{words['term']}: {term.name}"]
-        if klass:
+        if report.class_name:  # the class they were in at the time
+            details.append(f"{words['class']}: {report.class_name}")
+        elif klass:
             details.append(f"{words['class']}: {klass.year_group.name} · {klass.name}")
         if s.external_id:
             details.append(f"{words['student_id']}: {s.external_id}")

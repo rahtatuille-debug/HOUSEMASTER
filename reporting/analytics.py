@@ -11,9 +11,12 @@ Only active students count towards group figures.
 from collections import defaultdict
 from datetime import date
 
+from django.db.models import FloatField
+from django.db.models.functions import Cast
+
 from gradebook.levels import SCALES, levels, school_sections
 from students.presets import SHORT_NAMES, section_for, student_section
-from gradebook.models import Grade, Term
+from gradebook.models import Grade, Subject, Term
 from gradebook.weighting import school_weights, subject_percent
 from students.models import SchoolClass, Student, YearGroup
 
@@ -31,7 +34,9 @@ def _mean(values):
 class SchoolGrades:
     """Every active student's grades at a school, loaded once and averaged in memory."""
 
-    def __init__(self, school):
+    def __init__(self, school, recent=False, term_id=None):
+        """`recent`: load only one term (term_id, or the latest graded) and the graded term before it.
+        Enough for warning signs and the teacher home, and much faster for a school with years of history."""
         self.school = school
         self.scale = school.grading_scale
         self.terms = sorted(Term.objects.filter(school=school), key=lambda t: (t.start_date or date.min, t.id))
@@ -42,15 +47,33 @@ class SchoolGrades:
         # (student, term) -> {subject: [(percent, assessment type), ...]}
         self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
-        for student_id, term_id, subject, section, score, max_score, type_id in Grade.objects.filter(
-            student_id__in=self.students
-        ).values_list("student_id", "term_id", "subject__name", "subject__education_system", "score", "max_score",
-                      "assessment_type_id"):
+        grades = Grade.objects.filter(student_id__in=self.students)
+        graded = None
+        if recent:
+            graded_ids = set(grades.values_list("term_id", flat=True).distinct())
+            graded = [t for t in self.terms if t.id in graded_ids]
+            focus = next((t for t in self.terms if str(t.id) == str(term_id)), None) if term_id else None
+            focus = focus or (graded[-1] if graded else None)
+            keep = set()
+            if focus is not None:
+                keep.add(focus.id)
+                if focus in graded and graded.index(focus) > 0:
+                    keep.add(graded[graded.index(focus) - 1].id)
+            grades = grades.filter(term_id__in=keep)
+        # Subject names looked up here and marks read as floats: much faster than a join and Decimals
+        # when a school has years of marks.
+        names = {}
+        for sid, name, section in Subject.objects.filter(school=school).values_list("id", "name",
+                                                                                  "education_system"):
+            # Each curriculum's subjects are separate, e.g. "Mathematics · British".
+            names[sid] = f"{name} · {SHORT_NAMES.get(section, section)}" if section else name
+        rows = grades.annotate(f_score=Cast("score", FloatField()), f_max=Cast("max_score", FloatField())) \
+            .values_list("student_id", "term_id", "subject_id", "f_score", "f_max", "assessment_type_id")
+        for student_id, term_id, subject_id, score, max_score, type_id in rows:
             if max_score:
-                # Each curriculum's subjects are separate, e.g. "Mathematics · British".
-                subject = f"{subject} · {SHORT_NAMES.get(section, section)}" if section else subject
-                self.marks[(student_id, term_id)][subject].append((float(score) / float(max_score) * 100, type_id))
-        self.graded_terms = [t for t in self.terms if any(k[1] == t.id for k in self.marks)]
+                self.marks[(student_id, term_id)][names[subject_id]].append((score / max_score * 100, type_id))
+        loaded = {k[1] for k in self.marks}
+        self.graded_terms = graded if graded is not None else [t for t in self.terms if t.id in loaded]
 
     def student_average(self, student_id, term_id):
         subjects = self.marks.get((student_id, term_id))
@@ -271,7 +294,7 @@ def year_group_analytics(data, year_group, term, visible_ids):
 
 
 def school_analytics(data, school, term):
-    years = list(YearGroup.objects.filter(school=school).order_by("name"))
+    years = list(YearGroup.objects.filter(school=school).order_by("order", "name"))
     everyone = data.everyone()
     return {
         "scope": "school", "name": school.name, "students_count": len(everyone),

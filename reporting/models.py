@@ -58,6 +58,14 @@ class StudentReport(models.Model):
         help_text="Per-system ratings for the report card: CBC competencies and values, IB approaches to learning.",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    # The student's class, curriculum and grading scale when the report was
+    # finalized, so the report card still shows them after the student moves up.
+    # Blank on reports finalized before this was recorded: those use the current ones.
+    school_class = models.ForeignKey("students.SchoolClass", on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="+")
+    class_name = models.CharField(max_length=200, blank=True)
+    education_system = models.CharField(max_length=20, blank=True)
+    grading_scale = models.CharField(max_length=20, blank=True)
     review_note = models.TextField(
         blank=True, help_text="An admin's note on what to change, set when a report is sent back."
     )
@@ -76,6 +84,18 @@ class StudentReport(models.Model):
     edited_at = models.DateTimeField(auto_now=True)
 
     objects = StudentReportQuerySet.as_manager()
+
+    CLASS_FIELDS = ["school_class", "class_name", "education_system", "grading_scale"]
+
+    def record_class(self):
+        """Note the student's class and grading as they are now (call when finalizing)."""
+        from students.presets import student_section
+
+        klass = self.student.school_class
+        self.school_class = klass
+        self.class_name = f"{klass.year_group.name} · {klass.name}" if klass else ""
+        system, scale = student_section(self.student)
+        self.education_system, self.grading_scale = system or "", scale or ""
 
     def missing_content(self):
         """Why this report can't be shared yet, or None if it can."""
