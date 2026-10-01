@@ -109,7 +109,7 @@ def support_summary(user):
 
     school = user.profile.school
     visible = visible_students(user).filter(is_active=True)
-    data = SchoolGrades(school)
+    data = SchoolGrades(school, recent=True)
     ids = [sid for sid in visible.values_list("id", flat=True) if sid in data.students]
     open_concerns = SupportConcern.objects.filter(student__in=visible, status=SupportConcern.Status.OPEN)
     due = open_concerns.filter(review_date__lte=school_localdate(school)).select_related("student")

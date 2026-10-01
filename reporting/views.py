@@ -132,7 +132,9 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         report.finalized_by = request.user
         report.finalized_at = timezone.now()
         report.review_note = ""
-        report.save(update_fields=["status", "finalized_by", "finalized_at", "review_note", "edited_at"])
+        report.record_class()
+        report.save(update_fields=["status", "finalized_by", "finalized_at", "review_note", "edited_at",
+                                   *StudentReport.CLASS_FIELDS])
         self._log(report, "report.finalized", "Finalized and released to parents")
         notify_reports_finalized([report], request.user)
         return Response(self.get_serializer(report).data)
@@ -318,6 +320,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             status="finalized", finalized_by=request.user, finalized_at=timezone.now(), review_note="",
             edited_at=timezone.now(),
         )
+        _record_classes(ids)
         notify_reports_finalized(
             StudentReport.objects.filter(id__in=ids).select_related("student__school", "term"), request.user)
         if count:
@@ -327,3 +330,12 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 summary=f"Finalized {count} {school_class.name} reports for {term.name} and released them to parents",
             )
         return Response({"count": count, "blank": blank})
+
+
+def _record_classes(report_ids):
+    """Note each newly finalized report's class and grading (see StudentReport.record_class)."""
+    reports = list(StudentReport.objects.filter(id__in=report_ids)
+                   .select_related("student__school", "student__school_class__year_group__school"))
+    for report in reports:
+        report.record_class()
+    StudentReport.objects.bulk_update(reports, StudentReport.CLASS_FIELDS)

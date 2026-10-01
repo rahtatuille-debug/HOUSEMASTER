@@ -47,7 +47,7 @@ class SchoolViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.Mo
 
 
 class YearGroupViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = YearGroup.objects.all()
+    queryset = YearGroup.objects.order_by("order", "name")
     serializer_class = YearGroupSerializer
     school_lookup = "school"
     approval_kind = "year_group"
@@ -193,7 +193,8 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             term = Term.objects.get(pk=request.query_params.get("term"), school=student.school)
         except (Term.DoesNotExist, ValueError, TypeError):
             raise NotFound("Term not found.")
-        return Response(term_summary(student, term))
+        report = student.reports.filter(term=term, status="finalized").select_related("school_class").first()
+        return Response(term_summary(student, term, report))
 
     # Data protection requests (Kenya Data Protection Act). Admins only.
     @action(detail=True, methods=["get"], url_path="data-export", permission_classes=[HasSchoolProfile, IsSchoolAdmin])

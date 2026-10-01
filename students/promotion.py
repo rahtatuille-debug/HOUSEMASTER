@@ -53,6 +53,7 @@ def summarize(plan):
 
 @transaction.atomic
 def apply_promotion(school, actor, plan):
+    _record_report_classes([s.id for _, _, students in plan for s in students])
     for from_class, to_class, students in plan:
         ids = [s.id for s in students]
         if to_class is None and from_class.year_group.is_final:
@@ -72,3 +73,15 @@ def apply_promotion(school, actor, plan):
     left = sum(len(s) for _, t, s in plan if not t)
     log_activity(school=school, actor=actor, action="school.year_end",
                  summary=f"Moved students up a year: {moved} moved, {left} leaving")
+
+
+def _record_report_classes(student_ids):
+    """Before anyone moves, note the current class on finalized reports that don't have it yet, so those
+    report cards keep showing the class the student was in at the time."""
+    from reporting.models import StudentReport
+
+    reports = list(StudentReport.objects.filter(student_id__in=student_ids, status="finalized", class_name="")
+                   .select_related("student__school", "student__school_class__year_group__school"))
+    for report in reports:
+        report.record_class()
+    StudentReport.objects.bulk_update(reports, StudentReport.CLASS_FIELDS, batch_size=1000)

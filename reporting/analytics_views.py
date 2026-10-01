@@ -27,6 +27,11 @@ def performance(request):
     school = user.profile.school
     scope = request.query_params.get("scope")
     object_id = request.query_params.get("id")
+    # Refuse before loading every mark: that is the slow part for a school with years of history.
+    if scope not in ("student", "class", "year_group", "school"):
+        raise ValidationError("scope must be student, class, year_group or school.")
+    if scope == "school" and not is_admin(user):
+        raise PermissionDenied("Only admins can see the whole school.")
     data = analytics.SchoolGrades(school)
     term = data.term(request.query_params.get("term"))
     visible_ids = set(visible_students(user).values_list("id", flat=True))

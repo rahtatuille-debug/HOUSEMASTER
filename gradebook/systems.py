@@ -76,17 +76,29 @@ def _kcse_totals(percents):
     return (sum(points) if points else None), (round(mean, 3) if mean is not None else None), _mean(percents.values())
 
 
-def _positions(student, term, system):
-    """8-4-4 only: position in the stream and in the form, by mean points then average mark (reporting.rankings)."""
+def _positions(student, term, system, report=None):
+    """8-4-4 only: position in the stream and in the form, by mean points then average mark (reporting.rankings).
+
+    If the student has moved class since the report was finalized, they are ranked against the students
+    whose reports that term were in the same form, as recorded on the reports."""
+    from reporting.models import StudentReport
     from reporting.rankings import overall_score, positions
     from students.models import Student
 
     klass = student.school_class
-    if system != "844" or klass is None:
+    if report is not None and report.school_class_id and report.school_class_id != student.school_class_id:
+        klass = report.school_class
+        if system != "844" or klass is None:
+            return None
+        form = list(StudentReport.objects.filter(term=term, status="finalized",
+                                                 school_class__year_group_id=klass.year_group_id)
+                    .values_list("student_id", "school_class_id"))
+    elif system != "844" or klass is None:
         return None
-    form = list(Student.objects.filter(school=student.school, is_active=True,
-                                       school_class__year_group_id=klass.year_group_id)
-                .values_list("id", "school_class_id"))
+    else:
+        form = list(Student.objects.filter(school=student.school, is_active=True,
+                                           school_class__year_group_id=klass.year_group_id)
+                    .values_list("id", "school_class_id"))
     percents = _subject_percents([sid for sid, _ in form], term)
     scores = {sid: overall_score(system, percents.get(sid, {}).values()) for sid, _ in form}
     if scores.get(student.id) is None:
@@ -99,11 +111,17 @@ def _positions(student, term, system):
     return {"stream": place([sid for sid, cid in form if cid == klass.id]), "form": place([sid for sid, _ in form])}
 
 
-def term_summary(student, term):
-    """Everything a report card shows about the student's results this term, for their school's system."""
+def term_summary(student, term, report=None):
+    """Everything a report card shows about the student's results this term, for their school's system.
+
+    With a finalized `report` that recorded the student's curriculum and scale, those are used, so an old
+    report card still reads as it did after the student moves up."""
     from students.presets import student_section, words_for
 
-    system, scale = student_section(student)
+    if report is not None and report.grading_scale:
+        system, scale = report.education_system, report.grading_scale
+    else:
+        system, scale = student_section(student)
     percents = _subject_percents([student.id], term).get(student.id, {})
     entries = {r.subject_id: r for r in SubjectReport.objects.filter(student=student, term=term).select_related("subject")}
     subjects = sorted(set(percents) | {r.subject for r in entries.values()}, key=lambda s: s.name)
@@ -141,7 +159,8 @@ def term_summary(student, term):
     if system == "844" and percents:
         total, mean, _avg = _kcse_totals(percents)
         summary.update(total_points=total, mean_points=round(mean, 2), mean_grade=mean_grade(mean),
-                       total_marks=round(sum(percents.values())), positions=_positions(student, term, system))
+                       total_marks=round(sum(percents.values())),
+                       positions=_positions(student, term, system, report))
     elif system == "american":
         graded = [r for r in rows if r["gpa_points"] is not None]
         credits = sum(r["credits"] for r in graded)
