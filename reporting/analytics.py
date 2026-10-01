@@ -159,6 +159,9 @@ def _student_rows(data, student_ids, term, visible_ids):
                 subject_pos[sid][subject] = place
                 subject_of[sid][subject] = len(ranked)
 
+    from support.services import status_for
+
+    support = status_for(data, term, [sid for sid in student_ids if sid in visible_ids])
     rows = []
     for sid in student_ids:
         if sid not in visible_ids:
@@ -175,6 +178,8 @@ def _student_rows(data, student_ids, term, visible_ids):
             "improvement_position": improved.get(sid),
             "subjects": {subject: round(p, 1) for subject, p in raw[sid].items()},
             "subject_positions": subject_pos.get(sid, {}), "subject_of": subject_of.get(sid, {}),
+            # "open" (confirmed), "suggested" (warning signs, not yet looked at) or None.
+            "support": support.get(sid),
         }
         if system[sid] == "844":
             row.update(rankings.kcse_totals(raw[sid].values()))

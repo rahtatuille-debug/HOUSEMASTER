@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     'messaging',
     'activity',
     'approvals',
+    'support',
 ]
 
 MIDDLEWARE = [

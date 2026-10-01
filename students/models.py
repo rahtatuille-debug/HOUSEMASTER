@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from gradebook.levels import SCALE_LABELS
@@ -57,6 +58,19 @@ class School(models.Model):
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     # The admin hid the first-week checklist on the home page.
     checklist_hidden = models.BooleanField(default=False)
+    # When HouseMaster suggests a student may need support (support app).
+    support_pass_mark = models.PositiveSmallIntegerField(
+        default=40, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Suggest support when a student's term average is below this percentage.",
+    )
+    support_drop_points = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Suggest support when a student's average falls by at least this many points since last term.",
+    )
+    support_attendance_min = models.PositiveSmallIntegerField(
+        default=80, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Suggest support when a student attends less than this percentage of days in the term.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

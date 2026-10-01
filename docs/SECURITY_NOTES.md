@@ -104,3 +104,22 @@ child; the child must still be at the school.
 The note text is held only in the request's `data`, which the school's
 admins and the parent who sent it can see. Summaries and the activity log
 name the child but never the health details.
+
+## Students who need support
+
+HouseMaster suggests students who may need support from three warning
+signs, with limits each school sets (`School.support_pass_mark`,
+`support_drop_points`, `support_attendance_min`): a term average below the
+pass mark, a drop since the previous term, and attendance below the minimum.
+It never labels a student by itself: a teacher confirms a suggestion (or
+marks a student by hand) or dismisses it for that term.
+
+- **Who sees it:** staff who can see the student. Parents see only a
+  confirmed concern for their own child (reasons, the teacher's note and the
+  support plan); the review date and dismissed suggestions stay with staff.
+  Other parents never see it.
+- **Email:** parents get a short email with no details ("a note about
+  your child's progress"), only if they keep email notifications on.
+- **Records:** every confirmation, update, resolution and dismissal is in the
+  activity log, without the note or plan text. Concerns are included in the
+  family export and deleted by family removal.
