@@ -11,6 +11,7 @@ from accounts.scoping import is_admin, visible_students
 from activity.services import log_activity
 from gradebook.models import Term
 from students.models import SchoolClass
+from students.presets import section_for
 
 from . import exports
 
@@ -69,8 +70,10 @@ def export_class_list(request):
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_grades(request):
     school_class, term = _class(request), _term(request)
-    content = exports.grades_xlsx(_students(request, school_class), term,
-                                  scale=request.user.profile.school.grading_scale, words=_words(request))
+    # The class's own curriculum and grading (a school can run two).
+    system, scale = section_for(school_class.year_group, request.user.profile.school)
+    content = exports.grades_xlsx(_students(request, school_class), term, scale=scale, words=_words(request),
+                                  system=system)
     return _file(content, XLSX, f"grades-{slugify(school_class.name)}-{slugify(term.name)}.xlsx", request,
                  f"{term.name} grades for {school_class.name}")
 

@@ -78,28 +78,49 @@ def class_list_xlsx(students, words=DEFAULT_VOCAB):
     return _workbook_bytes(wb)
 
 
-def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB):
+def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB, system=None):
+    """
+    Each student's result per subject, their average and, given the class's
+    curriculum (`system`), 8-4-4 totals and a position in the class
+    (reporting.rankings: ties share a place; CBC isn't ranked).
+    """
+    from .rankings import UNRANKED, effective_system, kcse_totals, overall_score, positions
+
+    if system is not None:
+        system = effective_system(system, scale)
     grades = Grade.objects.filter(student__in=students, term=term).select_related("subject")
-    by_student = defaultdict(dict)
+    raw = defaultdict(dict)
     subjects = set()
     for (student_id, _term), per in subject_percents(grades, school_weights(term.school),
                                                      key=lambda g: g.subject.name).items():
         for subject, value in per.items():
-            by_student[student_id][subject] = round(value, 1)
+            raw[student_id][subject] = value
             subjects.add(subject)
     subjects = sorted(subjects)
+    ranked = system is not None and system not in UNRANKED
+    places = positions({s.id: overall_score(system, raw[s.id].values()) for s in students}) if ranked else {}
     rows = []
     for s in students:
-        marks = [by_student[s.id].get(subj) for subj in subjects]
+        marks = [round(raw[s.id][subj], 1) if subj in raw[s.id] else None for subj in subjects]
         present = [m for m in marks if m is not None]
         average = round(sum(present) / len(present), 1) if present else None
         row = [s.external_id, s.last_name, s.first_name, *marks, average]
         if level_for(0, scale):  # CBC schools also get the level for the average
             row.append(level_for(average, scale))
+        if system == "844":
+            totals = kcse_totals(raw[s.id].values())
+            row += [totals["total_marks"], totals["total_points"], totals["mean_grade"] or None]
+        if ranked:
+            row.append(places.get(s.id))
         rows.append(row)
     headers = [words["student_id"], "Last name", "First name", *subjects, "Average"]
     if level_for(0, scale):
         headers.append("Level")
+    if system == "844":
+        headers += ["Total marks", "Total points", "Mean grade"]
+    if ranked:
+        headers.append("Position")
+        rows.sort(key=lambda r: (r[-1] is None, r[-1] or 0, r[1] or "", r[2] or ""))
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     _sheet(wb, "Grades (%)", headers, rows)
