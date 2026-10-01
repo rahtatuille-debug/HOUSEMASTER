@@ -7,7 +7,8 @@ class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
         fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "vocab_overrides", "motto",
-                  "address", "phone", "email", "timezone", "created_at"]
+                  "address", "phone", "email", "timezone", "support_pass_mark", "support_drop_points",
+                  "support_attendance_min", "created_at"]
 
     def validate_timezone(self, value):
         from .localtime import valid_zones
@@ -65,12 +66,21 @@ class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSeriali
             "id", "school", "school_class", "external_id",
             "first_name", "last_name", "house", "enrolled_on", "is_active",
             "gender", "date_of_birth", "nationality", "mode_of_learning", "medical_notes",
-            "has_photo", "photo_updated_at", "pathway", "subject_choices", "section", "scale",
+            "has_photo", "photo_updated_at", "pathway", "subject_choices", "section", "scale", "needs_support",
         ]
         extra_kwargs = {"school": {"read_only": True}, "photo_updated_at": {"read_only": True},
                         "pathway": {"read_only": True}}
 
     has_photo = serializers.SerializerMethodField()
+    # Marked by a teacher as needing support (support app); staff only.
+    needs_support = serializers.SerializerMethodField()
+
+    def get_needs_support(self, obj):
+        flagged = getattr(obj, "needs_support", None)  # annotated by StudentViewSet
+        if flagged is None:
+            flagged = obj.support_concerns.filter(status="open").exists()
+        return bool(flagged)
+
     # Electives chosen and IB levels; changed through the class subject choices grid.
     subject_choices = serializers.SerializerMethodField()
 

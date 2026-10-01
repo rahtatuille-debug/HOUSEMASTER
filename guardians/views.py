@@ -14,6 +14,8 @@ from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
+from support.services import parent_view as support_parent_view
+
 from . import health_notes
 from .invite_emails import send_invite_email
 from .models import Guardian, GuardianInvite
@@ -217,6 +219,8 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             "performance": [{"term": p["term"], "student": p["student"]} for p in full["performance"]],
             # This parent's latest suggestion for the health notes, if any.
             "health_notes_request": health_notes.as_data(health_notes.latest(request.user, student)),
+            # Only once a teacher has confirmed it: suggestions stay with staff.
+            "support": support_parent_view(student),
         })
 
     @action(detail=True, methods=["post", "delete"], url_path="health-notes-request")

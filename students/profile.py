@@ -157,6 +157,8 @@ def build_profile(student, user):
         "pending_parent_invites": pending_invites,
         "reports": reports,
         "activity": None,
+        # Staff only: the guardians' view picks its own fields and never this.
+        "support": _support(student),
     }
     if is_admin(user):
         profile["activity"] = [
@@ -166,3 +168,15 @@ def build_profile(student, user):
             )[:20]
         ]
     return profile
+
+
+def _support(student):
+    """The open support concern and the history of confirmed ones (support app)."""
+    from support.models import SupportConcern
+    from support.serializers import SupportConcernSerializer
+
+    concerns = list(student.support_concerns.exclude(status=SupportConcern.Status.DISMISSED)
+                    .select_related("student__school_class__year_group", "term"))
+    open_one = next((c for c in concerns if c.status == SupportConcern.Status.OPEN), None)
+    return {"open": SupportConcernSerializer(open_one).data if open_one else None,
+            "history": SupportConcernSerializer(concerns, many=True).data}

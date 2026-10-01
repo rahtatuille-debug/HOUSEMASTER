@@ -98,6 +98,12 @@ def family_export(student):
         [_when(m.created_at), display_name(m.sender) if m.sender else "Removed", m.body]
         for m in _messages_about(student)
     ], widths={"Message": 80})
+    _sheet(wb, "Support", ["Marked", "Status", "Term", "Reasons", "Note", "Support plan", "Review date", "Closed"], [
+        [_when(c.created_at), c.get_status_display(), c.term.name if c.term else "",
+         "; ".join(r.get("label", "") for r in c.reasons), c.note, c.support_plan,
+         c.review_date.isoformat() if c.review_date else "", _when(c.closed_at) if c.closed_at else ""]
+        for c in student.support_concerns.select_related("term").order_by("created_at")
+    ], widths={"Note": 50, "Support plan": 60})
     return _workbook_bytes(wb)
 
 
@@ -157,6 +163,12 @@ def family_export_data(student):
                               "effort": e.effort, "target": e.target} for e in _subject_comments(student)],
         "parent_messages": [{"sent": _iso(m.created_at), "from": display_name(m.sender) if m.sender else "Removed",
                              "message": m.body} for m in _parent_messages(guardians)],
+        "support": [{
+            "status": c.get_status_display(), "term": c.term.name if c.term else "", "reasons": [
+                r.get("label", "") for r in c.reasons], "note": c.note, "support_plan": c.support_plan,
+            "review_date": _iso(c.review_date), "marked_by": c.created_by_name, "marked": _iso(c.created_at),
+            "closed": _iso(c.closed_at), "closing_note": c.closing_note,
+        } for c in student.support_concerns.select_related("term").order_by("created_at")],
         "conversations_about_the_student": [{
             "sent": _iso(m.created_at), "from": display_name(m.sender) if m.sender else "Removed", "message": m.body,
         } for m in _messages_about(student)],
@@ -239,6 +251,7 @@ def remove_personal_data(student, actor):
     Conversation.objects.filter(student=student).update(student=None)
     # Sign-up requests typed by a parent name the child and their admission number.
     counts["signup_requests_deleted"] = ParentSignupRequest.objects.filter(student=student).delete()[0]
+    counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
 
     student.first_name, student.last_name = REMOVED_FIRST, REMOVED_LAST
     student.external_id = ""

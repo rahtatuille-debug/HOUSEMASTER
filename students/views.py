@@ -101,7 +101,12 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
 
     def get_queryset(self):
         # Teachers only see students in the classes they teach.
-        queryset = super().get_queryset()
+        from django.db.models import Exists, OuterRef
+
+        from support.models import SupportConcern
+
+        queryset = super().get_queryset().annotate(needs_support=Exists(SupportConcern.objects.filter(
+            student=OuterRef("pk"), status=SupportConcern.Status.OPEN)))
         if is_admin(self.request.user):
             return queryset
         return queryset.filter(school_class_id__in=assigned_class_ids(self.request.user))

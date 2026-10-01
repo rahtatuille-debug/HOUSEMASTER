@@ -17,6 +17,8 @@ from gradebook.models import Grade, Term
 from gradebook.weighting import school_weights, subject_percent
 from students.models import SchoolClass, Student, YearGroup
 
+from . import rankings
+
 BANDS = [(0, 40, "Below 40%"), (40, 50, "40–49%"), (50, 60, "50–59%"), (60, 70, "60–69%"),
          (70, 80, "70–79%"), (80, 101, "80% and above")]
 
@@ -57,6 +59,12 @@ class SchoolGrades:
     def student_subject(self, student_id, term_id, subject):
         result = subject_percent(self.marks.get((student_id, term_id), {}).get(subject, []), self.weights)
         return round(result, 1) if result is not None else None
+
+    def subject_percents(self, student_id, term_id):
+        """{subject: unrounded percent} for ranking, so positions match the report card's."""
+        marks = self.marks.get((student_id, term_id), {})
+        out = {subject: subject_percent(m, self.weights) for subject, m in marks.items()}
+        return {subject: p for subject, p in out.items() if p is not None}
 
     def group_average(self, student_ids, term_id):
         return _mean([self.student_average(s, term_id) for s in student_ids])
@@ -115,25 +123,69 @@ def _subject_rows(primary, compare, primary_key, compare_key):
 
 
 def _student_rows(data, student_ids, term, visible_ids):
-    """Per-student averages this term and change since the previous graded term (visible students only)."""
+    """
+    Each visible student's average this term, change since the previous graded
+    term, and positions (reporting.rankings): overall, most improved and in
+    each subject. Positions count every student in the group, also those the
+    viewer can't see by name, and only within the same curriculum. CBC
+    students get no positions.
+    """
     if term is None:
         return []
     index = data.graded_terms.index(term) if term in data.graded_terms else -1
     previous = data.graded_terms[index - 1] if index > 0 else None
+    system = {sid: rankings.effective_system(*data.section_of(sid)) for sid in student_ids}
+    raw = {sid: data.subject_percents(sid, term.id) for sid in student_ids}
+    average = {sid: data.student_average(sid, term.id) for sid in student_ids}
+    before = {sid: data.student_average(sid, previous.id) if previous else None for sid in student_ids}
+    change = {sid: round(average[sid] - before[sid], 1) if average[sid] is not None and before[sid] is not None
+              else None for sid in student_ids}
+
+    by_section = defaultdict(list)
+    for sid in student_ids:
+        by_section[system[sid]].append(sid)
+    overall, overall_of, improved = {}, {}, {}
+    subject_pos, subject_of = defaultdict(dict), defaultdict(dict)
+    for section, ids in by_section.items():
+        ranked = rankings.positions({sid: rankings.overall_score(section, raw[sid].values()) for sid in ids})
+        overall.update(ranked)
+        overall_of.update({sid: len(ranked) for sid in ranked})
+        if section not in rankings.UNRANKED:
+            improved.update(rankings.positions({sid: (change[sid],) if change[sid] is not None else None
+                                                for sid in ids}))
+        for subject in set().union(*(raw[sid].keys() for sid in ids)):
+            ranked = rankings.positions({sid: rankings.subject_score(section, raw[sid].get(subject)) for sid in ids})
+            for sid, place in ranked.items():
+                subject_pos[sid][subject] = place
+                subject_of[sid][subject] = len(ranked)
+
+    from support.services import status_for
+
+    support = status_for(data, term, [sid for sid in student_ids if sid in visible_ids])
     rows = []
     for sid in student_ids:
         if sid not in visible_ids:
             continue
         s = data.students[sid]
-        now = data.student_average(sid, term.id)
-        before = data.student_average(sid, previous.id) if previous else None
-        rows.append({
+        klass = s.school_class
+        row = {
             "id": sid, "name": f"{s.first_name} {s.last_name}", "external_id": s.external_id,
-            "class_name": s.school_class.name if s.school_class else None,
-            "average": now, "previous": before,
-            "change": round(now - before, 1) if now is not None and before is not None else None,
-        })
-    rows.sort(key=lambda r: (r["average"] is None, -(r["average"] or 0), r["name"]))
+            "class_name": klass.name if klass else None,
+            "year_group_name": klass.year_group.name if klass else None,
+            "section": SHORT_NAMES.get(system[sid], system[sid]),
+            "average": average[sid], "previous": before[sid], "change": change[sid],
+            "position": overall.get(sid), "of": overall_of.get(sid),
+            "improvement_position": improved.get(sid),
+            "subjects": {subject: round(p, 1) for subject, p in raw[sid].items()},
+            "subject_positions": subject_pos.get(sid, {}), "subject_of": subject_of.get(sid, {}),
+            # "open" (confirmed), "suggested" (warning signs, not yet looked at) or None.
+            "support": support.get(sid),
+        }
+        if system[sid] == "844":
+            row.update(rankings.kcse_totals(raw[sid].values()))
+        rows.append(row)
+    rows.sort(key=lambda r: (r["position"] is None, r["position"] or 0, r["average"] is None,
+                             -(r["average"] or 0), r["name"]))
     return rows
 
 
@@ -237,6 +289,8 @@ def school_analytics(data, school, term):
         ],
         "subjects": _subject_rows(data.group_subjects(everyone, term.id) if term else {}, {}, "school", "unused"),
         "distribution": data.distribution(everyone, term.id) if term else [],
+        # Admins only (the view checks): every student, ranked within their curriculum.
+        "students": _student_rows(data, everyone, term, set(everyone)),
         "grading": _grading(school.education_system, school.grading_scale),
         # A school running two curricula gets a level spread for each, on its own scale.
         "distributions": _section_distributions(data, school, everyone, term),

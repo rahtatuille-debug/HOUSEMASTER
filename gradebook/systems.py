@@ -77,7 +77,8 @@ def _kcse_totals(percents):
 
 
 def _positions(student, term, system):
-    """8-4-4 only: position in the stream and in the form, by mean points (then average mark)."""
+    """8-4-4 only: position in the stream and in the form, by mean points then average mark (reporting.rankings)."""
+    from reporting.rankings import overall_score, positions
     from students.models import Student
 
     klass = student.school_class
@@ -87,17 +88,13 @@ def _positions(student, term, system):
                                        school_class__year_group_id=klass.year_group_id)
                 .values_list("id", "school_class_id"))
     percents = _subject_percents([sid for sid, _ in form], term)
-    scores = {}
-    for sid, _class_id in form:
-        if percents.get(sid):
-            _total, mean, avg = _kcse_totals(percents[sid])
-            scores[sid] = (mean, avg)
-    if student.id not in scores:
+    scores = {sid: overall_score(system, percents.get(sid, {}).values()) for sid, _ in form}
+    if scores.get(student.id) is None:
         return None
 
     def place(ids):
-        ranked = sorted((scores[i] for i in ids if i in scores), reverse=True)
-        return {"position": ranked.index(scores[student.id]) + 1, "of": len(ranked)}
+        ranked = positions({i: scores[i] for i in ids})
+        return {"position": ranked[student.id], "of": len(ranked)}
 
     return {"stream": place([sid for sid, cid in form if cid == klass.id]), "form": place([sid for sid, _ in form])}
 

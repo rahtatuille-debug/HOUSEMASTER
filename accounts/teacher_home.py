@@ -95,7 +95,30 @@ def teacher_home(request):
             raise ValidationError({"hidden": "Send true or false."})
         profile.checklist_hidden = hidden
         profile.save(update_fields=["checklist_hidden"])
-    return Response({"classes": teacher_classes(profile), "checklist": teacher_checklist(profile)})
+    return Response({"classes": teacher_classes(profile), "checklist": teacher_checklist(profile),
+                     "support": support_summary(request.user)})
+
+
+def support_summary(user):
+    """Students the teacher can see: how many are suggested for support, and reviews that are due."""
+    from accounts.scoping import visible_students
+    from activity.services import student_name
+    from reporting.analytics import SchoolGrades
+    from support.models import SupportConcern
+    from support.services import suggestions
+
+    school = user.profile.school
+    visible = visible_students(user).filter(is_active=True)
+    data = SchoolGrades(school)
+    ids = [sid for sid in visible.values_list("id", flat=True) if sid in data.students]
+    open_concerns = SupportConcern.objects.filter(student__in=visible, status=SupportConcern.Status.OPEN)
+    due = open_concerns.filter(review_date__lte=school_localdate(school)).select_related("student")
+    return {
+        "suggested": len(suggestions(data, data.term(None), ids)),
+        "open": open_concerns.count(),
+        "due": [{"id": c.id, "student": c.student_id, "student_name": student_name(c.student),
+                 "review_date": c.review_date} for c in due.order_by("review_date")],
+    }
 
 
 @api_view(["POST"])
