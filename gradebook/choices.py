@@ -117,7 +117,11 @@ def class_subject_choices(request):
     chosen = {}
     for c in StudentSubject.objects.filter(student__in=students):
         chosen.setdefault(c.student_id, []).append({"subject": c.subject_id, "level": c.level})
+    from timetable.services import class_clashes
+
     return Response({
+        # Lessons in one slot that some students now both take (F): the timetable needs a change.
+        "timetable_clashes": class_clashes(school_class),
         "system": system,
         "subjects": [{"id": s.id, "name": s.name, "is_elective": s.is_elective} for s in subjects],
         "pathways": pathways,

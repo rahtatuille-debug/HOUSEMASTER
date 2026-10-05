@@ -8,8 +8,8 @@ from .tests import TimetableTests
 
 def load_tests(loader, tests, pattern):
     # Only the tests written here: the fixture comes from TimetableTests, whose own tests run there.
-    names = [n for c in (UnstaffedTests,) for n in vars(c) if n.startswith("test_")]
-    return loader.suiteClass([c(n) for c in (UnstaffedTests,) for n in sorted(vars(c))
+    names = [n for c in (UnstaffedTests, OptionClashTests) for n in vars(c) if n.startswith("test_")]
+    return loader.suiteClass([c(n) for c in (UnstaffedTests, OptionClashTests) for n in sorted(vars(c))
                               if n.startswith("test_")]) if names else tests
 
 
@@ -38,3 +38,22 @@ class UnstaffedTests(TimetableTests):
         self.make_admin(self.user_b)
         self.assertEqual(self.client_b.get("/api/timetable/unstaffed/").data, [])
         self.assertEqual(self.teacher.get("/api/timetable/unstaffed/").status_code, 200)  # staff can read
+
+
+class OptionClashTests(TimetableTests):
+    def test_changing_options_reports_the_clashes_it_creates(self):
+        # French and Music share a slot: fine while nobody takes both.
+        self.assertEqual(self.place(subject=self.french.id, teacher=self.other.id).status_code, 201)
+        self.assertEqual(self.place(subject=self.music.id, teacher=None).status_code, 201)
+        response = self.admin.post("/api/subject-choices/", {"school_class": self.c10a.id, "students": [
+            {"student": self.ann.id, "subjects": [{"subject": self.french.id, "level": ""},
+                                                  {"subject": self.music.id, "level": ""}]}]}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data["timetable_clashes"]), 1)
+        self.assertIn("take both", response.data["timetable_clashes"][0])
+
+    def test_no_clash_no_warning(self):
+        self.place(subject=self.french.id, teacher=self.other.id)
+        response = self.admin.post("/api/subject-choices/", {"school_class": self.c10a.id, "students": [
+            {"student": self.ben.id, "subjects": [{"subject": self.music.id, "level": ""}]}]}, format="json")
+        self.assertEqual(response.data["timetable_clashes"], [])

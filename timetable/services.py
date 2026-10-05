@@ -73,6 +73,26 @@ def unstaffed_row(lesson):
     return {**row, "day_name": DAY_NAMES[lesson.day], "period_name": lesson.period.name}
 
 
+def class_clashes(school_class):
+    """Clashes in a class's timetable as it stands now, e.g. after students change their options: two lessons in
+    one slot that some of the class's students both take. Sentences for the person who made the change."""
+    by_slot = {}
+    for lesson in Lesson.objects.filter(school_class=school_class).select_related("subject", "period", "school_class"):
+        by_slot.setdefault((lesson.day, lesson.period_id), []).append(lesson)
+    found = []
+    for lessons in by_slot.values():
+        for i, first in enumerate(lessons):
+            for second in lessons[i + 1:]:
+                shared = _class_overlap(school_class, first.subject, second.subject)
+                when = f"{DAY_NAMES[first.day]} {first.period.name}"
+                if shared is None:
+                    found.append(f"{school_class.name} has both {first.label} and {second.label} on {when}.")
+                elif shared:
+                    found.append(f"{shared} student{'s' if shared != 1 else ''} in {school_class.name} now take both "
+                                 f"{first.label} and {second.label}, which are both on {when}.")
+    return found
+
+
 def default_teacher(school_class, subject):
     """Who teaches this subject to this class (Staff page assignments), or the class teacher."""
     found = TeachingAssignment.objects.filter(school_class=school_class, subject=subject).first() if subject else None
