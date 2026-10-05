@@ -49,12 +49,40 @@ def apply(request, token):
     form = ApplyForm(data=request.data, settings=found)
     form.is_valid(raise_exception=True)
     if form.validated_data.get("website"):  # a bot filled the hidden field
-        return Response({"reference": "received"}, status=201)
+        return _check_your_email()
     application = form.save(school=school)
-    services.email_family(application, "received")
-    log_activity(school=school, actor=None, action="admissions.applied",
-                 summary=f"New application for {application.first_name} {application.last_name}")
-    return Response({"reference": application.reference}, status=201)
+    services.start_confirmation(application)
+    return _check_your_email()
+
+
+def _check_your_email():
+    # The same answer whatever happened, so the form never tells anyone what is on file.
+    return Response({"detail": "Thank you. Check your email and confirm your address to send the application."},
+                    status=202)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([InviteIPThrottle])
+def confirm(request, token):
+    """The link in the confirmation email. Single use; expires."""
+    from django.db import transaction
+    from django.utils import timezone
+
+    with transaction.atomic():
+        application = Application.objects.select_for_update().filter(
+            confirm_token=services.hash_token(token), confirmed_at__isnull=True,
+            confirm_expires_at__gt=timezone.now()).select_related("school").first() if token else None
+        if application is None:
+            raise ValidationError("This link has expired or has already been used. If you haven't heard from the "
+                                  "school, please apply again.")
+        application.confirmed_at = timezone.now()
+        application.confirm_token = ""
+        application.save(update_fields=["confirmed_at", "confirm_token", "updated_at"])
+        services.email_family(application, "received")
+        log_activity(school=application.school, actor=None, action="admissions.applied",
+                     summary=f"New application for {application.first_name} {application.last_name}")
+    return Response({"reference": application.reference, "school": application.school.name})
 
 
 class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
@@ -70,6 +98,11 @@ class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixin
         queryset = Application.objects.filter(school=self.request.user.profile.school) \
             .select_related("year_group", "student__school_class")
         params = self.request.query_params
+        # Unconfirmed applications are listed only on request (and can be deleted); nothing else touches them.
+        if self.action == "list" and params.get("unconfirmed"):
+            queryset = queryset.filter(confirmed_at__isnull=True)
+        elif self.action != "destroy":
+            queryset = queryset.filter(confirmed_at__isnull=False)
         if status := params.get("status"):
             queryset = queryset.filter(status__in=status.split(","))
         if year := params.get("year_group"):
@@ -110,9 +143,10 @@ class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixin
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
-        counts = dict(Application.objects.filter(school=request.user.profile.school)
-                      .values_list("status").annotate(n=Count("id")))
-        return Response({"counts": counts, "new": counts.get("new", 0)})
+        mine = Application.objects.filter(school=request.user.profile.school)
+        counts = dict(mine.filter(confirmed_at__isnull=False).values_list("status").annotate(n=Count("id")))
+        return Response({"counts": counts, "new": counts.get("new", 0),
+                         "unconfirmed": mine.filter(confirmed_at__isnull=True).count()})
 
 
 @api_view(["GET", "PATCH", "POST"])

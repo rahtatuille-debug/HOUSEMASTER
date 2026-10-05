@@ -18,6 +18,43 @@ LINES = {
 }
 
 
+def hash_token(token):
+    import hashlib
+
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def confirm_hours():
+    from django.conf import settings
+
+    return settings.ADMISSIONS_CONFIRM_HOURS
+
+
+def start_confirmation(application):
+    """Email the family one link to confirm the address. The email says who it's from and nothing about the
+    child: anyone can type any address into a public form."""
+    import secrets
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.utils import timezone
+
+    from guardians.notifications import send_after_commit
+
+    token = secrets.token_urlsafe(32)
+    application.confirm_token = hash_token(token)
+    application.confirm_expires_at = timezone.now() + timedelta(hours=confirm_hours())
+    application.save(update_fields=["confirm_token", "confirm_expires_at"])
+    school = application.school
+    body = (f"Hello,\n\nSomeone used this email address to apply for a place at {school.name}. "
+            f"If it was you, confirm your email to send the application to the school:\n\n"
+            f"{settings.FRONTEND_URL}/apply/confirm/{token}\n\n"
+            f"The link works once and expires in {confirm_hours()} hours. If it wasn't you, ignore this email: "
+            f"the application is deleted unless it's confirmed.\n\n"
+            f"Sent by HouseMaster for {school.name}.")
+    send_after_commit([(f"{school.name}: please confirm your email", body, application.parent_email)])
+
+
 def settings_for(school):
     found, _ = AdmissionsSettings.objects.get_or_create(school=school)
     return found

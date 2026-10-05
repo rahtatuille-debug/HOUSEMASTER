@@ -63,6 +63,11 @@ class Application(models.Model):
     student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # A new application waits until the family confirms their email address (one email, single-use link that
+    # expires). Staff see it only once confirmed. Only a hash of the link's token is kept.
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirm_token = models.CharField(max_length=64, blank=True, db_index=True)
+    confirm_expires_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]

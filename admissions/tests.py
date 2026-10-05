@@ -3,6 +3,7 @@ Admissions: a family applies through the school's public link (no
 account); admins move the application through the stages, the family is
 emailed at each decision, and enrolling makes a student and invites the parent.
 """
+import re
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -20,7 +21,7 @@ from .models import AdmissionsSettings, Application
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", NOTIFICATIONS_IN_BACKGROUND=False)
-class AdmissionsTests(SchoolScopedAPITestCase):
+class AdmissionsFixture(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
         self.admin = self.authed_client(self.admin_a)
@@ -37,12 +38,22 @@ class AdmissionsTests(SchoolScopedAPITestCase):
                 "parent_name": "Priya Patel", "parent_email": "priya@example.test", "parent_phone": "+254 700 000 001",
                 "relationship": "mother", "consent": True, **extra}
 
-    def apply(self, **extra):
+    def apply(self, confirm=True, **extra):
+        """Send the form; by default also follow the link in the confirmation email (B-1) and return that."""
+        sent = len(mail.outbox)
         with self.captureOnCommitCallbacks(execute=True):
-            return self.public.post(self.url, self.form(**extra), format="json")
+            response = self.public.post(self.url, self.form(**extra), format="json")
+        if not confirm or response.status_code != 202 or len(mail.outbox) == sent:
+            return response
+        token = re.search(r"/apply/confirm/(\S+)", mail.outbox[-1].body).group(1)
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.public.post(f"/api/admissions/confirm/{token}/")
 
     def application(self):
         return Application.objects.get(first_name="Zara")
+
+
+class AdmissionsTests(AdmissionsFixture):
 
     # --- the public form
 
@@ -55,12 +66,13 @@ class AdmissionsTests(SchoolScopedAPITestCase):
 
     def test_a_family_applies_and_gets_a_reference(self):
         response = self.apply()
-        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data["reference"].startswith("A"))
         app = self.application()
         self.assertEqual((app.status, app.school, app.year_group), ("new", self.school_a, self.y7))
-        self.assertEqual([m.to for m in mail.outbox], [["priya@example.test"]])
-        self.assertIn(response.data["reference"], mail.outbox[0].body)
+        # the confirmation, then the receipt
+        self.assertEqual([m.to for m in mail.outbox], [["priya@example.test"], ["priya@example.test"]])
+        self.assertIn(response.data["reference"], mail.outbox[1].body)
 
     def test_closed_or_wrong_links_are_refused(self):
         self.assertEqual(self.public.get("/api/admissions/apply/nope/").status_code, 404)
@@ -78,7 +90,7 @@ class AdmissionsTests(SchoolScopedAPITestCase):
         self.assertFalse(Application.objects.exists())
 
     def test_bots_filling_the_hidden_field_are_quietly_ignored(self):
-        self.assertEqual(self.apply(website="http://spam").status_code, 201)
+        self.assertEqual(self.apply(website="http://spam").status_code, 202)  # looks the same as a real one
         self.assertFalse(Application.objects.exists())
 
     def test_too_many_applications_from_one_place(self):
@@ -89,7 +101,7 @@ class AdmissionsTests(SchoolScopedAPITestCase):
         cache.clear()
         with patch.dict(ApplyThrottle.THROTTLE_RATES, {"admissions_apply": "2/hour"}):
             codes = [self.apply(first_name=f"K{n}").status_code for n in range(3)]
-        self.assertEqual(codes, [201, 201, 429])
+        self.assertEqual(codes, [200, 200, 429])
 
     # --- staff
 
@@ -180,7 +192,7 @@ class AdmissionsTests(SchoolScopedAPITestCase):
 
     def test_boarding_schools_take_boarding_applications(self):
         School.objects.filter(pk=self.school_a.pk).update(has_boarding=True)
-        self.assertEqual(self.apply(mode_of_learning="boarding").status_code, 201)
+        self.assertEqual(self.apply(mode_of_learning="boarding").status_code, 200)
         self.assertTrue(self.public.get(self.url).data["school"]["has_boarding"])
 
 

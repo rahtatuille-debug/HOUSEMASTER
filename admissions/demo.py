@@ -45,9 +45,11 @@ def fill_demo(school, domain):
             interview_at=timezone.make_aware(datetime.combine(date.today() + timedelta(days=rng.randint(2, 9)),
                                                               time(10))) if status == "interview" else None,
             decided_by_name="Admissions office" if status not in ("new", "reviewing") else "",
+            confirmed_at=now,  # the family confirmed their email
         ))
     Application.objects.bulk_create(rows)
     # Spread the dates over the last few weeks.
     for n, app in enumerate(Application.objects.filter(school=school).order_by("id")):
-        Application.objects.filter(pk=app.pk).update(created_at=now - timedelta(days=(len(STAGES) - n) * 2))
+        when = now - timedelta(days=(len(STAGES) - n) * 2)
+        Application.objects.filter(pk=app.pk).update(created_at=when, confirmed_at=when)
     return len(rows)

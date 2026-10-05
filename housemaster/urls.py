@@ -125,6 +125,7 @@ urlpatterns = [
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
     path('api/admissions/apply/<str:token>/', admissions_views.apply, name='admissions_apply'),
+    path('api/admissions/confirm/<str:token>/', admissions_views.confirm, name='admissions_confirm'),
     path('api/admissions/settings/', admissions_views.admissions_settings, name='admissions_settings'),
     path('api/boarding/overview/', boarding_views.overview, name='boarding_overview'),
     path('api/boarding/boarders/', boarding_views.boarders, name='boarding_boarders'),
