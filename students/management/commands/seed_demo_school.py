@@ -48,7 +48,7 @@ from gradebook.models import AssessmentType, Grade, Subject, SubjectReport, Term
 from gradebook.systems import REPORT_EXTRAS
 from guardians.models import Guardian, GuardianInvite
 from messaging.models import Conversation, ConversationParticipant, Message
-from reporting.models import StudentReport
+from reporting.models import StudentReport, stamp_unrecorded_classes
 from students.models import School, SchoolClass, Student, YearGroup
 
 SCHOOL_NAME = "HouseMaster Demo Academy"
@@ -420,6 +420,7 @@ class Command(BaseCommand):
                 report_rows.append(StudentReport(student=s, term=current, progress_summary=summary,
                                                  report_comment=text, tone_used="warm", status="draft"))
         StudentReport.objects.bulk_create(report_rows)
+        stamp_unrecorded_classes(StudentReport.objects.filter(student__school=school))  # as finalizing would
         # Subject teachers' comments on last term's report cards.
         if previous:
             entries = []

@@ -66,6 +66,9 @@ class StudentReport(models.Model):
     class_name = models.CharField(max_length=200, blank=True)
     education_system = models.CharField(max_length=20, blank=True)
     grading_scale = models.CharField(max_length=20, blank=True)
+    # When the class above was recorded: once, at the first finalization. Finalizing again (after a send-back)
+    # never changes it; only an admin's logged correction does. Blank on reports from before this field.
+    class_recorded_at = models.DateTimeField(null=True, blank=True)
     review_note = models.TextField(
         blank=True, help_text="An admin's note on what to change, set when a report is sent back."
     )
@@ -85,16 +88,31 @@ class StudentReport(models.Model):
 
     objects = StudentReportQuerySet.as_manager()
 
-    CLASS_FIELDS = ["school_class", "class_name", "education_system", "grading_scale"]
+    CLASS_FIELDS = ["school_class", "class_name", "education_system", "grading_scale", "class_recorded_at"]
 
-    def record_class(self):
-        """Note the student's class and grading as they are now (call when finalizing)."""
-        from students.presets import student_section
+    @property
+    def class_recorded(self):
+        # Reports stamped before class_recorded_at existed have a class name.
+        return self.class_recorded_at is not None or bool(self.class_name)
 
-        klass = self.student.school_class
+    def stamp_class(self):
+        """Record the class at the first finalization only. Returns whether anything was recorded."""
+        if self.class_recorded:
+            return False
+        self.record_class()
+        return True
+
+    def record_class(self, klass=None):
+        """Note a class (by default the student's class now) and its grading. Use stamp_class when finalizing."""
+        from django.utils import timezone
+
+        from students.presets import section_for
+
+        klass = klass if klass is not None else self.student.school_class
+        self.class_recorded_at = timezone.now()
         self.school_class = klass
         self.class_name = f"{klass.year_group.name} · {klass.name}" if klass else ""
-        system, scale = student_section(self.student)
+        system, scale = section_for(klass.year_group if klass else None, self.student.school)
         self.education_system, self.grading_scale = system or "", scale or ""
 
     def missing_content(self):
@@ -111,3 +129,13 @@ class StudentReport(models.Model):
 
     def __str__(self):
         return f"Report: {self.student} - {self.term} ({self.status})"
+
+
+def stamp_unrecorded_classes(reports):
+    """Record the class on finalized reports that don't have it yet (for code that creates finalized reports
+    directly, like the demo schools). Never changes one already recorded."""
+    rows = [r for r in reports.filter(status="finalized", class_name="", class_recorded_at__isnull=True)
+            .select_related("student__school", "student__school_class__year_group") if r.stamp_class()]
+    StudentReport.objects.bulk_update(rows, StudentReport.CLASS_FIELDS, batch_size=1000)
+    return len(rows)
+

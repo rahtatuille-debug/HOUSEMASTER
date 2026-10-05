@@ -25,7 +25,7 @@ from gradebook.levels import level_for
 from gradebook.models import AssessmentType, Grade, StudentSubject, Subject, SubjectReport, Term
 from gradebook.systems import REPORT_EXTRAS
 from guardians.models import Guardian
-from reporting.models import StudentReport
+from reporting.models import StudentReport, stamp_unrecorded_classes
 
 from .models import School, SchoolClass, Student, YearGroup
 from .presets import school_vocab, suggested_terms
@@ -257,6 +257,7 @@ def build(spec, password_hash, today=None):
     if previous != current:
         SubjectReport.objects.bulk_create(entries)
         StudentReport.objects.bulk_create(reports)
+        stamp_unrecorded_classes(StudentReport.objects.filter(student__school=school))  # as finalizing would
 
     # --- attendance for this term so far
     records = []

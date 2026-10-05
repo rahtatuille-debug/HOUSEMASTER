@@ -80,8 +80,8 @@ def _record_report_classes(student_ids):
     report cards keep showing the class the student was in at the time."""
     from reporting.models import StudentReport
 
-    reports = list(StudentReport.objects.filter(student_id__in=student_ids, status="finalized", class_name="")
+    reports = list(StudentReport.objects.filter(student_id__in=student_ids, status="finalized", class_name="",
+                                                class_recorded_at__isnull=True)
                    .select_related("student__school", "student__school_class__year_group__school"))
-    for report in reports:
-        report.record_class()
+    reports = [report for report in reports if report.stamp_class()]
     StudentReport.objects.bulk_update(reports, StudentReport.CLASS_FIELDS, batch_size=1000)

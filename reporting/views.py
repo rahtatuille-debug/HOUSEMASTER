@@ -132,11 +132,32 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         report.finalized_by = request.user
         report.finalized_at = timezone.now()
         report.review_note = ""
-        report.record_class()
+        report.stamp_class()  # once: finalizing again after a send-back keeps the class of the time
         report.save(update_fields=["status", "finalized_by", "finalized_at", "review_note", "edited_at",
                                    *StudentReport.CLASS_FIELDS])
         self._log(report, "report.finalized", "Finalized and released to parents")
         notify_reports_finalized([report], request.user)
+        return Response(self.get_serializer(report).data)
+
+    @action(detail=True, methods=["post"], url_path="correct-class", permission_classes=[IsSchoolAdmin])
+    def correct_class(self, request, pk=None):
+        """Admins correct the class recorded on a finalized report: {school_class, reason}. Logged with the
+        class ids before and after (not the reason)."""
+        report = self.get_object()
+        if report.status != "finalized":
+            raise ValidationError("Only a finalized report has a recorded class. A draft uses the student's class.")
+        if not str(request.data.get("reason", "")).strip():
+            raise ValidationError({"reason": "Say why the class is being corrected."})
+        try:
+            klass = SchoolClass.objects.select_related("year_group__school").get(
+                pk=request.data.get("school_class"), year_group__school=report.student.school)
+        except (SchoolClass.DoesNotExist, ValueError, TypeError):
+            raise ValidationError({"school_class": "Choose one of your school's classes."})
+        before = report.school_class_id
+        report.record_class(klass)
+        report.save(update_fields=[*StudentReport.CLASS_FIELDS, "edited_at"])
+        self._log(report, "report.class_corrected", "Corrected the class recorded on", before=before, after=klass.id,
+                  fields=["school_class", "class_name", "education_system", "grading_scale"])
         return Response(self.get_serializer(report).data)
 
     @action(detail=True, methods=["post"], url_path="send-back", permission_classes=[IsSchoolAdmin])
@@ -336,6 +357,5 @@ def _record_classes(report_ids):
     """Note each newly finalized report's class and grading (see StudentReport.record_class)."""
     reports = list(StudentReport.objects.filter(id__in=report_ids)
                    .select_related("student__school", "student__school_class__year_group__school"))
-    for report in reports:
-        report.record_class()
+    reports = [report for report in reports if report.stamp_class()]
     StudentReport.objects.bulk_update(reports, StudentReport.CLASS_FIELDS)
