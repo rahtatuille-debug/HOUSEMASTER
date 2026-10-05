@@ -29,6 +29,7 @@ from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
 from boarding import views as boarding_views
 from boarding.views import DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
+from timetable.views import unstaffed as timetable_unstaffed
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from support.views import SupportConcernViewSet
 from support.views import suggestions as support_suggestions
@@ -101,6 +102,7 @@ urlpatterns = [
     path('api/setup/', setup_state, name='setup_state'),
     path('api/subject-reports/', class_subject_reports, name='class_subject_reports'),
     path('api/subject-choices/', class_subject_choices, name='class_subject_choices'),
+    path('api/timetable/unstaffed/', timetable_unstaffed, name='timetable_unstaffed'),
     path('api/setup/finish/', finish_setup, name='finish_setup'),
     path('api/setup/people/', setup_people, name='setup_people'),
     path('api/setup/complete/', complete_setup, name='complete_setup'),

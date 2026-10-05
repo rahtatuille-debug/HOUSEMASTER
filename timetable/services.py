@@ -59,6 +59,20 @@ def clashes(lesson):
     return problems
 
 
+def unstaffed(school):
+    """Lessons with no teacher, or whose teacher's account is deactivated, in timetable order."""
+    lessons = Lesson.objects.filter(school=school).filter(Q(teacher__isnull=True) | Q(teacher__user__is_active=False)) \
+        .select_related("school_class", "subject", "teacher__user", "room", "period")
+    return [unstaffed_row(lesson) for lesson in lessons]
+
+
+def unstaffed_row(lesson):
+    row = lesson_row(lesson)
+    if lesson.teacher is not None and not lesson.teacher.user.is_active:
+        row["teacher_name"] = f"{lesson.teacher.name} (inactive)"
+    return {**row, "day_name": DAY_NAMES[lesson.day], "period_name": lesson.period.name}
+
+
 def default_teacher(school_class, subject):
     """Who teaches this subject to this class (Staff page assignments), or the class teacher."""
     found = TeachingAssignment.objects.filter(school_class=school_class, subject=subject).first() if subject else None

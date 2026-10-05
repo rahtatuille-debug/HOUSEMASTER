@@ -203,7 +203,13 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                 school=profile.school, actor=request.user, action="staff.deactivated", target=profile,
                 summary=f"Deactivated {profile.name}'s account",
             )
-        return Response(self.get_serializer(profile).data)
+        # Their lessons stay on the timetable with their name (history), and now show as unstaffed (F).
+        from timetable.models import Lesson
+        from timetable.services import unstaffed_row
+
+        lessons = Lesson.objects.filter(teacher=profile).select_related("school_class", "subject", "teacher__user",
+                                                                        "room", "period")
+        return Response({**self.get_serializer(profile).data, "lessons": [unstaffed_row(x) for x in lessons]})
 
     @action(detail=True, methods=["post"], url_path="send-password-reset")
     def send_password_reset(self, request, pk=None):

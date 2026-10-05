@@ -147,3 +147,11 @@ def guardian_week(student):
     """A parent's view of their child's week."""
     return {"title": f"{student.first_name} {student.last_name}",
             **services.week(student.school, services.student_lessons(student))}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, AdminWritesStaffReads])
+def unstaffed(request):
+    """Lessons with no teacher, or a teacher whose account was deactivated, so an admin can cover them."""
+    return Response(services.unstaffed(request.user.profile.school))
+
