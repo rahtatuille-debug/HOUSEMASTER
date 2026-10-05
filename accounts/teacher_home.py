@@ -96,7 +96,7 @@ def teacher_home(request):
         profile.checklist_hidden = hidden
         profile.save(update_fields=["checklist_hidden"])
     return Response({"classes": teacher_classes(profile), "checklist": teacher_checklist(profile),
-                     "support": support_summary(request.user)})
+                     "support": support_summary(request.user), "today": _today(request.user)})
 
 
 def support_summary(user):
@@ -130,3 +130,10 @@ def tour_seen(request):
         profile.tour_seen_at = timezone.now()
         profile.save(update_fields=["tour_seen_at"])
     return Response({"tour_seen": True})
+
+
+def _today(user):
+    """The teacher's lessons today, from the timetable."""
+    from timetable.views import today_for
+
+    return today_for(user.profile)

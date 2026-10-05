@@ -147,6 +147,20 @@ class Command(BaseCommand):
                     self._delete(existing)
                 self._build(password)
         self._system_demos(password, options["reset"])
+        self._timetables()
+
+    def _timetables(self):
+        """A timetable for each demo school that doesn't have one yet (schools built before timetables)."""
+        from students import demo_systems
+        from timetable.models import Lesson
+        from timetable.services import fill_demo
+
+        for name in [SCHOOL_NAME, *(spec["name"] for spec in demo_systems.DEMOS)]:
+            school = School.objects.filter(name=name).first()
+            if school and not Lesson.objects.filter(school=school).exists():
+                with transaction.atomic():
+                    placed = fill_demo(school, rooms=SchoolClass.objects.filter(year_group__school=school).count() + 4)
+                self.stdout.write(f"{name}: timetable with {placed} lessons.")
 
     def _system_demos(self, password, reset):
         """The 8-4-4, British, IB and American demo schools, each created if it's missing."""
