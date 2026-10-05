@@ -40,6 +40,10 @@ only on our instructions, under a data processing agreement (it is our
 | Parents and guardians | name, email, phone numbers, relationship to the child, address, occupation, preferred way to contact you, which children you are linked to | so you can see your child's records and we can contact you |
 | Staff | name, email, role, classes and subjects taught | to run the school and give staff access to their classes |
 | Everyone who uses the app | messages, announcements you receive, urgent alerts and whether you have seen them, sign-in records, a log of changes made | to communicate, keep people safe, and keep a record of who changed what |
+| [Boarders] | [boarding house, dormitory and bed; roll-call marks; records of a boarder being missing and how it was resolved; leave requests, including who collects them; sick-bay visits, including what was wrong and the treatment] | [to look after boarders, know where they are, and keep them safe] |
+| [Pupils who need extra support] | [the reasons, the teacher's note, the support plan and when it will be reviewed. HouseMaster may suggest pupils from their marks and attendance, but a member of staff always decides, and nothing is shared with you until they do] | [to help pupils who are struggling, and tell parents what the school will do] |
+| [Pupils] | [positions in class and year group, worked out from marks when needed] | [to report progress, where the school reports positions] |
+| [Families who apply for a place] | [the child's details, the parent's contact details, anything the family tells us in the form, and our notes and decision] | [to consider the application. Closed applications are deleted after [N] days, VERIFY question 7] |
 
 ## Our legal basis
 
@@ -53,9 +57,10 @@ Before we link a parent to a child in HouseMaster we check that they are
 the child's parent or guardian (our procedure: SCHOOL_guardian_verification_procedure.md).
 [VERIFY: consent and verification rules for children's data.]
 
-**Sensitive information.** [Health notes, and possibly information about
-family relationships, may be "sensitive personal data" [VERIFY], which we
-handle with extra care: only staff who need it can see it.]
+**Sensitive information.** [Health notes, sick-bay visits, support plans,
+and possibly information about family relationships, may be "sensitive
+personal data" [VERIFY], which we handle with extra care: only staff who
+need it can see it.]
 
 ## Who can see what
 
@@ -107,7 +112,10 @@ anonymises them automatically.]
 You can ask to see the information we hold about you or your child, to
 correct it, to have it deleted (where we don't have to keep it), or to
 object to its use [VERIFY the full list]. Ask [school privacy contact].
-HouseMaster lets us give you a full copy of your family's data.
+HouseMaster lets us give you a copy of your family's data. [VERIFY: some
+records (boarding roll-call marks, sign-up requests, the change log) are not
+yet in that copy; we will add them on request until HouseMaster includes
+them.]
 
 ## Complaints
 

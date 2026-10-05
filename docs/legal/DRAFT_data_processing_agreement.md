@@ -76,9 +76,9 @@ significant incident.
 5.1 Where a pupil, parent or member of staff asks the School to see,
 correct, delete or move their data, or objects to its use, HouseMaster will
 help the School respond within the time the law allows. The application
-already lets the School's administrators export all the data held about a
-pupil and their parents (as a spreadsheet or JSON), correct records, and
-remove a pupil's personal data (docs/DESIGN_data_subject_tooling.md).
+lets the School's administrators export, for a pupil and their parents,
+the pupil's record, parents' details, grades, attendance, report cards, subject comments, the parents' messages and conversations about the pupil, support concerns, and boarding leave and sick-bay visits (as a spreadsheet or JSON). It does **not** yet include boarding roll-call marks or the current house and bed, parent sign-up requests and invitations, or activity-log entries naming the pupil; admissions applications are added by the admissions change (PR #14, B-4). [VERIFY: whether these must be included for a complete access request; see FIX_REPORT.md, additional observations.] They can also correct records and remove a pupil's personal data
+(docs/DESIGN_data_subject_tooling.md).
 
 5.2 If a request comes to HouseMaster directly, HouseMaster will pass it to
 the School without answering it itself.
@@ -172,7 +172,12 @@ grades and attendance; drafting, reviewing and releasing report cards
 (including AI-drafted comments that a teacher always reviews first);
 messages between staff and parents; announcements and urgent alerts
 (in-app and by email); invitations and sign-in; data-subject exports and
-removal; backups; security logging.
+removal; backups; security logging. Where the School turns them on or uses
+them: the timetable; boarding (houses and beds, roll calls, missing-boarder
+records, leave and the sick bay); suggestions of pupils who may need support
+and the support plans staff confirm; class and year-group positions; and
+admissions (a public application form and the pipeline to enrolment, added by
+PR #14).
 
 **People the data is about:** pupils (including former pupils), their
 parents and guardians, the School's staff, and people invited to the
@@ -189,12 +194,21 @@ School's account.
 | Communications | messages and conversations (who, when, content, read status); announcements; urgent alerts and who has seen them |
 | Accounts and security | login email; password (stored only as a salted hash); password-reset and invitation records; a session version number used to sign people out |
 | Audit trail | the activity log: who did what, when, with a short description (names of the people involved) |
+| Timetable | lessons (class, subject, teacher, room, day and period); mostly about staff and classes rather than individual pupils |
+| Boarding (if the School turns it on) | boarding house, dormitory and bed; roll-call marks (present, missing, on leave, in the sick bay) with notes; records of a boarder marked missing and how it was resolved (who, when, a note); corrections to finished roll calls (who, when, reason); leave requests (dates, reason, who collects the child, decision and notes); sick-bay visits (complaint, treatment, outcome, times) |
+| Support | suggestions that a pupil may need support (computed from marks and attendance, never shared until a person confirms), confirmed concerns (reasons, teacher's note, support plan, review date, who and when), and the pupil's average and attendance when a suggestion was dismissed |
+| Positions | class and year-group positions and "most improved", computed on demand from grades (not stored), shown to staff and on 8-4-4 report cards |
+| Admissions (PR #14) | applicant's name, date of birth, gender, nationality, current school, day or boarding, health or learning needs, notes from the family; the parent's name, email, phone and relationship; whether the email was confirmed; staff notes, interview date, decision and decision note; the admission number given on enrolment |
 
 **Data that may be sensitive personal data** [VERIFY which, under the
 Act's definition: QUESTIONS_FOR_COUNSEL.md question 4]: pupils' health
 notes, gender, nationality and photos, and possibly the parent-child links
-themselves. The School decides whether to record health notes and photos
-at all.
+themselves; **sick-bay visits** (complaints and treatment); **support
+concerns and plans**, which can reveal special educational needs; records of
+a boarder going missing; and the **health or learning needs** a family types
+into the admissions form (docs/DESIGN_health_notes_public_form.md). The
+School decides whether to record health notes and photos at all, and whether
+to turn boarding and admissions on.
 
 **Retention:** as the School sets it. Former pupils can be anonymised
 automatically after a period the School chooses (off until set;
@@ -253,8 +267,9 @@ References are to the repository.
   visible to the School's admins.
 - Teachers' changes to school structure and pupil deletions need an
   admin's approval.
-- Data-subject tools: full export per family, removal of a pupil's
-  personal data, and a retention command.
+- Data-subject tools: an export per family (contents and current gaps in
+  clause 5.1), removal of a pupil's personal data, and retention commands
+  (former pupils; closed admissions applications once PR #14 is merged).
 - Automated tests of all of the above run on every change, and changes
   reach production only through reviewed pull requests with passing tests
   (once branch protection is on, HUMAN_ACTIONS.md, H-7).
