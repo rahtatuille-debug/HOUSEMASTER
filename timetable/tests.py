@@ -110,6 +110,11 @@ class TimetableTests(SchoolScopedAPITestCase):
         response = self.admin.patch(f"/api/timetable/lessons/{lesson.id}/", {"day": 1}, format="json")
         self.assertIn("1 student in 10A take both", self.errors(response))
 
+    def test_the_same_subject_more_than_once_a_day(self):
+        self.assertEqual(self.place().status_code, 201)
+        self.assertEqual(self.place(period=self.p2.id).status_code, 201)  # a double lesson
+        self.assertEqual(Lesson.objects.filter(school_class=self.c10a, subject=self.maths, day=1).count(), 2)
+
     def test_no_lessons_in_breaks_or_on_days_off(self):
         self.assertIn("is a break", self.errors(self.place(period=self.brk.id)))
         self.assertEqual(self.place(day=7).status_code, 400)

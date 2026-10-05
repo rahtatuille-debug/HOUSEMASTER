@@ -179,12 +179,14 @@ def fill_demo(school, rooms=0):
         need = lessons_per_week(subject.name, school_class.year_group.name)
         placed_days = set()
         start = (i * 7) % len(slots)
-        for k in range(len(slots)):
+        # First pass spreads the subject over the week; the second fills any free slot, so a class can
+        # have the same subject more than once a day when that's what fits.
+        for k in range(2 * len(slots)):
             if need == 0:
                 break
             day, period = slots[(start + k) % len(slots)]
-            if day in placed_days and len(placed_days) < len(days):
-                continue  # spread a subject over the week
+            if k < len(slots) and day in placed_days:
+                continue
             if teacher and (teacher.id, day, period.id) in teacher_busy:
                 continue
             here = class_slot[(school_class.id, day, period.id)]
