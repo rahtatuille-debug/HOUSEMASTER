@@ -278,3 +278,120 @@ class FamilyDataTests(AdmissionsFixture):
         call_command("purge_applications", "--apply", stdout=StringIO())
         self.assertEqual(list(Application.objects.values_list("first_name", flat=True)), ["Omar"])
         self.assertNotIn("Zara", out.getvalue())
+
+
+class FormChecksTests(AdmissionsFixture):
+    """B-5: dates of birth, phones, the age banner and admission numbers."""
+
+    def test_a_date_of_birth_in_the_future_or_implausibly_long_ago_is_refused(self):
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+        response = self.apply(confirm=False, date_of_birth=tomorrow)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("date_of_birth", response.data)
+        self.assertEqual(self.apply(confirm=False, date_of_birth="1960-05-01").status_code, 400)
+        self.assertFalse(Application.objects.exists())
+
+    def test_phones_are_checked_leniently(self):
+        for good in ("0712 345 678", "+254 712 345 678", "(020) 123-4567", "+44 20 7946 0958", "0712345678"):
+            self.assertNotEqual(self.apply(confirm=False, parent_phone=good, first_name=f"K{len(good)}x{good[-2:]}")
+                                .status_code, 400, good)
+        for bad in ("12", "call me", "07123456789012345678", "+-+"):
+            response = self.apply(confirm=False, parent_phone=bad, first_name="Bad")
+            self.assertEqual(response.status_code, 400, bad)
+            self.assertIn("parent_phone", response.data)
+
+    def test_an_age_far_from_the_year_group_is_flagged_not_blocked(self):
+        from students.models import Student
+
+        for n in range(3):  # Year 7 is full of eleven-year-olds
+            Student.objects.create(school=self.school_a, first_name=f"S{n}", last_name="Y",
+                                   date_of_birth=timezone.localdate() - timedelta(days=int(11.5 * 365)),
+                                   school_class=self.c7a)
+        young = (timezone.localdate() - timedelta(days=5 * 365 + 100)).isoformat()
+        self.assertEqual(self.apply(date_of_birth=young).status_code, 200)  # not blocked
+        row = self.admin.get("/api/admissions/applications/").data[0]
+        self.assertIn("most students in Year 7 are 11", row["age_note"])
+        self.apply(first_name="Omar", parent_email="o@example.test",
+                   date_of_birth=(timezone.localdate() - timedelta(days=int(11.2 * 365))).isoformat())
+        omar = next(r for r in self.admin.get("/api/admissions/applications/").data if r["first_name"] == "Omar")
+        self.assertEqual(omar["age_note"], "")
+
+    def enrol(self, first_name="Zara", **extra):
+        self.apply(first_name=first_name, parent_email=f"{first_name.lower()}@example.test", **extra)
+        app = Application.objects.get(first_name=first_name)
+        Application.objects.filter(pk=app.pk).update(status="offered")
+        return self.admin.post(f"/api/admissions/applications/{app.id}/enrol/", {"school_class": self.c7a.id},
+                               format="json")
+
+    def test_enrolling_gives_the_next_admission_number_with_the_prefix(self):
+        from students.models import Student
+
+        Student.objects.create(school=self.school_a, first_name="Old", last_name="One", external_id="ADM-1")
+        self.admin.patch("/api/admissions/settings/", {"number_prefix": "ADM-"}, format="json")
+        first = Student.objects.get(pk=self.enrol().data["student"])
+        second = Student.objects.get(pk=self.enrol("Omar").data["student"])
+        self.assertEqual((first.external_id, second.external_id), ("ADM-2", "ADM-3"))  # ADM-1 was taken
+        self.assertEqual(Student.objects.get(first_name="Old").external_id, "ADM-1")  # never renumbered
+        self.assertIn("ADM-2", self.admin.get(f"/api/admissions/applications/{Application.objects.get(first_name='Zara').id}/")
+                      .data["student_number"])
+
+    def test_admission_numbers_are_unique_per_school(self):
+        from django.db import IntegrityError, transaction
+
+        from students.models import Student
+
+        Student.objects.create(school=self.school_a, first_name="A", last_name="A", external_id="7")
+        Student.objects.create(school=self.school_b, first_name="B", last_name="B", external_id="7")  # fine
+        Student.objects.create(school=self.school_a, first_name="C", last_name="C", external_id="")
+        Student.objects.create(school=self.school_a, first_name="D", last_name="D", external_id="")  # blanks fine
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Student.objects.create(school=self.school_a, first_name="E", last_name="E", external_id="7")
+        response = self.admin.post("/api/students/", {"first_name": "F", "last_name": "F", "external_id": "7"},
+                                   format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("external_id", response.data)
+
+
+@skipUnless(connection.vendor == "postgresql", "needs a database with concurrent writers (production's Postgres)")
+class AdmissionNumberRaceTests(TransactionTestCase):
+    """B-5: two enrolments at the same moment get different numbers."""
+
+    def test_two_at_once(self):
+        import threading
+
+        from rest_framework.test import APIClient
+
+        from accounts.models import Profile
+        from django.contrib.auth.models import User
+        from students.models import School, SchoolClass, Student, YearGroup
+
+        from .models import AdmissionsSettings
+
+        school = School.objects.create(name="Race School")
+        klass = SchoolClass.objects.create(year_group=YearGroup.objects.create(school=school, name="Y7"), name="7A")
+        AdmissionsSettings.objects.create(school=school, number_prefix="R")
+        admin = User.objects.create_user(username="race@example.test", email="race@example.test", password="x")
+        Profile.objects.create(user=admin, school=school, role="admin")
+        apps = [Application.objects.create(school=school, first_name=f"Kid{n}", last_name="Lee", status="offered",
+                                           parent_name="P", parent_email=f"p{n}@example.test",
+                                           confirmed_at=timezone.now()) for n in range(2)]
+        barrier, codes = threading.Barrier(2), []
+
+        def enrol(app):
+            try:
+                client = APIClient()
+                client.force_authenticate(admin)
+                barrier.wait()
+                codes.append(client.post(f"/api/admissions/applications/{app.id}/enrol/", {"school_class": klass.id},
+                                         format="json").status_code)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=enrol, args=(a,)) for a in apps]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(codes, [200, 200])
+        self.assertEqual(sorted(Student.objects.filter(school=school).values_list("external_id", flat=True)),
+                         ["R1", "R2"])

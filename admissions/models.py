@@ -25,6 +25,10 @@ class AdmissionsSettings(models.Model):
     # Keep closed applications (declined, withdrawn, enrolled) this many days after their last change, then
     # purge_applications deletes them. Empty: kept until someone deletes them (the default).
     retention_days = models.PositiveIntegerField(null=True, blank=True)
+    # Enrolling gives the new student the next free admission number: prefix + number (e.g. ADM/2026/ + 41).
+    # Existing students are never renumbered; a number already in use is skipped.
+    number_prefix = models.CharField(max_length=40, blank=True)
+    next_number = models.PositiveIntegerField(default=1)
 
 
 class Application(models.Model):

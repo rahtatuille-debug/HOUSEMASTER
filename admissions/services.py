@@ -92,6 +92,33 @@ def receive(form, settings):
             start_confirmation(duplicate)
 
 
+def years_old(born, on=None):
+    from django.utils import timezone
+
+    on = on or timezone.localdate()
+    return on.year - born.year - ((on.month, on.day) < (born.month, born.day))
+
+
+def typical_age(year_group):
+    """The median age of the year group's current students, or None with fewer than three to go on."""
+    born = sorted(Student.objects.filter(school_class__year_group=year_group, is_active=True,
+                                         date_of_birth__isnull=False).values_list("date_of_birth", flat=True))
+    if len(born) < 3:
+        return None
+    return years_old(born[len(born) // 2])
+
+
+def next_admission_number(settings):
+    """The next free admission number for the school. Call inside the transaction that creates the student,
+    after lock_school, so two enrolments at once never get the same one (the database constraint backs this)."""
+    settings.refresh_from_db(fields=["number_prefix", "next_number"])
+    n = max(settings.next_number, 1)
+    while Student.objects.filter(school=settings.school, external_id=f"{settings.number_prefix}{n}").exists():
+        n += 1
+    AdmissionsSettings.objects.filter(pk=settings.pk).update(next_number=n + 1)
+    return f"{settings.number_prefix}{n}"
+
+
 def existing_student(application):
     """A student at the school with the applicant's name and date of birth, if there is one."""
     if application.date_of_birth is None:
@@ -167,8 +194,11 @@ def enrol(application, school_class, admin):
                                          f"{'' if already.is_active else ' (reactivate them there)'}.",
                                "existing_student": already.id})
     with transaction.atomic():
+        found = settings_for(school)
+        lock_school(found)
         student = Student.objects.create(
-            school=school, school_class=school_class, first_name=application.first_name,
+            school=school, school_class=school_class, external_id=next_admission_number(found),
+            first_name=application.first_name,
             last_name=application.last_name, date_of_birth=application.date_of_birth,
             gender=application.gender if application.gender in ("female", "male", "other") else "",
             nationality=application.nationality, medical_notes=application.medical_notes,
@@ -181,7 +211,8 @@ def enrol(application, school_class, admin):
         email_family(application, "enrolled")
         log_activity(school=school, actor=admin, action="admissions.enrolled", target=student,
                      summary=f"Enrolled {student_name(student)} in {school_class.name} from admissions")
-    return student, f"{student_name(student)} is enrolled in {school_class.name}. {sentence}"
+    return student, (f"{student_name(student)} is enrolled in {school_class.name} with admission number "
+                     f"{student.external_id}. {sentence}")
 
 
 def applications_about(student):
