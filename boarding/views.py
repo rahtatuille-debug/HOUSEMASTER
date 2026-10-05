@@ -18,7 +18,7 @@ from .serializers import (BoardingHouseSerializer, DormSerializer, LeaveRequestS
 
 
 class BoardingStaff(BasePermission):
-    message = "Only boarding staff (a house's staff, or admins) can do this."
+    message = "Only boarding staff (a house's staff, or admins) can do this, at a school with boarding turned on."
 
     def has_permission(self, request, view):
         return services.is_boarding_staff(request.user)
@@ -51,8 +51,8 @@ class HouseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, BoardingStaff, AdminWrites]
 
     def get_permissions(self):
-        # Admins set up houses before anyone is boarding staff.
-        if is_admin(self.request.user):
+        # Admins set up houses before anyone is boarding staff (once the school has turned boarding on).
+        if is_admin(self.request.user) and self.request.user.profile.school.has_boarding:
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -357,7 +357,7 @@ class SickBayViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
 def guardian_boarding(student):
     """A parent's view: bed, leave and sick bay visits (no staff-only names beyond who decided)."""
     bed = getattr(student, "bed", None)
-    if bed is None:
+    if bed is None or not student.school.has_boarding:
         return {"boarder": False}
     away = services.where_now([student.id])
     return {
@@ -373,7 +373,7 @@ def guardian_boarding(student):
 
 def guardian_request_leave(request, student):
     """A parent asks for leave; it waits for boarding staff."""
-    if not hasattr(student, "bed"):
+    if not hasattr(student, "bed") or not student.school.has_boarding:
         raise ValidationError("Only boarders need leave.")
     serializer = LeaveRequestSerializer(data={**request.data, "student": student.id})
     serializer.is_valid(raise_exception=True)

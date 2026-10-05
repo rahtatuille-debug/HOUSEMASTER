@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from accounts.models import Profile
 from students.localtime import school_localdate
-from students.models import Student
+from students.models import School, Student
 
 from .models import Bed, BoardingHouse, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
@@ -19,6 +19,8 @@ def fill_demo(school, share=0.0, house_names=("Kilimanjaro House", "Elgon House"
     """Give a demo school boarding. With `share`, that fraction of students becomes boarders first.
     Returns the number of boarders placed in beds."""
     rng = random.Random(f"boarding-{school.id}")
+    School.objects.filter(pk=school.pk).update(has_boarding=True)
+    school.has_boarding = True
     tz_now = timezone.now()
     today = school_localdate(school)
     students = list(Student.objects.filter(school=school, is_active=True).order_by("id"))

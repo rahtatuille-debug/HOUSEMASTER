@@ -8,7 +8,7 @@ class SchoolSerializer(serializers.ModelSerializer):
         model = School
         fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "vocab_overrides", "motto",
                   "address", "phone", "email", "timezone", "support_pass_mark", "support_drop_points",
-                  "support_attendance_min", "created_at"]
+                  "support_attendance_min", "has_boarding", "created_at"]
 
     def validate_timezone(self, value):
         from .localtime import valid_zones

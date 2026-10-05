@@ -71,6 +71,8 @@ class ThrottledTokenRefreshView(TokenRefreshView):
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def me(request):
+    from boarding.services import is_boarding_staff
+
     profile = request.user.profile
     if request.method == "PATCH":
         serializer = ProfileNameSerializer(data=request.data)
@@ -83,7 +85,7 @@ def me(request):
             "name": profile.name,
             "role": profile.role,
             "tour_seen": profile.tour_seen_at is not None,
-            "is_boarding_staff": profile.is_admin or profile.boarding_houses.exists(),
+            "is_boarding_staff": is_boarding_staff(request.user),
             "school": school_summary(profile.school),
             "assignments": TeachingAssignmentSerializer(
                 profile.assignments.select_related("school_class", "subject"), many=True

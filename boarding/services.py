@@ -15,8 +15,10 @@ def houses_for(user):
 
 
 def is_boarding_staff(user):
+    """House staff and admins, at a school that has turned boarding on."""
     profile = getattr(user, "profile", None)
-    return profile is not None and (is_admin(user) or profile.boarding_houses.exists())
+    return (profile is not None and profile.school.has_boarding
+            and (is_admin(user) or profile.boarding_houses.exists()))
 
 
 def boarders(user, house=None):

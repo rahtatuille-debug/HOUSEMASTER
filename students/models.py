@@ -71,6 +71,8 @@ class School(models.Model):
         default=80, validators=[MinValueValidator(1), MaxValueValidator(100)],
         help_text="Suggest support when a student attends less than this percentage of days in the term.",
     )
+    # Boarding is an option: the Boarding pages appear only for schools that turn it on.
+    has_boarding = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -22,6 +22,10 @@ from .models import Bed, BoardingHouse, Dorm, LeaveRequest, RollCall, SickBayVis
 class BoardingTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        from students.models import School
+
+        School.objects.filter(pk=self.school_a.pk).update(has_boarding=True)
+        self.school_a.refresh_from_db()
         self.admin = self.authed_client(self.admin_a)
         self.matron_user = self.user_a  # a teacher who is house staff
         self.matron = self.authed_client(self.matron_user)
@@ -73,9 +77,35 @@ class BoardingTests(SchoolScopedAPITestCase):
         self.assertFalse(client.get("/api/me/").data["is_boarding_staff"])
         self.assertEqual(self.parent.get("/api/boarding/boarders/").status_code, 403)
 
+    def test_boarding_is_an_option_the_school_turns_on(self):
+        response = self.admin.patch(f"/api/schools/{self.school_a.id}/", {"has_boarding": False}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(self.admin.get("/api/me/").data["school"]["has_boarding"])
+        self.assertFalse(self.admin.get("/api/me/").data["is_boarding_staff"])
+        self.assertEqual(self.admin.get("/api/boarding/houses/").status_code, 403)
+        self.assertEqual(self.matron.get("/api/boarding/boarders/").status_code, 403)
+        self.assertIsNone(self.matron.get("/api/teacher-home/").data["boarding"])
+        self.assertEqual(self.parent.get(f"/api/guardian-students/{self.amina.id}/boarding/").data, {"boarder": False})
+        self.assertEqual(self.parent.post(f"/api/guardian-students/{self.amina.id}/leave-requests/", self.leave_body(),
+                                          format="json").status_code, 400)
+        self.admin.patch(f"/api/schools/{self.school_a.id}/", {"has_boarding": True}, format="json")
+        self.assertEqual(self.admin.get("/api/boarding/houses/").status_code, 200)
+        self.assertTrue(self.matron.get("/api/me/").data["is_boarding_staff"])
+
+    def test_only_admins_turn_it_on(self):
+        # A teacher's change to school settings waits for an admin's approval.
+        self.assertEqual(self.matron.patch(f"/api/schools/{self.school_a.id}/", {"has_boarding": False},
+                                           format="json").status_code, 202)
+        self.school_a.refresh_from_db()
+        self.assertTrue(self.school_a.has_boarding)
+
     def test_other_schools_cannot_reach_it(self):
         self.make_admin(self.user_b)
         other = self.client_b
+        self.assertEqual(other.get("/api/boarding/boarders/").status_code, 403)  # boarding is off there
+        from students.models import School
+
+        School.objects.filter(pk=self.school_b.pk).update(has_boarding=True)
         self.assertEqual(other.get("/api/boarding/boarders/").data, [])
         self.assertEqual(other.post(f"/api/boarding/beds/{self.beds[2].id}/", {"student": self.day_kid.id},
                                     format="json").status_code, 404)
@@ -222,6 +252,8 @@ class BoardingDemoTests(SchoolScopedAPITestCase):
                                    gender="female" if n % 2 else "male")
         placed = fill_demo(self.school_a, share=0.5)
         self.assertEqual(placed, 15)
+        self.school_a.refresh_from_db()
+        self.assertTrue(self.school_a.has_boarding)
         self.assertEqual(Bed.objects.filter(student__isnull=False).count(), 15)
         self.assertTrue(LeaveRequest.objects.filter(status="requested").exists())
         self.assertTrue(SickBayVisit.objects.filter(checked_out_at__isnull=True).exists())
