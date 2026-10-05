@@ -146,3 +146,42 @@ class SickBayVisit(models.Model):
 
     class Meta:
         ordering = ["-checked_in_at", "-id"]
+
+
+class Absence(models.Model):
+    """
+    A boarder who was marked missing at a finished roll call, and stays flagged until a person resolves it.
+    A later roll call never closes it: only an explicit resolution does (who, when, how).
+    """
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        RESOLVED = "resolved", "Resolved"
+
+    class Resolution(models.TextChoices):
+        FOUND = "found", "Found"
+        RETURNED = "returned", "Returned"
+        ON_LEAVE = "on_leave", "On authorised leave"
+        LEFT_SCHOOL = "left_school", "Left the school"
+        NO_LONGER_BOARDING = "no_longer_boarding", "No longer boarding"
+        RECORDED_IN_ERROR = "recorded_in_error", "Marked missing by mistake"
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="absences")
+    house = models.ForeignKey(BoardingHouse, on_delete=models.PROTECT, related_name="absences")
+    roll_call = models.ForeignKey(RollCall, on_delete=models.SET_NULL, null=True, blank=True, related_name="absences")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    note = models.CharField(max_length=300, blank=True)
+    resolution = models.CharField(max_length=20, choices=Resolution.choices, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+")
+    resolved_by_name = models.CharField(max_length=200, blank=True)
+    resolution_note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["opened_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["student"], condition=models.Q(status="open"),
+                                    name="one_open_absence_per_boarder"),
+        ]

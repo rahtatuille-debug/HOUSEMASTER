@@ -12,9 +12,9 @@ from students.localtime import school_localdate
 from students.models import Student
 
 from . import services
-from .models import Bed, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
-from .serializers import (BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer, RollCallSerializer,
-                          SickBayVisitSerializer, boarder_row)
+from .models import Absence, Bed, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .serializers import (AbsenceSerializer, BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer,
+                          RollCallSerializer, SickBayVisitSerializer, boarder_row)
 
 
 class BoardingStaff(BasePermission):
@@ -200,13 +200,46 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
         if request.data.get("complete"):
             if roll_call.entries.filter(status="").exists():
                 raise ValidationError("Mark every boarder before finishing the roll call.")
-            roll_call.completed_at = services.now()
-            roll_call.save(update_fields=["completed_at"])
+            with transaction.atomic():
+                roll_call.completed_at = services.now()
+                roll_call.save(update_fields=["completed_at"])
+                services.open_absences_from(roll_call, request.user)
             missing = roll_call.entries.filter(status=RollCallEntry.Status.MISSING).count()
             log_activity(school=roll_call.house.school, actor=request.user, action="boarding.roll_call",
                          summary=f"{roll_call.house.name} {roll_call.get_session_display().lower()} roll call: "
                                  f"{missing} missing")
         return Response(self.get_serializer(roll_call).data)
+
+
+class AbsenceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Boarders who were marked missing. ?status=open (default), resolved or all. POST <id>/resolve/
+    {resolution, note} closes one: only a person does that, never a later roll call."""
+
+    serializer_class = AbsenceSerializer
+    permission_classes = [IsAuthenticated, BoardingStaff]
+
+    def get_queryset(self):
+        queryset = Absence.objects.filter(house__in=services.houses_for(self.request.user)) \
+            .select_related("student", "house", "roll_call")
+        status = self.request.query_params.get("status", "open" if self.action == "list" else "all")
+        if status in ("open", "resolved"):
+            queryset = queryset.filter(status=status)
+        if student := self.request.query_params.get("student"):
+            queryset = queryset.filter(student_id=student)
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        absence = self.get_object()
+        if absence.status != Absence.Status.OPEN:
+            raise ValidationError("This absence is already resolved.")
+        resolution = request.data.get("resolution")
+        allowed = [Absence.Resolution.FOUND, Absence.Resolution.RETURNED, Absence.Resolution.ON_LEAVE,
+                   Absence.Resolution.LEFT_SCHOOL]
+        if resolution not in allowed:
+            raise ValidationError({"resolution": ["Choose found, returned, on authorised leave or left the school."]})
+        services.resolve_absence(absence, resolution, request.user, str(request.data.get("note", "")))
+        return Response(self.get_serializer(absence).data)
 
 
 class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,

@@ -3,7 +3,7 @@ from rest_framework import serializers
 from accounts.models import Profile
 from students.models import Student
 
-from .models import BoardingHouse, Dorm, LeaveRequest, RollCall, SickBayVisit
+from .models import Absence, BoardingHouse, Dorm, LeaveRequest, RollCall, SickBayVisit
 
 
 def _student_name(student):
@@ -128,3 +128,19 @@ def boarder_row(student, away):
 
 def bed_student_queryset(user):
     return Student.objects.filter(school=user.profile.school, is_active=True)
+
+
+class AbsenceSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    house_name = serializers.CharField(source="house.name", read_only=True)
+    resolution_label = serializers.CharField(source="get_resolution_display", read_only=True)
+    since = serializers.DateTimeField(source="opened_at", read_only=True)
+
+    class Meta:
+        model = Absence
+        fields = ["id", "student", "name", "house", "house_name", "roll_call", "status", "since", "note",
+                  "resolution", "resolution_label", "resolved_at", "resolved_by_name", "resolution_note"]
+        read_only_fields = fields
+
+    def get_name(self, obj):
+        return _student_name(obj.student)

@@ -258,3 +258,7 @@ class BoardingDemoTests(SchoolScopedAPITestCase):
         self.assertTrue(LeaveRequest.objects.filter(status="requested").exists())
         self.assertTrue(SickBayVisit.objects.filter(checked_out_at__isnull=True).exists())
         self.assertTrue(RollCall.objects.filter(entries__status="missing").exists())
+        from .models import Absence
+
+        # One missing boarder per house, flagged until someone resolves it.
+        self.assertEqual(Absence.objects.filter(status="open").count(), BoardingHouse.objects.count())

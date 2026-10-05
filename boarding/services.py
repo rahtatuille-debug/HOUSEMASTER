@@ -1,11 +1,13 @@
 """Who boarding staff are, where boarders are now, roll calls and parent emails."""
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from accounts.scoping import is_admin
-from activity.services import display_name
+from activity.services import display_name, log_activity, student_name
 from students.models import Student
 
-from .models import BoardingHouse, Bed, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .models import Absence, Bed, BoardingHouse, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
 
 def houses_for(user):
@@ -52,20 +54,67 @@ def start_roll_call(house, date, session, user):
     return roll_call
 
 
+def on_authorised_leave(student_id, at=None):
+    """Signed out on leave, or approved leave whose dates cover this moment (a boarder who is allowed to be away)."""
+    at = at or timezone.now()
+    return LeaveRequest.objects.filter(student_id=student_id).filter(
+        Q(status=LeaveRequest.Status.OUT) |
+        Q(status=LeaveRequest.Status.APPROVED, leaving_at__lte=at, returning_at__gte=at)).exists()
+
+
+def open_absence(student, house, roll_call, actor, note=""):
+    """Flag a boarder as missing until someone resolves it. Returns the absence, or None when there's nothing to
+    flag (they are on authorised leave) or one is already open."""
+    if on_authorised_leave(student.id):
+        return None
+    try:
+        with transaction.atomic():
+            absence = Absence.objects.create(student=student, house=house, roll_call=roll_call, note=note[:300])
+    except IntegrityError:  # already open: one open absence per boarder
+        return None
+    log_activity(school=house.school, actor=actor, action="boarding.absence_opened", target=student,
+                 summary=f"{student_name(student)} was marked missing from {house.name}", house=house.id,
+                 roll_call=roll_call.id if roll_call else None)
+    return absence
+
+
+def open_absences_from(roll_call, actor):
+    """When a roll call is finished: every boarder marked missing (and not on authorised leave) is flagged."""
+    opened = 0
+    for entry in roll_call.entries.filter(status=RollCallEntry.Status.MISSING).select_related("student__school"):
+        if open_absence(entry.student, roll_call.house, roll_call, actor, entry.note):
+            opened += 1
+    return opened
+
+
+def resolve_absence(absence, resolution, actor, note=""):
+    absence.status = Absence.Status.RESOLVED
+    absence.resolution = resolution
+    absence.resolved_at = timezone.now()
+    absence.resolved_by = actor if actor is not None and getattr(actor, "is_authenticated", False) else None
+    absence.resolved_by_name = display_name(actor) if absence.resolved_by else "System"
+    absence.resolution_note = note[:500]
+    absence.save()
+    log_activity(school=absence.house.school, actor=absence.resolved_by, action="boarding.absence_resolved",
+                 target=absence.student, summary=f"{student_name(absence.student)}'s absence from "
+                                                 f"{absence.house.name}: {absence.get_resolution_display().lower()}",
+                 house=absence.house_id, resolution=resolution)
+    return absence
+
+
 def missing_now(user):
-    """Boarders marked missing at the latest finished roll call of each of the user's houses."""
-    found = []
-    for house in houses_for(user):
-        latest = house.roll_calls.filter(completed_at__isnull=False).order_by("-date", "-completed_at").first()
-        if latest is None:
-            continue
-        for entry in latest.entries.filter(status=RollCallEntry.Status.MISSING).select_related("student"):
-            found.append({"student": entry.student_id,
-                          "name": f"{entry.student.first_name} {entry.student.last_name}",
-                          "house": house.name, "roll_call": latest.id,
-                          "when": f"{latest.get_session_display()} roll call, {latest.date:%a %d %b}",
-                          "note": entry.note})
-    return found
+    """Every open absence in the user's houses, oldest first. They stay until a person resolves them."""
+    absences = Absence.objects.filter(status=Absence.Status.OPEN, house__in=houses_for(user)) \
+        .select_related("student", "house", "roll_call").order_by("opened_at", "id")
+    return [absence_row(a) for a in absences]
+
+
+def absence_row(a):
+    when = (f"{a.roll_call.get_session_display()} roll call, {a.roll_call.date:%a %d %b}" if a.roll_call
+            else f"{a.opened_at:%a %d %b}")
+    return {"id": a.id, "student": a.student_id, "name": f"{a.student.first_name} {a.student.last_name}",
+            "house": a.house.name, "roll_call": a.roll_call_id, "when": when, "note": a.note,
+            "since": a.opened_at}
 
 
 def overview(user):

@@ -28,7 +28,7 @@ from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
 from boarding import views as boarding_views
-from boarding.views import DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
+from boarding.views import AbsenceViewSet, DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from support.views import SupportConcernViewSet
 from support.views import suggestions as support_suggestions
@@ -77,6 +77,7 @@ router.register(r"change-requests", ChangeRequestViewSet)
 router.register(r"boarding/houses", BoardingHouseViewSet, basename="boarding-house")
 router.register(r"boarding/dorms", BoardingDormViewSet, basename="boarding-dorm")
 router.register(r"boarding/roll-calls", RollCallViewSet, basename="boarding-roll-call")
+router.register(r"boarding/absences", AbsenceViewSet, basename="boarding-absence")
 router.register(r"boarding/leave", LeaveViewSet, basename="boarding-leave")
 router.register(r"boarding/sick-bay", SickBayViewSet, basename="boarding-sick-bay")
 router.register(r"timetable/periods", PeriodViewSet, basename="timetable-period")
