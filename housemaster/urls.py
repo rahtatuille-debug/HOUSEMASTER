@@ -29,8 +29,8 @@ from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
 from boarding import views as boarding_views
 from boarding.views import DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
-from timetable.views import unstaffed as timetable_unstaffed
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
+from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
