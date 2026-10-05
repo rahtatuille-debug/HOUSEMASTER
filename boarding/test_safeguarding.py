@@ -17,7 +17,7 @@ from accounts.tests import SchoolScopedAPITestCase
 from activity.models import ActivityLog
 from students.models import School, SchoolClass, Student, YearGroup
 
-from .models import Bed, BoardingHouse, Dorm, LeaveRequest
+from .models import Bed, BoardingHouse, Dorm, LeaveRequest, RollCall
 from .models import Absence
 
 
@@ -266,3 +266,51 @@ class FinishedRollCallTests(Fixture):
         body = {"entries": [{"student": self.amina.id, "status": "missing"}], "reason": "x"}
         self.assertEqual(self.client_b.post(f"/api/boarding/roll-calls/{roll_id}/amend/", body, format="json")
                          .status_code, 404)
+
+
+class HouseHistoryTests(Fixture):
+    """A-3."""
+
+    def test_a_house_with_roll_call_history_cannot_be_deleted(self):
+        self.roll_call("evening", {})
+        response = self.admin.delete(f"/api/boarding/houses/{self.house.id}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Archive", str(response.data))
+        self.assertTrue(BoardingHouse.objects.filter(pk=self.house.id).exists())
+        self.assertEqual(RollCall.objects.count(), 1)
+
+    def test_the_database_refuses_it_too(self):
+        from django.db.models import ProtectedError
+
+        self.roll_call("evening", {})
+        with self.assertRaises(ProtectedError):
+            self.house.delete()
+
+    def test_a_house_without_history_can_still_be_removed(self):
+        self.assertEqual(self.admin.delete(f"/api/boarding/houses/{self.other_house.id}/").status_code, 204)
+
+    def test_archiving_hides_the_house_but_keeps_its_history(self):
+        roll_id, _ = self.roll_call("evening", {})
+        for bed in self.beds:  # nobody sleeps there any more
+            bed.student = None
+            bed.save()
+        response = self.admin.post(f"/api/boarding/houses/{self.house.id}/archive/")
+        self.assertEqual(response.status_code, 200, response.data)
+        listed = [h["name"] for h in self.admin.get("/api/boarding/houses/").data]
+        self.assertNotIn("Uhuru House", listed)
+        shown = [h["name"] for h in self.admin.get("/api/boarding/houses/", {"archived": 1}).data]
+        self.assertIn("Uhuru House", shown)
+        self.assertEqual(self.admin.get(f"/api/boarding/roll-calls/{roll_id}/").status_code, 200)  # still readable
+        self.assertEqual(self.matron.get("/api/boarding/roll-calls/", {"house": self.house.id}).status_code, 200)
+        new = self.admin.post("/api/boarding/roll-calls/", {"house": self.house.id, "session": "night"}, format="json")
+        self.assertEqual(new.status_code, 400)
+        self.assertTrue(self.admin.post(f"/api/boarding/houses/{self.house.id}/unarchive/").data["id"])
+
+    def test_a_house_with_boarders_cannot_be_archived(self):
+        response = self.admin.post(f"/api/boarding/houses/{self.house.id}/archive/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("oarders still have beds", str(response.data))
+
+    def test_only_admins_archive_and_not_other_schools(self):
+        self.assertEqual(self.matron.post(f"/api/boarding/houses/{self.other_house.id}/archive/").status_code, 403)
+        self.assertEqual(self.client_b.post(f"/api/boarding/houses/{self.other_house.id}/archive/").status_code, 404)

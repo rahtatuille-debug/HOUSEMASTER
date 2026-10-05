@@ -17,7 +17,8 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BoardingHouse
-        fields = ["id", "name", "staff", "staff_names", "dorms"]
+        fields = ["id", "name", "staff", "staff_names", "dorms", "is_archived"]
+        read_only_fields = ["is_archived"]
 
     def get_fields(self):
         fields = super().get_fields()

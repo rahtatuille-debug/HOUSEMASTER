@@ -10,9 +10,12 @@ from students.models import Student
 from .models import Absence, Bed, BoardingHouse, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
 
-def houses_for(user):
-    """The houses this staff member looks after: every house for admins."""
+def houses_for(user, archived=False):
+    """The houses this staff member looks after: every house for admins. Archived houses only when asked for
+    (their history stays readable, but nobody is boarded there or takes new roll calls)."""
     houses = BoardingHouse.objects.filter(school=user.profile.school)
+    if archived is not None:  # None: both, for reading history
+        houses = houses.filter(is_archived=archived)
     return houses if is_admin(user) else houses.filter(staff=user.profile)
 
 

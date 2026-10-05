@@ -17,6 +17,8 @@ class BoardingHouse(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="boarding_houses")
     name = models.CharField(max_length=100)
     staff = models.ManyToManyField(Profile, related_name="boarding_houses", blank=True)
+    # A house with roll call history can't be deleted; it is archived instead (hidden, history kept).
+    is_archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]
@@ -56,7 +58,7 @@ class RollCall(models.Model):
         EVENING = "evening", "Evening"
         NIGHT = "night", "Night"
 
-    house = models.ForeignKey(BoardingHouse, on_delete=models.CASCADE, related_name="roll_calls")
+    house = models.ForeignKey(BoardingHouse, on_delete=models.PROTECT, related_name="roll_calls")
     date = models.DateField()
     session = models.CharField(max_length=10, choices=Session.choices)
     taken_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,

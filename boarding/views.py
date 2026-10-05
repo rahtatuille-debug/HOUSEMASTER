@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.models import Q
+from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -58,10 +59,52 @@ class HouseViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        return services.houses_for(self.request.user).prefetch_related("staff__user", "dorms")
+        archived = bool(self.request.query_params.get("archived"))
+        return services.houses_for(self.request.user, archived=archived).prefetch_related("staff__user", "dorms")
+
+    def get_object(self):
+        # Archive and unarchive act on a house whichever list it is in.
+        if self.action in ("archive", "unarchive", "destroy"):
+            found = services.houses_for(self.request.user, archived=self.action == "unarchive").filter(
+                pk=self.kwargs["pk"]).first()
+            if found is None:
+                raise NotFound("House not found.")
+            return found
+        return super().get_object()
 
     def perform_create(self, serializer):
         serializer.save(school=self.request.user.profile.school)
+
+    def destroy(self, request, *args, **kwargs):
+        house = self.get_object()
+        if house.roll_calls.exists() or house.absences.exists():
+            raise ValidationError("This house has roll call history, so it can't be deleted. Archive it instead: "
+                                  "its history stays readable.")
+        try:
+            house.delete()
+        except ProtectedError:
+            raise ValidationError("This house has history, so it can't be deleted. Archive it instead.")
+        return Response(status=204)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        house = self.get_object()
+        if Bed.objects.filter(dorm__house=house, student__is_active=True, student__mode_of_learning="boarding").exists():
+            raise ValidationError("Boarders still have beds in this house. Move them out first, then archive it.")
+        house.is_archived = True
+        house.save(update_fields=["is_archived"])
+        log_activity(school=house.school, actor=request.user, action="boarding.house_archived",
+                     summary=f"Archived boarding house {house.name}", house=house.id)
+        return Response(self.get_serializer(house).data)
+
+    @action(detail=True, methods=["post"])
+    def unarchive(self, request, pk=None):
+        house = self.get_object()
+        house.is_archived = False
+        house.save(update_fields=["is_archived"])
+        log_activity(school=house.school, actor=request.user, action="boarding.house_unarchived",
+                     summary=f"Brought back boarding house {house.name}", house=house.id)
+        return Response(self.get_serializer(house).data)
 
 
 class DormViewSet(mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin,
@@ -166,7 +209,9 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
     permission_classes = [IsAuthenticated, BoardingStaff]
 
     def get_queryset(self):
-        queryset = RollCall.objects.filter(house__in=services.houses_for(self.request.user)).select_related("house")
+        # History of archived houses stays readable.
+        queryset = RollCall.objects.filter(house__in=services.houses_for(self.request.user, archived=None)) \
+            .select_related("house")
         if house := self.request.query_params.get("house"):
             queryset = queryset.filter(house_id=house)
         return queryset
@@ -269,7 +314,7 @@ class AbsenceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     permission_classes = [IsAuthenticated, BoardingStaff]
 
     def get_queryset(self):
-        queryset = Absence.objects.filter(house__in=services.houses_for(self.request.user)) \
+        queryset = Absence.objects.filter(house__in=services.houses_for(self.request.user, archived=None)) \
             .select_related("student", "house", "roll_call")
         status = self.request.query_params.get("status", "open" if self.action == "list" else "all")
         if status in ("open", "resolved"):
