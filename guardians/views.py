@@ -199,6 +199,26 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(GuardianGradeSerializer(grades, many=True).data)
 
     @action(detail=True, methods=["get"])
+    def boarding(self, request, pk=None):
+        """Boarders only: bed, leave and sick bay visits."""
+        from boarding.views import guardian_boarding
+
+        return Response(guardian_boarding(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="leave-requests")
+    def leave_requests(self, request, pk=None):
+        """Ask for leave for a boarder; boarding staff decide."""
+        from boarding.views import guardian_request_leave
+
+        return Response(guardian_request_leave(request, self.get_object()), status=201)
+
+    @action(detail=True, methods=["post"], url_path=r"leave-requests/(?P<leave_id>\d+)/cancel")
+    def cancel_leave(self, request, pk=None, leave_id=None):
+        from boarding.views import guardian_cancel_leave
+
+        return Response(guardian_cancel_leave(request, self.get_object(), leave_id))
+
+    @action(detail=True, methods=["get"])
     def timetable(self, request, pk=None):
         """The child's week: their class's lessons in the subjects they take."""
         from timetable.views import guardian_week

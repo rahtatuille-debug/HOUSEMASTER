@@ -83,6 +83,7 @@ def me(request):
             "name": profile.name,
             "role": profile.role,
             "tour_seen": profile.tour_seen_at is not None,
+            "is_boarding_staff": profile.is_admin or profile.boarding_houses.exists(),
             "school": school_summary(profile.school),
             "assignments": TeachingAssignmentSerializer(
                 profile.assignments.select_related("school_class", "subject"), many=True

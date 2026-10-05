@@ -96,7 +96,8 @@ def teacher_home(request):
         profile.checklist_hidden = hidden
         profile.save(update_fields=["checklist_hidden"])
     return Response({"classes": teacher_classes(profile), "checklist": teacher_checklist(profile),
-                     "support": support_summary(request.user), "today": _today(request.user)})
+                     "support": support_summary(request.user), "today": _today(request.user),
+                     "boarding": _boarding(request.user)})
 
 
 def support_summary(user):
@@ -137,3 +138,10 @@ def _today(user):
     from timetable.views import today_for
 
     return today_for(user.profile)
+
+
+def _boarding(user):
+    """For boarding staff: who's missing, leave waiting and who's in sick bay."""
+    from boarding.services import is_boarding_staff, overview
+
+    return overview(user) if is_boarding_staff(user) else None

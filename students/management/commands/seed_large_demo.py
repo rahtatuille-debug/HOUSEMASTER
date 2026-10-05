@@ -50,6 +50,13 @@ class Command(BaseCommand):
             if not Lesson.objects.filter(school=existing).exists():  # built before timetables
                 with transaction.atomic():
                     self.stdout.write(f"Added a timetable with {fill_demo(existing, rooms=60)} lessons.")
+            from boarding.demo import fill_demo as fill_boarding
+            from boarding.models import BoardingHouse
+
+            if not BoardingHouse.objects.filter(school=existing).exists():  # built before boarding
+                with transaction.atomic():
+                    placed = fill_boarding(existing, house_names=("Darwin House", "Austen House"))
+                    self.stdout.write(f"Added boarding with {placed} boarders.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()

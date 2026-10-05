@@ -102,6 +102,7 @@ INSTALLED_APPS = [
     'approvals',
     'support',
     'timetable',
+    'boarding',
 ]
 
 MIDDLEWARE = [
