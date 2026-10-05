@@ -84,7 +84,7 @@ def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB, system=Non
     curriculum (`system`), 8-4-4 totals and a position in the class
     (reporting.rankings: ties share a place; CBC isn't ranked).
     """
-    from .rankings import UNRANKED, effective_system, kcse_totals, overall_score, positions
+    from .rankings import INCOMPLETE, UNRANKED, effective_system, kcse_totals, positions, ranking_scores
 
     if system is not None:
         system = effective_system(system, scale)
@@ -98,7 +98,9 @@ def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB, system=Non
             subjects.add(subject)
     subjects = sorted(subjects)
     ranked = system is not None and system not in UNRANKED
-    places = positions({s.id: overall_score(system, raw[s.id].values()) for s in students}) if ranked else {}
+    share = term.school.ranking_min_share
+    scores = ranking_scores(system, {s.id: list(raw[s.id].values()) for s in students}, share) if ranked else {}
+    places = positions(scores)
     rows = []
     for s in students:
         marks = [round(raw[s.id][subj], 1) if subj in raw[s.id] else None for subj in subjects]
@@ -111,7 +113,7 @@ def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB, system=Non
             totals = kcse_totals(raw[s.id].values())
             row += [totals["total_marks"], totals["total_points"], totals["mean_grade"] or None]
         if ranked:
-            row.append(places.get(s.id))
+            row.append(places.get(s.id) or (INCOMPLETE if raw[s.id] else None))
         rows.append(row)
     headers = [words["student_id"], "Last name", "First name", *subjects, "Average"]
     if level_for(0, scale):
@@ -120,7 +122,7 @@ def grades_xlsx(students, term, scale="percent", words=DEFAULT_VOCAB, system=Non
         headers += ["Total marks", "Total points", "Mean grade"]
     if ranked:
         headers.append("Position")
-        rows.sort(key=lambda r: (r[-1] is None, r[-1] or 0, r[1] or "", r[2] or ""))
+        rows.sort(key=lambda r: (not isinstance(r[-1], int), r[-1] if isinstance(r[-1], int) else 0, r[1] or "", r[2] or ""))
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     _sheet(wb, "Grades (%)", headers, rows)
