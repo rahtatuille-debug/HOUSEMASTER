@@ -49,7 +49,7 @@ def _attendance_days(student_ids, term):
 
 
 def mark_count(data, sid, term):
-    return sum(len(marks) for marks in data.marks.get((sid, term.id), {}).values()) if term else 0
+    return data.mark_count(sid, term.id) if term else 0
 
 
 def pass_mark(data, sid):
