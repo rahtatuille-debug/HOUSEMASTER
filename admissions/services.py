@@ -55,6 +55,52 @@ def start_confirmation(application):
     send_after_commit([(f"{school.name}: please confirm your email", body, application.parent_email)])
 
 
+def lock_school(settings):
+    """Hold the school's admissions row until the transaction ends, so two requests for the same school run
+    one after the other. An UPDATE (not SELECT FOR UPDATE) so SQLite takes its write lock here as well."""
+    from django.db.models import F
+
+    AdmissionsSettings.objects.filter(pk=settings.pk).update(token=F("token"))
+
+
+def find_duplicate(school, data):
+    """An open application for the same child (name and date of birth) from the same email, sent recently."""
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.utils import timezone
+
+    since = timezone.now() - timedelta(days=settings.ADMISSIONS_DUPLICATE_DAYS)
+    return Application.objects.filter(
+        school=school, first_name__iexact=data["first_name"].strip(), last_name__iexact=data["last_name"].strip(),
+        date_of_birth=data["date_of_birth"], parent_email__iexact=data["parent_email"].strip(), created_at__gte=since,
+    ).exclude(status__in=[Application.Status.DECLINED, Application.Status.WITHDRAWN]).order_by("-id").first()
+
+
+def receive(form, settings):
+    """A valid form from the public link: one application per child, however often it is sent (double clicks,
+    two tabs, retries). A copy of an unconfirmed one whose link expired gets a fresh link; any other copy does
+    nothing. The caller answers the same either way."""
+    from django.utils import timezone
+
+    with transaction.atomic():
+        lock_school(settings)
+        duplicate = find_duplicate(settings.school, form.validated_data)
+        if duplicate is None:
+            start_confirmation(form.save(school=settings.school))
+        elif duplicate.confirmed_at is None and duplicate.confirm_expires_at <= timezone.now():
+            start_confirmation(duplicate)
+
+
+def existing_student(application):
+    """A student at the school with the applicant's name and date of birth, if there is one."""
+    if application.date_of_birth is None:
+        return None
+    return Student.objects.filter(school=application.school, first_name__iexact=application.first_name.strip(),
+                                  last_name__iexact=application.last_name.strip(),
+                                  date_of_birth=application.date_of_birth).order_by("-is_active", "id").first()
+
+
 def settings_for(school):
     found, _ = AdmissionsSettings.objects.get_or_create(school=school)
     return found
@@ -113,6 +159,13 @@ def enrol(application, school_class, admin):
     if application.status not in (Application.Status.OFFERED, Application.Status.ACCEPTED):
         raise ValidationError("Offer a place first; enrol once it's offered or accepted.")
     school = application.school
+    already = existing_student(application)
+    if already is not None:
+        where = "is already a student here" if already.is_active else "was a student here (now inactive)"
+        raise ValidationError({"detail": f"{student_name(already)}, born {already.date_of_birth:%d %b %Y}, {where}. "
+                                         "Open their student page instead of enrolling them again"
+                                         f"{'' if already.is_active else ' (reactivate them there)'}.",
+                               "existing_student": already.id})
     with transaction.atomic():
         student = Student.objects.create(
             school=school, school_class=school_class, first_name=application.first_name,

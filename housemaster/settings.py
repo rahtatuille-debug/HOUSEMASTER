@@ -425,6 +425,8 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
 # How long the link that confirms an admissions application's email address works (hours).
 ADMISSIONS_CONFIRM_HOURS = int(os.environ.get('ADMISSIONS_CONFIRM_HOURS', '48'))
+# The same child (name and date of birth) from the same email within this many days is one application.
+ADMISSIONS_DUPLICATE_DAYS = int(os.environ.get('ADMISSIONS_DUPLICATE_DAYS', '30'))
 
 # Production-only hardening. Skipped when DEBUG=True so local dev over
 # plain http://127.0.0.1:8001 still works without a redirect loop.

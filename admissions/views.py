@@ -50,8 +50,7 @@ def apply(request, token):
     form.is_valid(raise_exception=True)
     if form.validated_data.get("website"):  # a bot filled the hidden field
         return _check_your_email()
-    application = form.save(school=school)
-    services.start_confirmation(application)
+    services.receive(form, found)
     return _check_your_email()
 
 

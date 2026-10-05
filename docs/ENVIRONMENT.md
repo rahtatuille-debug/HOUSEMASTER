@@ -55,6 +55,7 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `ALERT_SCHOOL_RATE` / `ALERT_TEST_SCHOOL_RATE` | `10/day` / `5/day` | Urgent alerts one school can send, and test alerts (their own budget, so testing never uses up a real emergency's). A refused or invalid alert doesn't count. |
 | `CLASS_MESSAGE_RATE` | `30/hour` | Messages to a whole class, per sender. |
 | `ADMISSIONS_CONFIRM_HOURS` | `48` | How long the link in an admissions application's confirmation email works. Unconfirmed applications are never shown to staff; `python manage.py purge_applications --apply` deletes the expired ones (dry run without `--apply`). |
+| `ADMISSIONS_DUPLICATE_DAYS` | `30` | The same child (name and date of birth) sent again from the same email within this many days is the same application: no second record and no second email. Declined or withdrawn applications don't count. |
 | `SECURE_HSTS_SECONDS` | `2592000` (30 days) | How long browsers must use HTTPS. Raise to `31536000` after a clean month. |
 | `AI_REPORT_GENERATION_RATE`, `AI_CLASS_REPORT_GENERATION_RATE`, `AI_ANNOUNCEMENT_DRAFTING_RATE` | `30/hour`, `5/hour`, `30/hour` | Per-user AI limits. |
 | `NOTIFICATIONS_IN_BACKGROUND` | `true` | Send parent notification emails on a background thread. |
