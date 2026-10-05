@@ -79,3 +79,12 @@ class SupportThresholdTests(SupportTests):
         self.school_a.refresh_from_db()
         self.assertEqual((self.school_a.support_min_marks, self.school_a.support_min_days,
                           self.school_a.support_reopen_points), (4, 15, 5))
+
+    def test_a_suggestion_that_came_back_can_be_confirmed(self):
+        self.admin.post("/api/support/concerns/dismiss/", {"student": self.low.id, "term": self.t2.id}, format="json")
+        for _ in range(3):
+            Grade.objects.create(student=self.low, subject=self.maths, term=self.t2, score=0)
+        codes = [r["code"] for r in self.suggestions()[self.low.id]["reasons"]]
+        response = self.confirm(self.low, reasons=codes)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIn("since the suggestion was dismissed", str(response.data["reasons"]))

@@ -66,16 +66,19 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
     def create(self, request, *args, **kwargs):
         student, term = self._student_and_term(request.data)
         codes = request.data.get("reasons") or []
-        if not isinstance(codes, list) or any(c not in services.REASONS for c in codes):
+        known = {**services.REASONS, **services.EXTRA_REASONS}
+        if not isinstance(codes, list) or any(c not in known for c in codes):
             raise ValidationError({"reasons": [f"Choose from: {', '.join(services.REASONS)}."]})
         self._open_exists(student)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         # The reasons as they stand now, worded with the student's numbers.
         data = SchoolGrades(student.school, recent=True, term_id=term.id if term else None)
-        found = {r["code"]: r for r in services.warning_signs(data, term or data.term(None), [student.id])
-                 .get(student.id, [])}
-        reasons = [found.get(code, {"code": code, "label": services.REASONS[code]}) for code in dict.fromkeys(codes)]
+        focus = term or data.term(None)
+        found = {r["code"]: r for r in services.warning_signs(data, focus, [student.id]).get(student.id, [])}
+        # A suggestion that came back after being dismissed also carries its "worse since" reason.
+        found.update({r["code"]: r for r in services.suggestions(data, focus, [student.id]).get(student.id, [])})
+        reasons = [found.get(code, {"code": code, "label": known[code]}) for code in dict.fromkeys(codes)]
         user = request.user
         try:
             with transaction.atomic():
