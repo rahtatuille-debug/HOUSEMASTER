@@ -272,9 +272,11 @@ def remove_personal_data(student, actor):
     counts["boarding_records_deleted"] = (student.leave_requests.all().delete()[0]
                                           + student.sick_bay_visits.all().delete()[0]
                                           + student.roll_call_entries.all().delete()[0])
-    from boarding.models import Bed
+    from boarding.models import Absence
+    from boarding.services import release_boarders
 
-    Bed.objects.filter(student=student).update(student=None)
+    release_boarders([student.id], "left_school", actor)
+    counts["boarding_records_deleted"] += Absence.objects.filter(student=student).delete()[0]
 
     student.first_name, student.last_name = REMOVED_FIRST, REMOVED_LAST
     student.external_id = ""

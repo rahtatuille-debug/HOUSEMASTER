@@ -19,6 +19,7 @@ from students.models import School, SchoolClass, Student, YearGroup
 
 from .models import Bed, BoardingHouse, Dorm, LeaveRequest, RollCall
 from .models import Absence
+from . import services
 
 
 
@@ -314,3 +315,106 @@ class HouseHistoryTests(Fixture):
     def test_only_admins_archive_and_not_other_schools(self):
         self.assertEqual(self.matron.post(f"/api/boarding/houses/{self.other_house.id}/archive/").status_code, 403)
         self.assertEqual(self.client_b.post(f"/api/boarding/houses/{self.other_house.id}/archive/").status_code, 404)
+
+
+class ReleaseBedTests(Fixture):
+    """A-5."""
+
+    def bed_of(self, student):
+        return Bed.objects.filter(student=student).first()
+
+    def test_deactivating_a_boarder_frees_the_bed(self):
+        response = self.admin.patch(f"/api/students/{self.amina.id}/", {"is_active": False}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(self.bed_of(self.amina))
+        self.assertEqual(self.matron.get("/api/boarding/overview/").data["beds_free"], 2)  # the old spare + this one
+
+    def test_going_back_to_day_frees_the_bed(self):
+        self.admin.patch(f"/api/students/{self.amina.id}/", {"mode_of_learning": "day"}, format="json")
+        self.assertIsNone(self.bed_of(self.amina))
+        self.assertEqual(Student.objects.get(pk=self.amina.id).mode_of_learning, "day")
+
+    def test_other_changes_keep_the_bed(self):
+        self.admin.patch(f"/api/students/{self.amina.id}/", {"nationality": "Kenyan"}, format="json")
+        self.assertIsNotNone(self.bed_of(self.amina))
+
+    def test_year_end_graduating_and_leaving_free_beds_but_moving_up_does_not(self):
+        c3 = SchoolClass.objects.create(year_group=YearGroup.objects.create(school=self.school_a, name="Form 3",
+                                                                            order=2), name="3 East")
+        moves = [{"from_class": self.c4.id, "to_class": None},  # graduating (final year)
+                 {"from_class": self.c2.id, "to_class": c3.id}]  # moving up
+        response = self.admin.post("/api/promotion/", {"moves": moves, "commit": True}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(self.bed_of(self.senior))
+        self.assertIsNotNone(self.bed_of(self.amina))
+        # Leaving from a year that isn't the last.
+        c5 = SchoolClass.objects.create(year_group=self.form2, name="2 West")
+        brian = Student.objects.get(pk=self.brian.id)
+        Student.objects.filter(pk=brian.id).update(school_class=c5)
+        self.admin.post("/api/promotion/", {"moves": [{"from_class": c5.id, "to_class": None}], "commit": True},
+                        format="json")
+        self.assertIsNone(self.bed_of(self.brian))
+
+    def test_releasing_ends_open_leave_and_resolves_open_absence(self):
+        self.roll_call("evening", {self.amina.id: "missing"})
+        LeaveRequest.objects.create(school=self.school_a, student=self.amina, status="requested",
+                                    leaving_at=timezone.now() + timedelta(days=3),
+                                    returning_at=timezone.now() + timedelta(days=5))
+        self.admin.patch(f"/api/students/{self.amina.id}/", {"is_active": False}, format="json")
+        self.assertEqual(LeaveRequest.objects.get(student=self.amina).status, "cancelled")
+        absence = Absence.objects.get(student=self.amina)
+        self.assertEqual((absence.status, absence.resolution), ("resolved", "left_school"))
+        self.assertTrue(ActivityLog.objects.filter(action="boarding.bed_released").exists())
+
+    def test_the_same_function_runs_for_every_path_and_repeating_it_is_harmless(self):
+        services.release_boarders([self.amina.id], reason="left_school", actor=self.admin_a)
+        services.release_boarders([self.amina.id], reason="left_school", actor=self.admin_a)
+        self.assertIsNone(self.bed_of(self.amina))
+        self.assertEqual(ActivityLog.objects.filter(action="boarding.bed_released").count(), 1)
+
+    def test_a_bed_left_over_from_before_still_shows_as_free_and_can_be_reused(self):
+        Student.objects.filter(pk=self.amina.id).update(is_active=False)  # how old data looks
+        self.assertEqual(self.matron.get("/api/boarding/overview/").data["beds_free"], 2)
+        shown = self.admin.get("/api/boarding/houses/").data
+        bed = next(b for h in shown for d in h["dorms"] for b in d["beds"] if b["id"] == self.beds[0].id)
+        self.assertIsNone(bed["student"])
+        newcomer = Student.objects.create(school=self.school_a, first_name="New", last_name="K",
+                                          school_class=self.c2)
+        response = self.matron.post(f"/api/boarding/beds/{self.beds[0].id}/", {"student": newcomer.id}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_the_sweep_command_frees_old_beds_and_is_a_dry_run_by_default(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        Student.objects.filter(pk=self.amina.id).update(is_active=False)
+        out = StringIO()
+        call_command("release_stale_beds", stdout=out)
+        self.assertIn("Would free 1", out.getvalue())
+        self.assertIsNotNone(self.bed_of(self.amina))
+        call_command("release_stale_beds", "--apply", stdout=StringIO())
+        self.assertIsNone(self.bed_of(self.amina))
+
+    def test_boarders_without_a_bed_are_listed(self):
+        arrived = Student.objects.create(school=self.school_a, first_name="Newly", last_name="K",
+                                         school_class=self.c2, mode_of_learning="boarding")
+        Student.objects.create(school=self.school_a, first_name="Day", last_name="K", school_class=self.c2,
+                               mode_of_learning="day")
+        Student.objects.create(school=self.school_a, first_name="Gone", last_name="K", school_class=self.c2,
+                               mode_of_learning="boarding", is_active=False)
+        listed = self.matron.get("/api/boarding/unbedded/").data
+        self.assertEqual([s["name"] for s in listed], ["Newly K"])
+        self.assertEqual(self.matron.get("/api/boarding/overview/").data["unbedded"], 1)
+        profile = self.admin.get(f"/api/students/{arrived.id}/profile/").data
+        self.assertEqual(profile["boarding"], {"boarder_without_bed": True})
+        self.assertIsNone(self.admin.get(f"/api/students/{self.amina.id}/profile/").data["boarding"])
+        # Not for outsiders.
+        self.assertEqual(self.plain.get("/api/boarding/unbedded/").status_code, 403)
+        self.assertEqual(self.client_b.get("/api/boarding/unbedded/").data, [])
+
+    def test_the_list_is_empty_when_boarding_is_off(self):
+        School.objects.filter(pk=self.school_a.pk).update(has_boarding=False)
+        self.assertEqual(self.admin.get("/api/boarding/unbedded/").status_code, 403)
+        arrived = Student.objects.create(school=self.school_a, first_name="Newly", last_name="K",
+                                         school_class=self.c2, mode_of_learning="boarding")
+        self.assertIsNone(self.admin.get(f"/api/students/{arrived.id}/profile/").data["boarding"])

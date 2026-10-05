@@ -53,15 +53,19 @@ def summarize(plan):
 
 @transaction.atomic
 def apply_promotion(school, actor, plan):
+    from boarding.services import release_boarders
+
     _record_report_classes([s.id for _, _, students in plan for s in students])
     for from_class, to_class, students in plan:
         ids = [s.id for s in students]
         if to_class is None and from_class.year_group.is_final:
             # Leaving from the final year is graduating; their records stay.
             Student.objects.filter(id__in=ids).update(is_active=False, graduated_on=school_localdate(school))
+            release_boarders(ids, "left_school", actor)
             summary = f"Graduated {len(ids)} students from {from_class.name}"
         elif to_class is None:
             Student.objects.filter(id__in=ids).update(is_active=False)
+            release_boarders(ids, "left_school", actor)
             summary = f"Marked {len(ids)} students in {from_class.name} as leaving school (deactivated)"
         else:
             Student.objects.filter(id__in=ids).update(school_class=to_class)

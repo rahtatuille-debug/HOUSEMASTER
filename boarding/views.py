@@ -337,6 +337,15 @@ class AbsenceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         return Response(self.get_serializer(absence).data)
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, BoardingStaff])
+def unbedded(request):
+    """Boarders without a bed: students marked as boarding who haven't been placed (e.g. from admissions)."""
+    return Response([{"id": s.id, "name": f"{s.first_name} {s.last_name}",
+                      "class_name": s.school_class.name if s.school_class else ""}
+                     for s in services.unbedded(request.user).order_by("last_name", "first_name")])
+
+
 class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,
                    viewsets.GenericViewSet):
     """Leave and exeat. Staff-made leave is approved straight away; parents' requests wait for a decision."""

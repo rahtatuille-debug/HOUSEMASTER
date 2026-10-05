@@ -30,10 +30,15 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
         return [p.name for p in obj.staff.all()]
 
     def get_dorms(self, obj):
-        return [{"id": d.id, "name": d.name,
-                 "beds": [{"id": b.id, "name": b.name, "student": b.student_id,
-                           "student_name": _student_name(b.student)} for b in d.beds.select_related("student")]}
-                for d in obj.dorms.all()]
+        def holder(bed):
+            # Someone who has left, or no longer boards, doesn't hold the bed (old data from before beds were freed).
+            s = bed.student
+            return s if s is not None and s.is_active and s.mode_of_learning == "boarding" else None
+
+        return [{"id": d.id, "name": d.name, "beds": [
+            {"id": b.id, "name": b.name, "student": holder(b).id if holder(b) else None,
+             "student_name": _student_name(holder(b))} for b in d.beds.select_related("student")]}
+            for d in obj.dorms.all()]
 
 
 class DormSerializer(serializers.ModelSerializer):

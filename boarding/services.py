@@ -120,6 +120,44 @@ def absence_row(a):
             "since": a.opened_at}
 
 
+def release_boarders(student_ids, reason, actor=None):
+    """
+    The one place a boarder's bed is given up: leaving, graduating, deactivation, going back to day, and the
+    data tools all come through here, so every path behaves the same. Frees the bed, cancels leave that hasn't
+    happened, and resolves an open absence. Safe to repeat. Returns how many boarders were released.
+    `reason` is "left_school" or "no_longer_boarding".
+    """
+    released = 0
+    for bed in Bed.objects.filter(student_id__in=student_ids).select_related("student__school", "dorm__house"):
+        student, house = bed.student, bed.dorm.house
+        bed.student = None
+        bed.save(update_fields=["student"])
+        released += 1
+        log_activity(school=student.school, actor=actor, action="boarding.bed_released", target=student,
+                     summary=f"{student_name(student)} gave up their bed in {house.name}", house=house.id,
+                     reason=reason)
+    for leave in LeaveRequest.objects.filter(student_id__in=student_ids, status__in=[
+            LeaveRequest.Status.REQUESTED, LeaveRequest.Status.APPROVED]):
+        leave.status = LeaveRequest.Status.CANCELLED
+        leave.save(update_fields=["status"])
+    for absence in Absence.objects.filter(student_id__in=student_ids, status=Absence.Status.OPEN) \
+            .select_related("student", "house__school"):
+        resolve_absence(absence, reason, actor, "")
+    return released
+
+
+def unbedded(user):
+    """Active students who are boarders but have no bed: they arrived (admissions, an edit) and need placing."""
+    return Student.objects.filter(school=user.profile.school, is_active=True, mode_of_learning="boarding",
+                                  bed__isnull=True).select_related("school_class")
+
+
+def free_beds(houses):
+    """Beds nobody needs: empty, or held by someone who has left or no longer boards (old data)."""
+    return Bed.objects.filter(dorm__house__in=houses).filter(
+        Q(student__isnull=True) | Q(student__is_active=False) | ~Q(student__mode_of_learning="boarding"))
+
+
 def overview(user):
     students = list(boarders(user).values_list("id", flat=True))
     away = where_now(students)
@@ -127,7 +165,8 @@ def overview(user):
     return {
         "houses": houses.count(),
         "boarders": len(students),
-        "beds_free": Bed.objects.filter(dorm__house__in=houses, student__isnull=True).count(),
+        "beds_free": free_beds(houses).count(),
+        "unbedded": unbedded(user).count(),
         "on_leave": sum(1 for v in away.values() if v == "on_leave"),
         "sick_bay": sum(1 for v in away.values() if v == "sick_bay"),
         "leave_waiting": LeaveRequest.objects.filter(student_id__in=students,

@@ -16,6 +16,8 @@ from .models import School, YearGroup, SchoolClass, Student
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 
 from .photos import process_photo
+from boarding.services import release_boarders
+
 from .promotion import apply_promotion, plan_promotion, summarize
 from .profile import build_profile
 from .serializers import SchoolSerializer, YearGroupSerializer, SchoolClassSerializer, StudentSerializer
@@ -132,7 +134,13 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             if school_class != serializer.instance.school_class:
                 check_can_use_class(self.request.user, school_class)
         was_active = serializer.instance.is_active
+        was_boarding = serializer.instance.mode_of_learning == "boarding"
         student = serializer.save(school=self.get_school())
+        # Leaving, deactivation and going back to day all give up the bed (boarding.services.release_boarders).
+        if was_active and not student.is_active:
+            release_boarders([student.id], "left_school", self.request.user)
+        elif was_boarding and student.mode_of_learning != "boarding":
+            release_boarders([student.id], "no_longer_boarding", self.request.user)
         if was_active != student.is_active:
             verb = "Reactivated" if student.is_active else "Deactivated"
             action = "student.reactivated" if student.is_active else "student.deactivated"

@@ -122,6 +122,7 @@ urlpatterns = [
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/boarding/unbedded/', boarding_views.unbedded, name='boarding_unbedded'),
     path('api/boarding/overview/', boarding_views.overview, name='boarding_overview'),
     path('api/boarding/boarders/', boarding_views.boarders, name='boarding_boarders'),
     path('api/boarding/students/', boarding_views.student_search, name='boarding_students'),
