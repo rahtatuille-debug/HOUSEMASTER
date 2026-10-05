@@ -156,3 +156,10 @@ def email_parents(student, subject, line):
 
 def now():
     return timezone.now()
+
+
+def delete_school_history(school):
+    """Only for deleting a whole school (the demo resets): roll calls and absences protect their house from a
+    one-off delete, so they go first. Never used to remove a single house."""
+    Absence.objects.filter(house__school=school).delete()
+    RollCall.objects.filter(house__school=school).delete()
