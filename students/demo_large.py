@@ -407,6 +407,9 @@ def build(password_hash, today=None, scale=1.0):
     from boarding.demo import fill_demo as fill_boarding
 
     boarders = fill_boarding(school, house_names=("Darwin House", "Austen House"))
+    from admissions.demo import fill_demo as fill_admissions
+
+    fill_admissions(school, DOMAIN)
     log_activity(school=school, actor=None, action="school.demo_created",
                  summary=f"Created {NAME} with {len(active)} current students and five years of history")
     return (f"Created {NAME}: {len(active)} current students in {len(forms)} forms, {len(leavers)} former students, "
