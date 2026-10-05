@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
-from accounts.throttles import InviteIPThrottle, IPThrottle
+from accounts.throttles import EmailThrottle, InviteIPThrottle, IPThrottle
 from activity.services import display_name, log_activity
 from gradebook.levels import school_summary
 from students.models import SchoolClass, YearGroup
@@ -17,7 +17,14 @@ from .serializers import ApplicationSerializer, ApplyForm, SettingsSerializer
 
 
 class ApplyThrottle(IPThrottle):
+    """Per address: generous, since a school, a cyber cafe or a mobile network can put many families behind one."""
     scope = "admissions_apply"
+
+
+class ApplyEmailThrottle(EmailThrottle):
+    """Per parent email: stricter. Over the limit, the form answers as usual and does nothing (no oracle)."""
+    scope = "admissions_apply_email"
+    email_field = "parent_email"
 
 
 def _open_settings(token):
@@ -49,6 +56,8 @@ def apply(request, token):
     form = ApplyForm(data=request.data, settings=found)
     form.is_valid(raise_exception=True)
     if form.validated_data.get("website"):  # a bot filled the hidden field
+        return _check_your_email()
+    if ApplyEmailThrottle().allow_request(request, None) is False:
         return _check_your_email()
     services.receive(form, found)
     return _check_your_email()

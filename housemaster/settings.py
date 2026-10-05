@@ -202,8 +202,10 @@ REST_FRAMEWORK = {
         # Invite previews and acceptance, parent invites and class sign-up
         # links (token-guessing endpoints).
         'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
-        # Applications sent through a school's public admissions form, per IP address.
-        'admissions_apply': os.environ.get('ADMISSIONS_APPLY_RATE', '10/hour'),
+        # Applications sent through a school's public admissions form: per IP address (generous: many families
+        # can share one address) and per parent email (stricter; over it the form quietly does nothing).
+        'admissions_apply': os.environ.get('ADMISSIONS_APPLY_RATE', '30/hour'),
+        'admissions_apply_email': os.environ.get('ADMISSIONS_APPLY_EMAIL_RATE', '5/hour'),
         # Password-reset confirmation has its own bucket, so parents joining
         # from a school's shared address can't hold up someone's reset (B-3).
         # Reset links are 64 random characters, so this limit is about

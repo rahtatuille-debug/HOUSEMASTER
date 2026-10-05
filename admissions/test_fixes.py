@@ -169,3 +169,53 @@ class DuplicateRaceTests(TransactionTestCase):
             t.join()
         self.assertEqual(codes, [202, 202])
         self.assertEqual(Application.objects.filter(school=school).count(), 1)
+
+
+class ApplyLimitTests(AdmissionsFixture):
+    """B-3."""
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_a_school_or_cafe_sharing_one_address_is_not_blocked_early(self):
+        codes = [self.apply(confirm=False, first_name=f"Kid{n}", parent_email=f"family{n}@example.test").status_code
+                 for n in range(12)]  # the old limit was 10 an hour per address
+        self.assertEqual(set(codes), {202})
+        self.assertEqual(Application.objects.count(), 12)
+
+    def test_one_email_address_is_limited_quietly(self):
+        from unittest.mock import patch
+
+        from .views import ApplyEmailThrottle
+
+        with patch.dict(ApplyEmailThrottle.THROTTLE_RATES, {"admissions_apply_email": "2/hour"}):
+            responses = [self.apply(confirm=False, first_name=f"Kid{n}") for n in range(3)]
+        self.assertEqual([r.status_code for r in responses], [202, 202, 202])
+        self.assertEqual(Application.objects.count(), 2)  # the third did nothing
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_the_answer_never_says_what_is_on_file(self):
+        from unittest.mock import patch
+
+        from .views import ApplyEmailThrottle
+
+        new = self.apply(confirm=False)
+        duplicate = self.apply(confirm=False)
+        bot = self.apply(confirm=False, website="http://spam")
+        with patch.dict(ApplyEmailThrottle.THROTTLE_RATES, {"admissions_apply_email": "1/hour"}):
+            limited = self.apply(confirm=False, first_name="Omar")
+        self.assertEqual({(r.status_code, str(r.data)) for r in (new, duplicate, bot, limited)},
+                         {(new.status_code, str(new.data))})
+
+    def test_the_address_limit_still_applies(self):
+        from unittest.mock import patch
+
+        from .views import ApplyThrottle
+
+        with patch.dict(ApplyThrottle.THROTTLE_RATES, {"admissions_apply": "2/hour"}):
+            codes = [self.apply(confirm=False, first_name=f"K{n}", parent_email=f"f{n}@example.test").status_code
+                     for n in range(3)]
+        self.assertEqual(codes, [202, 202, 429])
