@@ -395,3 +395,70 @@ class AdmissionNumberRaceTests(TransactionTestCase):
         self.assertEqual(codes, [200, 200])
         self.assertEqual(sorted(Student.objects.filter(school=school).values_list("external_id", flat=True)),
                          ["R1", "R2"])
+
+
+class AdmissionsIsolationTests(AdmissionsFixture):
+    """H: other schools, teachers, parents and the public reach nothing they shouldn't."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import User
+        from rest_framework.test import APIClient
+
+        from guardians.models import Guardian
+
+        self.apply(confirm=False, first_name="Omar", parent_email="o@example.test")  # unconfirmed
+        self.apply()  # Zara, confirmed
+        self.make_admin(self.user_b)
+        parent = User.objects.create_user(username="par@example.test", email="par@example.test", password="x")
+        Guardian.objects.create(user=parent, school=self.school_a, display_name="Par")
+        self.parent = self.authed_client(parent)
+        self.anon = APIClient()
+
+    def test_another_schools_admin_sees_and_changes_nothing(self):
+        zara, omar = Application.objects.get(first_name="Zara"), Application.objects.get(first_name="Omar")
+        self.assertEqual(self.client_b.get("/api/admissions/applications/").data, [])
+        self.assertEqual(self.client_b.get("/api/admissions/applications/", {"unconfirmed": 1}).data, [])
+        self.assertEqual(self.client_b.get("/api/admissions/applications/summary/").data["unconfirmed"], 0)
+        for app in (zara, omar):
+            base = f"/api/admissions/applications/{app.id}/"
+            self.assertEqual(self.client_b.get(base).status_code, 404)
+            self.assertEqual(self.client_b.patch(base, {"status": "declined"}, format="json").status_code, 404)
+            self.assertEqual(self.client_b.post(base + "enrol/", {"school_class": self.c7a.id}, format="json")
+                             .status_code, 404)
+            self.assertEqual(self.client_b.delete(base).status_code, 404)
+        self.assertEqual(Application.objects.filter(school=self.school_a).count(), 2)
+        # Their settings are their own school's.
+        theirs = self.client_b.get("/api/admissions/settings/").data
+        self.assertNotEqual(theirs["link_token"], self.settings.token)
+
+    def test_teachers_parents_and_the_public_are_refused(self):
+        for client, code in ((self.client_a, 403), (self.parent, 403), (self.anon, 401)):
+            self.assertEqual(client.get("/api/admissions/applications/").status_code, code)
+            self.assertEqual(client.get("/api/admissions/applications/", {"unconfirmed": 1}).status_code, code)
+            self.assertEqual(client.get("/api/admissions/settings/").status_code, code)
+            self.assertEqual(client.patch("/api/admissions/settings/", {"number_prefix": "X"}, format="json")
+                             .status_code, code)
+
+    def test_the_public_form_shows_nothing_about_applications(self):
+        data = self.anon.get(self.url).data
+        self.assertNotIn("Zara", str(data))
+        self.assertNotIn("Omar", str(data))
+        self.assertNotIn("o@example.test", str(data))
+
+    def test_another_schools_class_cannot_be_used_to_enrol(self):
+        from students.models import SchoolClass, YearGroup
+
+        theirs = SchoolClass.objects.create(year_group=YearGroup.objects.create(school=self.school_b, name="Y"), name="Z")
+        zara = Application.objects.get(first_name="Zara")
+        Application.objects.filter(pk=zara.pk).update(status="offered")
+        response = self.admin.post(f"/api/admissions/applications/{zara.id}/enrol/", {"school_class": theirs.id},
+                                   format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_settings_year_groups_are_limited_to_the_school(self):
+        from students.models import YearGroup
+
+        theirs = YearGroup.objects.create(school=self.school_b, name="Theirs")
+        response = self.admin.patch("/api/admissions/settings/", {"year_groups": [theirs.id]}, format="json")
+        self.assertEqual(response.status_code, 400)
