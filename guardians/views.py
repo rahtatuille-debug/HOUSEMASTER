@@ -199,6 +199,13 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(GuardianGradeSerializer(grades, many=True).data)
 
     @action(detail=True, methods=["get"])
+    def timetable(self, request, pk=None):
+        """The child's week: their class's lessons in the subjects they take."""
+        from timetable.views import guardian_week
+
+        return Response(guardian_week(self.get_object()))
+
+    @action(detail=True, methods=["get"])
     def profile(self, request, pk=None):
         """
         A parent's view of their own child: details, teachers, attendance and

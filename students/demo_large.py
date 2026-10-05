@@ -70,6 +70,7 @@ ASSESSMENTS = [("Classwork", 40), ("Assessment week", 60)]
 MAIN_FORMS, MAIN_SIZE = "ABCDE", 28
 SIXTH_FORMS, SIXTH_SIZE = "ABCDEF", 25
 STAY_ON = 0.7  # of Year 11s who continue into Year 12
+MAX_LESSONS = 24  # a teacher's lessons a week
 
 LEADERS = [("Catherine Hale", "principal", "Principal"), ("Marcus Reid", "deputy", "Deputy head"),
            ("Anika Patel", "sixthform", "Head of sixth form")]
@@ -160,25 +161,30 @@ def build(password_hash, today=None, scale=1.0):
 
     leaders = [Profile.objects.create(user=user(local, name), school=school, role="admin", display_name=name)
                for name, local, _ in LEADERS]
-    teachers_for = {}
+    # Teachers are taken on as the timetable needs them (see the assignments below).
+    teachers_for, load = {}, {}
     taken_names = {name for name, _, _ in LEADERS}
-    teacher_count = 0
-    for subject in SUBJECTS:
-        load = 3 if subject in ("English Language", "Mathematics") else 2 if subject in KS3 + GCSE_CORE else 1
-        load = max(1, round(load * min(1.0, scale * 2)))
-        for _ in range(load):
-            while True:
-                name = f"{rng.choice(GIRLS + BOYS)} {rng.choice(SURNAMES)}"
-                if name not in taken_names:
-                    break
-            taken_names.add(name)
-            # The first Mathematics teacher has the well-known teacher@ login.
-            local = "teacher" if subject == "Mathematics" and "Mathematics" not in teachers_for else \
-                f"{name.split()[0][0].lower()}.{name.split()[1].lower().replace(chr(39), '')}{teacher_count}"
-            teacher_count += 1
-            profile = Profile.objects.create(user=user(local, name), school=school, role="teacher", display_name=name)
-            teachers_for.setdefault(subject, []).append(profile)
-    teachers = [p for ps in teachers_for.values() for p in ps]
+
+    def new_teacher(subject):
+        while True:
+            name = f"{rng.choice(GIRLS + BOYS)} {rng.choice(SURNAMES)}"
+            if name not in taken_names:
+                break
+        taken_names.add(name)
+        # The first Mathematics teacher has the well-known teacher@ login.
+        local = "teacher" if subject == "Mathematics" and "Mathematics" not in teachers_for else \
+            f"{name.split()[0][0].lower()}.{name.split()[1].lower().replace(chr(39), '')}{len(load)}"
+        profile = Profile.objects.create(user=user(local, name), school=school, role="teacher", display_name=name)
+        teachers_for.setdefault(subject, []).append(profile)
+        load[profile.id] = 0
+        return profile
+
+    def teacher_for(subject, lessons):
+        """The least busy teacher of the subject with room for these lessons (24 a week), or a new one."""
+        fits = [t for t in teachers_for.get(subject, []) if load[t.id] + lessons <= MAX_LESSONS]
+        teacher = min(fits, key=lambda t: load[t.id]) if fits else new_teacher(subject)
+        load[teacher.id] += lessons
+        return teacher
 
     # --- people: the school as it was five years ago, then each September
     def new_pupil(group, joined):
@@ -270,21 +276,22 @@ def build(password_hash, today=None, scale=1.0):
         StudentSubject(student=p.record, subject=subjects[name])
         for g in roll.values() for p in g for name in p.subjects()
     ], batch_size=2000)
-    assignments = []
-    for (g, letter), klass in forms.items():
-        tutor = teachers[(g * 7 + ord(letter)) % len(teachers)]
-        assignments.append(TeachingAssignment(teacher=tutor, school_class=klass, subject=None))
+    from timetable.services import lessons_per_week
+
+    assignments, tutored = [], []
+    for (g, letter), klass in sorted(forms.items(), key=lambda kv: (kv[0][0] != 9, kv[0])):
         taught = sorted({name for p in roll[g] if p.form == letter for name in p.subjects()})
         for name in taught:
-            pool = teachers_for[name]
-            assignments.append(TeachingAssignment(teacher=pool[(g + ord(letter)) % len(pool)], school_class=klass,
-                                                  subject=subjects[name]))
+            assignments.append(TeachingAssignment(teacher=teacher_for(name, lessons_per_week(name, f"Year {g}")),
+                                                  school_class=klass, subject=subjects[name]))
+        tutored.append(klass)
+    teachers = [p for ps in teachers_for.values() for p in ps]
+    for i, klass in enumerate(tutored):
+        assignments.append(TeachingAssignment(teacher=teachers[i % len(teachers)], school_class=klass, subject=None))
     TeachingAssignment.objects.bulk_create(assignments)
-    # The teacher@ login tutors 9A and teaches it Mathematics.
+    # The teacher@ login tutors 9A (and, being the first Maths teacher, teaches it Mathematics).
     star = teachers_for["Mathematics"][0]
     TeachingAssignment.objects.filter(school_class=forms[(9, main_forms[0])], subject=None).update(teacher=star)
-    TeachingAssignment.objects.filter(school_class=forms[(9, main_forms[0])],
-                                      subject=subjects["Mathematics"]).update(teacher=star)
 
     # --- marks and report cards, one term at a time (keeps memory low)
     grade_count = report_count = 0
@@ -394,12 +401,15 @@ def build(password_hash, today=None, scale=1.0):
              "HouseMaster, and Year 7 and Year 12 parents' evenings are later this month.",
     )
     _support_concerns(school, leaders[1].user)
+    from timetable.services import fill_demo
+
+    lessons = fill_demo(school, rooms=60)
     log_activity(school=school, actor=None, action="school.demo_created",
                  summary=f"Created {NAME} with {len(active)} current students and five years of history")
     return (f"Created {NAME}: {len(active)} current students in {len(forms)} forms, {len(leavers)} former students, "
             f"{len(teachers) + len(leaders)} staff, {parents} parents, {grade_count} marks, {report_count} report "
             f"cards over {sum(1 for _, ts in years for t in ts if t.start_date <= today)} terms, {len(records)} "
-            f"register entries. Log in as principal@{DOMAIN}, teacher@{DOMAIN} or parent@{DOMAIN}.")
+            f"register entries, {lessons} lessons on the timetable. Log in as principal@{DOMAIN}, teacher@{DOMAIN} or parent@{DOMAIN}.")
 
 
 def _joined_group(p, history, years):

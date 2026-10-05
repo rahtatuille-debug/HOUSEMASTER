@@ -44,6 +44,12 @@ class Command(BaseCommand):
 
         existing = School.objects.filter(name=demo_large.NAME).first()
         if existing and not options["reset"]:
+            from timetable.models import Lesson
+            from timetable.services import fill_demo
+
+            if not Lesson.objects.filter(school=existing).exists():  # built before timetables
+                with transaction.atomic():
+                    self.stdout.write(f"Added a timetable with {fill_demo(existing, rooms=60)} lessons.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()

@@ -27,6 +27,7 @@ from students.setup_views import (add_section, complete_setup, finish_setup, pre
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
+from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from support.views import SupportConcernViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
@@ -71,6 +72,9 @@ router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian
 router.register(r"conversations", ConversationViewSet, basename="conversation")
 router.register(r"activity", ActivityLogViewSet)
 router.register(r"change-requests", ChangeRequestViewSet)
+router.register(r"timetable/periods", PeriodViewSet, basename="timetable-period")
+router.register(r"timetable/rooms", RoomViewSet, basename="timetable-room")
+router.register(r"timetable/lessons", LessonViewSet, basename="timetable-lesson")
 router.register(r"support/concerns", SupportConcernViewSet, basename="support-concern")
 
 urlpatterns = [
@@ -110,6 +114,8 @@ urlpatterns = [
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/timetable/week/', timetable_week, name='timetable_week'),
+    path('api/timetable/school-week/', timetable_school_week, name='timetable_school_week'),
     path('api/support/suggestions/', support_suggestions, name='support_suggestions'),
     path('api/tour-seen/', tour_seen, name='tour_seen'),
     path('api/signup-requests/', signup_requests, name='signup_requests'),
