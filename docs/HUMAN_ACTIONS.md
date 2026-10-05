@@ -269,3 +269,50 @@ It blocks nothing; browsers only report what the policy *would* block.
 
 **Check:** the response headers of the live site show
 `Content-Security-Policy`, and every page still works.
+
+## H-13 · GitHub Actions runners (blocking CI now)
+
+Since about 20:00 UTC on 2026-10-05, every CI job in both repositories has failed with "The job was not acquired by
+Runner of type hosted even after multiple attempts". No test ran: the jobs never started. This usually means the
+account's included Actions minutes or the spending limit is used up, or GitHub is having an outage.
+1. GitHub → Settings → Billing and plans → check Actions usage and the spending limit; githubstatus.com for outages.
+2. When runners are back, re-run the failed checks on PRs #14 to #23 (backend) and #12 to #17 (frontend). Every
+   branch passed its tests locally (FIX_REPORT.md, "Evidence").
+
+## H-14 · Email for admissions confirmations (before turning admissions on)
+
+Families now confirm their email before an application reaches the school (B-1), so admissions doesn't work
+without a working email provider (H-3: `EMAIL_BACKEND`, `EMAIL_HOST*`, `DEFAULT_FROM_EMAIL`). Choose the provider and
+the sender name/address families will see. Optional settings: `ADMISSIONS_CONFIRM_HOURS` (48),
+`ADMISSIONS_DUPLICATE_DAYS` (30), `ADMISSIONS_APPLY_RATE` (30/hour), `ADMISSIONS_APPLY_EMAIL_RATE` (5/hour), all in
+docs/ENVIRONMENT.md.
+
+## H-15 · Before deploying the fixes: pre-flights and one-off commands
+
+Run on the Render shell (or a one-off job) after deploying, in this order. Each prints counts only and changes nothing
+without `--apply`. Run each first without it and check the numbers.
+1. **Before** the admissions PR's migration: `python manage.py check_admission_numbers`. If it reports schools with
+   shared admission numbers, give those students different numbers first; the migration stops otherwise.
+2. `python manage.py backfill_boarding_absences`, then `--apply`: keeps today's missing boarders flagged (A-1).
+3. `python manage.py release_stale_beds`, then `--apply`: frees beds still held by leavers (A-5).
+4. `python manage.py boarding_house_report`: how many houses can now only be archived (A-3).
+5. `python manage.py backfill_report_classes`, then `--apply`: records the class on old report cards where certain
+   (A-4). The rest show "Class: not recorded"; an admin can set them.
+6. Schedule `python manage.py purge_applications --apply` daily (Render cron job): deletes unconfirmed applications
+   whose link expired, and closed ones past a school's retention period (B-1, B-4).
+
+## H-16 · School-policy decisions raised by the fixes
+
+- Each school: whether to set an admissions retention period (off by default), an admission number prefix and
+  starting number, a different support pass mark for any year group, and the ranking completeness share (75%).
+- Whether the public admissions form should ask for health details before an offer
+  (docs/DESIGN_health_notes_public_form.md; counsel question 15).
+- Pick-up and leave authority policy for boarders (docs/DESIGN_leave_authority.md).
+- SMS/WhatsApp provider and sender name, if wanted (docs/DESIGN_notifications.md); quote current prices yourself.
+- Legal sign-off on the updated drafts in docs/legal (C-2), including counsel questions 15 and 16.
+
+## H-17 · Real-device check
+
+The fixes were checked in a headless browser at desktop and phone widths, not on real phones. Before a pilot, try
+on one Android phone: the Found action on Boarding, a register taken offline and saved later, the Students list
+"Show more", and the admissions form from a WhatsApp link through to the confirmation email.
