@@ -106,7 +106,7 @@ def school_summary(school):
     sections = school_sections(school)
     return {"id": school.id, "name": school.name, "grading_scale": school.grading_scale,
             "levels": levels(school.grading_scale), "education_system": school.education_system,
-            "privacy_contact": school.privacy_contact,
+            "privacy_contact": school.privacy_contact, "has_boarding": school.has_boarding,
             "setup_completed": school.setup_completed_at is not None,
             "setup_stage": ("done" if school.setup_completed_at else
                             "people" if school.structure_completed_at else "structure"),

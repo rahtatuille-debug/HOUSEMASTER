@@ -104,6 +104,15 @@ def family_export(student):
          c.review_date.isoformat() if c.review_date else "", _when(c.closed_at) if c.closed_at else ""]
         for c in student.support_concerns.select_related("term").order_by("created_at")
     ], widths={"Note": 50, "Support plan": 60})
+    _sheet(wb, "Boarding", ["Kind", "What", "From", "To", "Details", "Status"], [
+        ["Leave", l.get_kind_display(), _when(l.leaving_at), _when(l.returning_at),
+         "; ".join(x for x in (l.reason, l.collected_by, l.decision_note) if x), l.get_status_display()]
+        for l in student.leave_requests.order_by("leaving_at")
+    ] + [
+        ["Sick bay", v.complaint, _when(v.checked_in_at), _when(v.checked_out_at) if v.checked_out_at else "",
+         v.treatment, v.get_outcome_display() if v.outcome else "In sick bay"]
+        for v in student.sick_bay_visits.order_by("checked_in_at")
+    ], widths={"Details": 60, "What": 40})
     return _workbook_bytes(wb)
 
 
@@ -169,6 +178,14 @@ def family_export_data(student):
             "review_date": _iso(c.review_date), "marked_by": c.created_by_name, "marked": _iso(c.created_at),
             "closed": _iso(c.closed_at), "closing_note": c.closing_note,
         } for c in student.support_concerns.select_related("term").order_by("created_at")],
+        "boarding": {
+            "leave": [{"kind": x.get_kind_display(), "leaving": _iso(x.leaving_at), "returning": _iso(x.returning_at),
+                       "reason": x.reason, "collected_by": x.collected_by, "status": x.get_status_display(),
+                       "decision_note": x.decision_note} for x in student.leave_requests.order_by("leaving_at")],
+            "sick_bay": [{"checked_in": _iso(v.checked_in_at), "complaint": v.complaint, "treatment": v.treatment,
+                          "checked_out": _iso(v.checked_out_at), "outcome": v.get_outcome_display()}
+                         for v in student.sick_bay_visits.order_by("checked_in_at")],
+        },
         "conversations_about_the_student": [{
             "sent": _iso(m.created_at), "from": display_name(m.sender) if m.sender else "Removed", "message": m.body,
         } for m in _messages_about(student)],
@@ -252,6 +269,12 @@ def remove_personal_data(student, actor):
     # Sign-up requests typed by a parent name the child and their admission number.
     counts["signup_requests_deleted"] = ParentSignupRequest.objects.filter(student=student).delete()[0]
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
+    counts["boarding_records_deleted"] = (student.leave_requests.all().delete()[0]
+                                          + student.sick_bay_visits.all().delete()[0]
+                                          + student.roll_call_entries.all().delete()[0])
+    from boarding.models import Bed
+
+    Bed.objects.filter(student=student).update(student=None)
 
     student.first_name, student.last_name = REMOVED_FIRST, REMOVED_LAST
     student.external_id = ""

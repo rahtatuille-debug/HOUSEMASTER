@@ -404,12 +404,15 @@ def build(password_hash, today=None, scale=1.0):
     from timetable.services import fill_demo
 
     lessons = fill_demo(school, rooms=60)
+    from boarding.demo import fill_demo as fill_boarding
+
+    boarders = fill_boarding(school, house_names=("Darwin House", "Austen House"))
     log_activity(school=school, actor=None, action="school.demo_created",
                  summary=f"Created {NAME} with {len(active)} current students and five years of history")
     return (f"Created {NAME}: {len(active)} current students in {len(forms)} forms, {len(leavers)} former students, "
             f"{len(teachers) + len(leaders)} staff, {parents} parents, {grade_count} marks, {report_count} report "
             f"cards over {sum(1 for _, ts in years for t in ts if t.start_date <= today)} terms, {len(records)} "
-            f"register entries, {lessons} lessons on the timetable. Log in as principal@{DOMAIN}, teacher@{DOMAIN} or parent@{DOMAIN}.")
+            f"register entries, {lessons} lessons on the timetable, {boarders} boarders. Log in as principal@{DOMAIN}, teacher@{DOMAIN} or parent@{DOMAIN}.")
 
 
 def _joined_group(p, history, years):

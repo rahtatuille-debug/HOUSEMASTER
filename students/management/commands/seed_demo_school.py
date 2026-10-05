@@ -148,6 +148,18 @@ class Command(BaseCommand):
                 self._build(password)
         self._system_demos(password, options["reset"])
         self._timetables()
+        self._boarding()
+
+    def _boarding(self):
+        """Boarding for the 8-4-4 demo (a boarding secondary), if it doesn't have it yet."""
+        from boarding.demo import fill_demo
+        from boarding.models import BoardingHouse
+
+        school = School.objects.filter(name="HouseMaster Demo Secondary").first()
+        if school and not BoardingHouse.objects.filter(school=school).exists():
+            with transaction.atomic():
+                placed = fill_demo(school, share=0.6, house_names=("Uhuru House", "Tumaini House"))
+            self.stdout.write(f"{school.name}: boarding with {placed} boarders.")
 
     def _timetables(self):
         """A timetable for each demo school that doesn't have one yet (schools built before timetables)."""

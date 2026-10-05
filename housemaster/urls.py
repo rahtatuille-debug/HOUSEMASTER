@@ -27,6 +27,8 @@ from students.setup_views import (add_section, complete_setup, finish_setup, pre
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
+from boarding import views as boarding_views
+from boarding.views import DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from support.views import SupportConcernViewSet
 from support.views import suggestions as support_suggestions
@@ -72,6 +74,11 @@ router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian
 router.register(r"conversations", ConversationViewSet, basename="conversation")
 router.register(r"activity", ActivityLogViewSet)
 router.register(r"change-requests", ChangeRequestViewSet)
+router.register(r"boarding/houses", BoardingHouseViewSet, basename="boarding-house")
+router.register(r"boarding/dorms", BoardingDormViewSet, basename="boarding-dorm")
+router.register(r"boarding/roll-calls", RollCallViewSet, basename="boarding-roll-call")
+router.register(r"boarding/leave", LeaveViewSet, basename="boarding-leave")
+router.register(r"boarding/sick-bay", SickBayViewSet, basename="boarding-sick-bay")
 router.register(r"timetable/periods", PeriodViewSet, basename="timetable-period")
 router.register(r"timetable/rooms", RoomViewSet, basename="timetable-room")
 router.register(r"timetable/lessons", LessonViewSet, basename="timetable-lesson")
@@ -114,6 +121,10 @@ urlpatterns = [
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/boarding/overview/', boarding_views.overview, name='boarding_overview'),
+    path('api/boarding/boarders/', boarding_views.boarders, name='boarding_boarders'),
+    path('api/boarding/students/', boarding_views.student_search, name='boarding_students'),
+    path('api/boarding/beds/<int:pk>/', boarding_views.bed, name='boarding_bed'),
     path('api/timetable/week/', timetable_week, name='timetable_week'),
     path('api/timetable/school-week/', timetable_school_week, name='timetable_school_week'),
     path('api/support/suggestions/', support_suggestions, name='support_suggestions'),
