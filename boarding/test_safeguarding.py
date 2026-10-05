@@ -198,3 +198,71 @@ class MissingBoarderTests(Fixture):
         self.assertEqual([m["name"] for m in self.missing()], ["Amina K"])
         call_command("backfill_boarding_absences", "--apply", stdout=StringIO())
         self.assertEqual(Absence.objects.count(), 1)  # harmless to repeat
+
+
+class FinishedRollCallTests(Fixture):
+    """A-2."""
+
+    def finished(self, marks=None):
+        roll_id, _ = self.roll_call("night", marks or {})
+        return roll_id
+
+    def entries(self, roll_id):
+        return {e["name"]: e["status"] for e in self.admin.get(f"/api/boarding/roll-calls/{roll_id}/").data["entries"]}
+
+    def test_a_finished_roll_call_is_locked(self):
+        roll_id = self.finished()
+        marks = {"entries": [{"student": self.amina.id, "status": "missing"}]}
+        self.assertEqual(self.matron.post(f"/api/boarding/roll-calls/{roll_id}/mark/", marks, format="json")
+                         .status_code, 403)
+        self.assertEqual(self.admin.post(f"/api/boarding/roll-calls/{roll_id}/mark/", marks, format="json")
+                         .status_code, 400)  # admins use Amend, so it is on record
+        self.assertEqual(self.entries(roll_id)["Amina K"], "present")
+
+    def test_only_admins_amend_and_they_have_to_give_a_reason(self):
+        roll_id = self.finished()
+        body = {"entries": [{"student": self.amina.id, "status": "missing"}], "reason": "Matron misread the list"}
+        self.assertEqual(self.matron.post(f"/api/boarding/roll-calls/{roll_id}/amend/", body, format="json")
+                         .status_code, 403)
+        self.assertEqual(self.admin.post(f"/api/boarding/roll-calls/{roll_id}/amend/",
+                                         {**body, "reason": "  "}, format="json").status_code, 400)
+        self.assertEqual(self.admin.post(f"/api/boarding/roll-calls/{roll_id}/amend/",
+                                         {"entries": [], "reason": "x"}, format="json").status_code, 400)
+        self.assertEqual(self.entries(roll_id)["Amina K"], "present")
+
+    def test_an_amendment_is_logged_with_before_and_after(self):
+        roll_id = self.finished()
+        response = self.admin.post(f"/api/boarding/roll-calls/{roll_id}/amend/", {
+            "entries": [{"student": self.amina.id, "status": "missing", "note": "Allergic to peanuts, was in sick bay"}],
+            "reason": "Matron misread the list"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.entries(roll_id)["Amina K"], "missing")
+        log = ActivityLog.objects.get(action="boarding.roll_call_amended")
+        self.assertEqual(log.details["changes"], [{"student": self.amina.id, "before": "present", "after": "missing"}])
+        self.assertEqual(log.actor, self.admin_a)
+        text = log.summary + str(log.details)
+        self.assertNotIn("peanuts", text)
+        self.assertNotIn("misread", text)  # the reason is kept in the app, not in the log
+        shown = self.admin.get(f"/api/boarding/roll-calls/{roll_id}/").data["amendments"]
+        self.assertEqual((shown[0]["reason"], shown[0]["changes"][0]["after"]), ("Matron misread the list", "missing"))
+
+    def test_amending_to_missing_opens_an_absence_and_back_closes_a_mistaken_one(self):
+        roll_id = self.finished()
+        self.admin.post(f"/api/boarding/roll-calls/{roll_id}/amend/", {
+            "entries": [{"student": self.amina.id, "status": "missing"}], "reason": "Not in bed"}, format="json")
+        self.assertEqual([m["name"] for m in self.missing()], ["Amina K"])
+        self.admin.post(f"/api/boarding/roll-calls/{roll_id}/amend/", {
+            "entries": [{"student": self.amina.id, "status": "present"}], "reason": "I was wrong"}, format="json")
+        self.assertEqual(self.missing(), [])
+        self.assertEqual(Absence.objects.get().resolution, "recorded_in_error")
+
+    def test_an_unfinished_roll_call_can_still_be_marked_by_house_staff(self):
+        roll_id, response = self.roll_call("morning", {self.amina.id: "missing"}, complete=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.missing(), [])  # nothing flagged until it is finished
+
+    def test_amend_is_scoped_to_the_school(self):
+        roll_id = self.finished()
+        body = {"entries": [{"student": self.amina.id, "status": "missing"}], "reason": "x"}
+        self.assertEqual(self.client_b.post(f"/api/boarding/roll-calls/{roll_id}/amend/", body, format="json")
+                         .status_code, 404)

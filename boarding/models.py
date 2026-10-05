@@ -148,6 +148,20 @@ class SickBayVisit(models.Model):
         ordering = ["-checked_in_at", "-id"]
 
 
+class RollCallAmendment(models.Model):
+    """An admin's correction to a finished roll call: who, when, why, and each change (status codes only)."""
+
+    roll_call = models.ForeignKey(RollCall, on_delete=models.CASCADE, related_name="amendments")
+    amended_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    amended_by_name = models.CharField(max_length=200, blank=True)
+    amended_at = models.DateTimeField(auto_now_add=True)
+    reason = models.CharField(max_length=300)
+    changes = models.JSONField(default=list)  # [{student, before, after}]
+
+    class Meta:
+        ordering = ["amended_at", "id"]
+
+
 class Absence(models.Model):
     """
     A boarder who was marked missing at a finished roll call, and stays flagged until a person resolves it.

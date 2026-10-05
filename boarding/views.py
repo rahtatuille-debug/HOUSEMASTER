@@ -6,13 +6,14 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import IsSchoolAdmin
 from accounts.scoping import is_admin
 from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 from students.models import Student
 
 from . import services
-from .models import Absence, Bed, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .models import Absence, Bed, Dorm, LeaveRequest, RollCall, RollCallAmendment, RollCallEntry, SickBayVisit
 from .serializers import (AbsenceSerializer, BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer,
                           RollCallSerializer, SickBayVisitSerializer, boarder_row)
 
@@ -185,6 +186,10 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
     @action(detail=True, methods=["post"])
     def mark(self, request, pk=None):
         roll_call = self.get_object()
+        if roll_call.completed_at:
+            if is_admin(request.user):
+                raise ValidationError("This roll call is finished. Use Amend, so the change is on record.")
+            raise PermissionDenied("This roll call is finished. Ask an admin to amend it.")
         entries = request.data.get("entries") or []
         statuses = set(RollCallEntry.Status.values) | {""}
         rows = {e.student_id: e for e in roll_call.entries.all()}
@@ -208,6 +213,51 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
             log_activity(school=roll_call.house.school, actor=request.user, action="boarding.roll_call",
                          summary=f"{roll_call.house.name} {roll_call.get_session_display().lower()} roll call: "
                                  f"{missing} missing")
+        return Response(self.get_serializer(roll_call).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, BoardingStaff, IsSchoolAdmin])
+    def amend(self, request, pk=None):
+        """Admins correct a finished roll call: {entries: [{student, status}], reason}. Recorded with before and
+        after (status codes only) in the activity log, and the reason on the roll call."""
+        roll_call = self.get_object()
+        if not roll_call.completed_at:
+            raise ValidationError("This roll call isn't finished yet. Mark it as usual.")
+        reason = str(request.data.get("reason", "")).strip()[:300]
+        if not reason:
+            raise ValidationError({"reason": ["Say why the roll call is being changed."]})
+        rows = {e.student_id: e for e in roll_call.entries.select_related("student")}
+        changes, touched = [], []
+        for item in request.data.get("entries") or []:
+            entry = rows.get(item.get("student")) if isinstance(item, dict) else None
+            status = item.get("status") if isinstance(item, dict) else None
+            if entry is None or status not in RollCallEntry.Status.values:
+                raise ValidationError({"entries": ["Each entry needs a boarder on this roll call and a status."]})
+            if "note" in item:
+                entry.note = str(item["note"])[:300]
+            if status != entry.status:
+                changes.append({"student": entry.student_id, "before": entry.status, "after": status})
+                entry.status = status
+            touched.append(entry)
+        if not changes:
+            raise ValidationError("Nothing to change: those boarders already have those statuses.")
+        with transaction.atomic():
+            RollCallEntry.objects.bulk_update(touched, ["status", "note"])
+            RollCallAmendment.objects.create(roll_call=roll_call, amended_by=request.user,
+                                             amended_by_name=display_name(request.user), reason=reason,
+                                             changes=changes)
+            for change in changes:
+                entry = rows[change["student"]]
+                if change["after"] == RollCallEntry.Status.MISSING:
+                    services.open_absence(entry.student, roll_call.house, roll_call, request.user, entry.note)
+                elif change["before"] == RollCallEntry.Status.MISSING:
+                    # Marked missing by mistake: the absence this roll call opened is withdrawn.
+                    for absence in Absence.objects.filter(student_id=change["student"], roll_call=roll_call,
+                                                          status=Absence.Status.OPEN):
+                        services.resolve_absence(absence, Absence.Resolution.RECORDED_IN_ERROR, request.user, "")
+            log_activity(school=roll_call.house.school, actor=request.user, action="boarding.roll_call_amended",
+                         target=roll_call, changes=changes,
+                         summary=f"Amended {roll_call.house.name} {roll_call.get_session_display().lower()} roll "
+                                 f"call of {roll_call.date:%d %b}: {len(changes)} change(s)")
         return Response(self.get_serializer(roll_call).data)
 
 

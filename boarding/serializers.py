@@ -98,11 +98,16 @@ class RollCallSerializer(serializers.ModelSerializer):
     session_label = serializers.CharField(source="get_session_display", read_only=True)
     entries = serializers.SerializerMethodField()
     counts = serializers.SerializerMethodField()
+    amendments = serializers.SerializerMethodField()
 
     class Meta:
         model = RollCall
         fields = ["id", "house", "house_name", "date", "session", "session_label", "taken_by_name", "created_at",
-                  "completed_at", "entries", "counts"]
+                  "completed_at", "entries", "counts", "amendments"]
+
+    def get_amendments(self, obj):
+        return [{"by": a.amended_by_name, "at": a.amended_at, "reason": a.reason, "changes": a.changes}
+                for a in obj.amendments.all()]
 
     def get_entries(self, obj):
         rows = obj.entries.select_related("student__bed__dorm").order_by("student__bed__dorm__name",
