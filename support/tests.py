@@ -54,8 +54,9 @@ class SupportTests(SchoolScopedAPITestCase):
 
     def pupil(self, name, klass, t2, t1, present=10):
         s = Student.objects.create(school=self.school_a, first_name=name, last_name="K", school_class=klass)
-        Grade.objects.create(student=s, subject=self.maths, term=self.t1, score=t1)
-        Grade.objects.create(student=s, subject=self.maths, term=self.t2, score=t2)
+        for _ in range(3):  # enough marks for an average to count (C-1: School.support_min_marks)
+            Grade.objects.create(student=s, subject=self.maths, term=self.t1, score=t1)
+            Grade.objects.create(student=s, subject=self.maths, term=self.t2, score=t2)
         for day in range(10):
             AttendanceRecord.objects.create(student=s, date=date(2026, 5, 11) + timedelta(days=day),
                                             status="present" if day < present else "absent")

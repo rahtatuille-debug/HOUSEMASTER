@@ -83,6 +83,8 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
                     school=student.school, student=student, term=term or data.term(None),
                     status=SupportConcern.Status.OPEN, reasons=reasons,
                     source=SupportConcern.Source.AUTO if reasons else SupportConcern.Source.MANUAL,
+                    measures=services.measures(data, term or data.term(None), [student.id]).get(student.id, {})
+                    if (term or data.term(None)) else {},
                     created_by=user, created_by_name=display_name(user),
                 )
         except IntegrityError:
@@ -128,8 +130,11 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         student, term = self._student_and_term(request.data)
         self._open_exists(student)
         user = request.user
+        data = SchoolGrades(student.school, recent=True, term_id=term.id if term else None)
+        term = term or data.term(None)
         concern = SupportConcern.objects.create(
-            school=student.school, student=student, term=term or SchoolGrades(student.school, recent=True).term(None),
+            school=student.school, student=student, term=term,
+            measures=services.measures(data, term, [student.id]).get(student.id, {}) if term else {},
             status=SupportConcern.Status.DISMISSED, source=SupportConcern.Source.AUTO,
             created_by=user, created_by_name=display_name(user), closed_by=user,
             closed_by_name=display_name(user), closed_at=timezone.now(),
@@ -148,6 +153,11 @@ def suggestions(request):
     term = data.term(request.query_params.get("term"))
     ids = [sid for sid in _visible_ids(user) if sid in data.students]
     found = services.suggestions(data, term, ids)
+    waiting = []
+    for sid, detail in services.not_enough_data(data, term, ids).items():
+        s = data.students[sid]
+        waiting.append({"student": sid, "name": f"{s.first_name} {s.last_name}", "detail": detail})
+    waiting.sort(key=lambda r: r["name"])
     results = []
     for sid, reasons in found.items():
         s = data.students[sid]
@@ -157,4 +167,4 @@ def suggestions(request):
                          "reasons": reasons})
     results.sort(key=lambda r: (-len(r["reasons"]), r["name"]))
     return Response({"term": term.id if term else None, "term_name": term.name if term else None,
-                     "results": results})
+                     "results": results, "not_enough_data": waiting})

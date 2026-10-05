@@ -71,6 +71,20 @@ class School(models.Model):
         default=80, validators=[MinValueValidator(1), MaxValueValidator(100)],
         help_text="Suggest support when a student attends less than this percentage of days in the term.",
     )
+    # Enough data before a sign counts, so one quiz or a few days don't flag a student (C-1).
+    support_min_marks = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(50)],
+        help_text="Marks a student needs in a term before their average can suggest support.",
+    )
+    support_min_days = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(200)],
+        help_text="Days of attendance recorded in a term before attendance can suggest support.",
+    )
+    support_reopen_points = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="A dismissed suggestion comes back that term if the average or attendance falls this many more "
+                  "points.",
+    )
     # Boarding is an option: the Boarding pages appear only for schools that turn it on.
     has_boarding = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -91,6 +105,9 @@ class YearGroup(models.Model):
     # sets these on the other section's year groups; blank means the school's.
     education_system = models.CharField(max_length=20, blank=True)
     grading_scale = models.CharField(max_length=10, blank=True)
+    # Blank: the school's support pass mark (School.support_pass_mark) applies to this year group.
+    support_pass_mark = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(100)])
 
     class Meta:
         unique_together = ("school", "name")
