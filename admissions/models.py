@@ -22,6 +22,9 @@ class AdmissionsSettings(models.Model):
     intro = models.TextField(blank=True, help_text="Shown at the top of the application form.")
     # Empty: families can apply for any year group.
     year_groups = models.ManyToManyField(YearGroup, blank=True, related_name="+")
+    # Keep closed applications (declined, withdrawn, enrolled) this many days after their last change, then
+    # purge_applications deletes them. Empty: kept until someone deletes them (the default).
+    retention_days = models.PositiveIntegerField(null=True, blank=True)
 
 
 class Application(models.Model):

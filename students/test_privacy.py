@@ -112,7 +112,7 @@ class FamilyDataTests(FamilyDataFixture):
         self.assertIn("personal-data-amina-otieno.xlsx", response["Content-Disposition"])
         wb = openpyxl.load_workbook(BytesIO(response.content))
         self.assertEqual(wb.sheetnames, ["Student", "Parents", "Grades", "Attendance", "Reports", "Messages",
-                                         "Subject comments", "About the student", "Support", "Boarding"])
+                                         "Subject comments", "About the student", "Support", "Boarding", "Applications"])
         student = {row[0]: row[1] for row in wb["Student"].iter_rows(min_row=2, values_only=True)}
         self.assertEqual((student["First name"], student["Health notes"], student["Photo held"]),
                          ("Amina", "Asthma", "Yes"))

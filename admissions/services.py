@@ -182,3 +182,31 @@ def enrol(application, school_class, admin):
         log_activity(school=school, actor=admin, action="admissions.enrolled", target=student,
                      summary=f"Enrolled {student_name(student)} in {school_class.name} from admissions")
     return student, f"{student_name(student)} is enrolled in {school_class.name}. {sentence}"
+
+
+def applications_about(student):
+    """The admissions applications held about a student: the one they were enrolled from, and any other for the
+    same child (name and date of birth) at the same school, e.g. an earlier one that was declined."""
+    from django.db.models import Q
+
+    same_child = Q(student=student)
+    if student.date_of_birth:
+        same_child |= Q(first_name__iexact=student.first_name.strip(), last_name__iexact=student.last_name.strip(),
+                        date_of_birth=student.date_of_birth)
+    return Application.objects.filter(same_child, school=student.school).select_related("year_group")
+
+
+def application_row(a):
+    return {
+        "reference": a.reference, "status": a.get_status_display(), "year_group": a.year_group.name if a.year_group else "",
+        "start": a.start, "sent": a.created_at.isoformat() if a.created_at else None,
+        "email_confirmed": a.confirmed_at.isoformat() if a.confirmed_at else None,
+        "first_name": a.first_name, "last_name": a.last_name,
+        "date_of_birth": a.date_of_birth.isoformat() if a.date_of_birth else None, "gender": a.gender,
+        "nationality": a.nationality, "current_school": a.current_school, "mode_of_learning": a.mode_of_learning,
+        "health_and_learning_needs": a.medical_notes, "family_notes": a.notes, "parent_name": a.parent_name,
+        "parent_email": a.parent_email, "parent_phone": a.parent_phone, "relationship": a.relationship,
+        "interview": a.interview_at.isoformat() if a.interview_at else None, "decision_note": a.decision_note,
+        "staff_notes": a.staff_notes,
+    }
+

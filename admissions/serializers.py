@@ -90,7 +90,7 @@ class SettingsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AdmissionsSettings
-        fields = ["is_open", "intro", "year_groups", "link_token"]
+        fields = ["is_open", "intro", "year_groups", "link_token", "retention_days"]
 
     def get_fields(self):
         fields = super().get_fields()

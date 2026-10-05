@@ -219,3 +219,62 @@ class ApplyLimitTests(AdmissionsFixture):
             codes = [self.apply(confirm=False, first_name=f"K{n}", parent_email=f"f{n}@example.test").status_code
                      for n in range(3)]
         self.assertEqual(codes, [202, 202, 429])
+
+
+class FamilyDataTests(AdmissionsFixture):
+    """B-4."""
+
+    def enrolled(self):
+        self.apply(medical_notes="Asthma: inhaler in bag")
+        app = self.application()
+        Application.objects.filter(pk=app.pk).update(status="offered", staff_notes="Met the head")
+        response = self.admin.post(f"/api/admissions/applications/{app.id}/enrol/", {"school_class": self.c7a.id},
+                                   format="json")
+        return app, response.data["student"]
+
+    def test_the_family_export_includes_their_applications(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+
+        app, student_id = self.enrolled()
+        # An earlier application for the same child, declined.
+        old = Application.objects.create(school=self.school_a, first_name="Zara", last_name="Patel",
+                                         date_of_birth="2015-03-02", parent_name="Priya Patel",
+                                         parent_email="priya@example.test", status="declined",
+                                         confirmed_at=timezone.now())
+        data = self.admin.get(f"/api/students/{student_id}/data-export/", {"format": "json"}).data
+        rows = data["admissions_applications"]
+        self.assertEqual({r["reference"] for r in rows}, {app.reference, old.reference})
+        self.assertIn("Asthma: inhaler in bag", str(rows))
+        response = self.admin.get(f"/api/students/{student_id}/data-export/")
+        sheet = load_workbook(BytesIO(response.content))["Applications"]
+        self.assertIn(app.reference, str([c.value for row in sheet.iter_rows() for c in row]))
+
+    def test_removing_a_familys_data_removes_their_applications(self):
+        app, student_id = self.enrolled()
+        Application.objects.create(school=self.school_b, first_name="Zara", last_name="Patel",
+                                   date_of_birth="2015-03-02", parent_name="X", parent_email="x@example.test")
+        response = self.admin.post(f"/api/students/{student_id}/remove-personal-data/",
+                                   {"confirm_name": "Zara Patel"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["applications_deleted"], 1)
+        self.assertFalse(Application.objects.filter(school=self.school_a).exists())
+        self.assertTrue(Application.objects.filter(school=self.school_b).exists())  # another school's is untouched
+
+    def test_retention_is_off_by_default_and_a_dry_run_by_default(self):
+        self.apply()
+        self.apply(first_name="Omar", parent_email="o@example.test")
+        old = timezone.now() - timedelta(days=400)
+        Application.objects.filter(first_name="Zara").update(status="declined", updated_at=old)
+        Application.objects.filter(first_name="Omar").update(updated_at=old)  # still open: never removed
+        call_command("purge_applications", "--apply", stdout=StringIO())
+        self.assertEqual(Application.objects.count(), 2)  # off by default
+        settings = self.admin.patch("/api/admissions/settings/", {"retention_days": 365}, format="json")
+        self.assertEqual(settings.data["retention_days"], 365)
+        out = StringIO()
+        call_command("purge_applications", stdout=out)
+        self.assertIn("1 closed", out.getvalue())
+        self.assertEqual(Application.objects.count(), 2)
+        call_command("purge_applications", "--apply", stdout=StringIO())
+        self.assertEqual(list(Application.objects.values_list("first_name", flat=True)), ["Omar"])
+        self.assertNotIn("Zara", out.getvalue())
