@@ -111,8 +111,9 @@ class FamilyDataTests(FamilyDataFixture):
         self.assertEqual(response.status_code, 200)
         self.assertIn("personal-data-amina-otieno.xlsx", response["Content-Disposition"])
         wb = openpyxl.load_workbook(BytesIO(response.content))
-        self.assertEqual(wb.sheetnames, ["Student", "Parents", "Grades", "Attendance", "Reports", "Messages",
-                                         "Subject comments", "About the student", "Support", "Boarding", "Applications"])
+        # Other features add sheets after these (applications, roll calls, the change log): they have their own tests.
+        self.assertEqual(wb.sheetnames[:10], ["Student", "Parents", "Grades", "Attendance", "Reports", "Messages",
+                                              "Subject comments", "About the student", "Support", "Boarding"])
         student = {row[0]: row[1] for row in wb["Student"].iter_rows(min_row=2, values_only=True)}
         self.assertEqual((student["First name"], student["Health notes"], student["Photo held"]),
                          ("Amina", "Asthma", "Yes"))
