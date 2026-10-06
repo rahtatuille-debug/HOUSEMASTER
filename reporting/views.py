@@ -18,7 +18,7 @@ from gradebook.models import Term
 from housemaster.pagination import PagedOnRequest
 from .models import StudentReport
 from .serializers import StudentReportSerializer, GenerateReportSerializer
-from .ai import BUSY_MESSAGE, UNUSABLE_MESSAGE, AIUnavailable
+from .ai import UNUSABLE_MESSAGE, AIUnavailable
 from .services import AIReplyUnusable, generate_report
 
 CLASS_RUN_SALT = "reporting.class-run"
@@ -209,8 +209,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             report = generate_report(student, term)
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except AIUnavailable:
-            return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIUnavailable as exc:
+            return Response({"detail": exc.detail}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except AIReplyUnusable:
             return Response({"detail": UNUSABLE_MESSAGE}, status=status.HTTP_502_BAD_GATEWAY)
 
@@ -304,8 +304,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             report = generate_report(student, term)
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except AIUnavailable:
-            return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIUnavailable as exc:
+            return Response({"detail": exc.detail}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except AIReplyUnusable:
             return Response({"detail": UNUSABLE_MESSAGE}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"skipped": False, "report": StudentReportSerializer(report).data})

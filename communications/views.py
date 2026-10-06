@@ -14,7 +14,7 @@ from activity.services import log_activity
 from students.models import SchoolClass, YearGroup
 
 from guardians.notifications import notify_announcement_published
-from reporting.ai import BUSY_MESSAGE, AIUnavailable
+from reporting.ai import AIUnavailable
 from housemaster.pagination import PagedOnRequest
 
 from .alerts import alert_recipient_users, email_alert_later
@@ -196,8 +196,8 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             )
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except AIUnavailable:
-            return Response({"detail": BUSY_MESSAGE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AIUnavailable as exc:
+            return Response({"detail": exc.detail}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         return Response({"title": title, "body": body}, status=status.HTTP_200_OK)
 
