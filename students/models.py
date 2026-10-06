@@ -86,9 +86,10 @@ class School(models.Model):
                   "points.",
     )
     # A student is ranked only with marks in at least this share of the usual number of subjects of the students
-    # ranked with them; otherwise "not ranked: incomplete marks" (D-1). 0 ranks everyone with a mark.
+    # ranked with them; otherwise "not ranked: incomplete marks" (D-1). 0 (the default, the owner's choice) ranks
+    # everyone with a mark; the basis on each row still says how many subjects it counts.
     ranking_min_share = models.PositiveSmallIntegerField(
-        default=75, validators=[MaxValueValidator(100)],
+        default=0, validators=[MaxValueValidator(100)],
         help_text="Percent of the usual subjects a student needs marks in to be ranked.",
     )
     # Boarding is an option: the Boarding pages appear only for schools that turn it on.

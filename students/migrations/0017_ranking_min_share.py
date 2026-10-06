@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
             model_name="school",
             name="ranking_min_share",
             field=models.PositiveSmallIntegerField(
-                default=75,
+                default=0,
                 help_text="Percent of the usual subjects a student needs marks in to be ranked.",
                 validators=[django.core.validators.MaxValueValidator(100)],
             ),

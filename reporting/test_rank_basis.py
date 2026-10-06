@@ -16,6 +16,9 @@ from .test_rankings import RankingFixture
 class RankBasisTests(RankingFixture):
     def setUp(self):
         super().setUp()
+        # The owner chose to rank everyone by default (0%); these tests use a school that sets 75%.
+        School.objects.filter(pk=self.school_a.pk).update(ranking_min_share=75)
+        self.school_a.refresh_from_db()
         everything = {self.maths: 70, self.english: 70, self.chem: 70}
         self.ann = self.pupil("Ann", self.east, {**everything, self.maths: 90}, everything)
         self.ben = self.pupil("Ben", self.east, everything, everything)
@@ -35,6 +38,14 @@ class RankBasisTests(RankingFixture):
         rows = self.rows(scope="class", id=self.east.id)
         self.assertEqual(rows["Ann"]["basis"], {"subjects": 3, "marks": 3, "usual_subjects": 3})
         self.assertEqual(rows["Cat"]["basis"], {"subjects": 1, "marks": 1, "usual_subjects": 3})
+
+    def test_by_default_everyone_with_a_mark_is_ranked(self):
+        School.objects.filter(pk=self.school_a.pk).update(ranking_min_share=School._meta.get_field("ranking_min_share")
+                                                          .default)
+        rows = self.rows(scope="class", id=self.east.id)
+        self.assertEqual(rows["Cat"]["position"], 1)  # ranked on her one mark, and the basis says so
+        self.assertEqual(rows["Cat"]["basis"]["subjects"], 1)
+        self.assertEqual(rows["Cat"]["not_ranked"], None)
 
     def test_the_school_sets_the_share_and_can_turn_it_off(self):
         School.objects.filter(pk=self.school_a.pk).update(ranking_min_share=0)
