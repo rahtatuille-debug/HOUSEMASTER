@@ -190,6 +190,13 @@ data, and what must each school's notice say?
 open web form before any offer is made, and on what legal basis? If yes, how
 long may it keep that information for children who are not offered a place?
 
+**Update (2026-10-06):** the owner chose to ask only a yes/no question on the
+form ("Does your child have health or learning needs we should discuss?").
+Details are collected after an offer. Older applications may still hold free
+text until retention or the purge removes it. Counsel: confirm a yes/no answer
+is acceptable at this stage, and how long to keep it for families not offered
+a place.
+
 **Affects:** DRAFT_school_privacy_notice_template.md, DRAFT_DPIA.md (risk 17),
 docs/DESIGN_health_notes_public_form.md.
 
@@ -197,7 +204,14 @@ docs/DESIGN_health_notes_public_form.md.
 
 **Question:** for a parent's access request, must the school's copy include
 boarding roll-call marks, the change log entries naming the child, and parent
-sign-up requests and invitations? These are not yet in HouseMaster's export.
+sign-up requests and invitations?
+
+**Update (2026-10-06):** the export now includes all of these: the current bed,
+roll-call marks, missing-boarder records, parent invitations, sign-up requests,
+and the change log entries about the child (X-4). Counsel: confirm nothing else
+is needed. One example is staff-only notes, such as the reason a boarder's leave
+needs admin approval. Today they are in the change log only as "set" or
+"cleared", without the note.
 
 **Affects:** DRAFT_data_processing_agreement.md (clause 5.1), DRAFT_DPIA.md,
 DRAFT_school_privacy_notice_template.md.
