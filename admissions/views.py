@@ -145,7 +145,8 @@ class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixin
             if str(request.data.get("school_class", "")).isdigit() else None
         if school_class is None:
             raise ValidationError({"school_class": ["Choose a class."]})
-        student, sentence = services.enrol(application, school_class, request.user)
+        student, sentence = services.enrol(application, school_class, request.user,
+                                           different_child=request.data.get("different_child") is True)
         return Response({"message": sentence, "student": student.id,
                          "application": self.get_serializer(application).data})
 

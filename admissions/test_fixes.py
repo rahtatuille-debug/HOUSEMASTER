@@ -485,3 +485,28 @@ class HealthQuestionTests(AdmissionsFixture):
 
         self.apply(has_needs=False)
         self.assertIs(application_row(self.application())["needs_to_discuss"], False)
+
+
+class DifferentChildTests(AdmissionsFixture):
+    """An admin can enrol a child whose name and date of birth match an existing student, saying it's someone else."""
+
+    def setUp(self):
+        super().setUp()
+        from students.models import Student
+
+        self.existing = Student.objects.create(school=self.school_a, first_name="Zara", last_name="Patel",
+                                               date_of_birth="2015-03-02", school_class=self.c7a)
+        self.apply()
+        self.app = self.application()
+        Application.objects.filter(pk=self.app.pk).update(status="offered")
+        self.url = f"/api/admissions/applications/{self.app.id}/enrol/"
+
+    def test_without_saying_so_it_is_refused(self):
+        self.assertEqual(self.admin.post(self.url, {"school_class": self.c7a.id}, format="json").status_code, 400)
+
+    def test_saying_it_is_a_different_child_enrols_and_is_logged(self):
+        response = self.admin.post(self.url, {"school_class": self.c7a.id, "different_child": True}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotEqual(response.data["student"], self.existing.id)
+        log = ActivityLog.objects.get(action="admissions.enrolled_different_child")
+        self.assertEqual(log.details["existing_student"], self.existing.id)

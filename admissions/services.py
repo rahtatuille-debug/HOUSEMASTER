@@ -179,20 +179,26 @@ def link_parent(school, student, application, admin):
     return f"Invited {application.parent_name} to set up a parent account."
 
 
-def enrol(application, school_class, admin):
-    """Make the applicant a student in the class and invite the parent. Returns (student, sentence)."""
+def enrol(application, school_class, admin, different_child=False):
+    """Make the applicant a student in the class and invite the parent. Returns (student, sentence).
+    `different_child`: the admin has checked that a student with the same name and date of birth is someone else."""
     if application.status == Application.Status.ENROLLED:
         raise ValidationError("This applicant is already enrolled.")
     if application.status not in (Application.Status.OFFERED, Application.Status.ACCEPTED):
         raise ValidationError("Offer a place first; enrol once it's offered or accepted.")
     school = application.school
     already = existing_student(application)
-    if already is not None:
+    if already is not None and not different_child:
         where = "is already a student here" if already.is_active else "was a student here (now inactive)"
         raise ValidationError({"detail": f"{student_name(already)}, born {already.date_of_birth:%d %b %Y}, {where}. "
                                          "Open their student page instead of enrolling them again"
-                                         f"{'' if already.is_active else ' (reactivate them there)'}.",
+                                         f"{'' if already.is_active else ' (reactivate them there)'}, or, if this is "
+                                         "a different child, choose 'Enrol anyway'.",
                                "existing_student": already.id})
+    if already is not None:
+        log_activity(school=school, actor=admin, action="admissions.enrolled_different_child", target=already,
+                     summary=f"Enrolled an applicant with the same name and date of birth as {student_name(already)}, "
+                             "confirmed as a different child", existing_student=already.id)
     with transaction.atomic():
         found = settings_for(school)
         lock_school(found)
