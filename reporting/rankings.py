@@ -57,3 +57,29 @@ def kcse_totals(percents):
     mean = sum(points) / len(points)
     return {"total_marks": round(sum(values)), "total_points": sum(points),
             "mean_points": round(mean, 2), "mean_grade": mean_grade(mean)}
+
+
+def usual_subjects(counts):
+    """The usual number of subjects among students ranked together: the median of those with any marks."""
+    values = sorted(c for c in counts.values() if c)
+    return values[len(values) // 2] if values else 0
+
+
+def complete_enough(counts, min_share):
+    """{key: True/False}: has the student marks in at least min_share % of the usual number of subjects?
+    min_share 0 ranks everyone with any mark."""
+    usual = usual_subjects(counts)
+    need = -(-usual * min_share // 100)  # ceiling
+    return {key: bool(count) and count >= need for key, count in counts.items()}
+
+
+def ranking_scores(system, percents, min_share):
+    """{key: score or None} like overall_score, leaving out students with incomplete marks so they neither get
+    a position nor push anyone else down. `percents`: {key: [subject percentages]}."""
+    counts = {key: len([p for p in values if p is not None]) for key, values in percents.items()}
+    ok = complete_enough(counts, min_share)
+    return {key: overall_score(system, values) if ok[key] else None for key, values in percents.items()}
+
+
+INCOMPLETE = "Not ranked: incomplete marks"
+

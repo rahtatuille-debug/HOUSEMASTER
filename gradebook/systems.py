@@ -82,7 +82,7 @@ def _positions(student, term, system, report=None):
     If the student has moved class since the report was finalized, they are ranked against the students
     whose reports that term were in the same form, as recorded on the reports."""
     from reporting.models import StudentReport
-    from reporting.rankings import overall_score, positions
+    from reporting.rankings import positions, ranking_scores
     from students.models import Student
 
     klass = student.school_class
@@ -100,15 +100,17 @@ def _positions(student, term, system, report=None):
                                            school_class__year_group_id=klass.year_group_id)
                     .values_list("id", "school_class_id"))
     percents = _subject_percents([sid for sid, _ in form], term)
-    scores = {sid: overall_score(system, percents.get(sid, {}).values()) for sid, _ in form}
-    if scores.get(student.id) is None:
-        return None
+    share = student.school.ranking_min_share
 
     def place(ids):
-        ranked = positions({i: scores[i] for i in ids})
+        # The same rule as the performance pages: incomplete marks aren't ranked (reporting.rankings).
+        ranked = positions(ranking_scores(system, {i: list(percents.get(i, {}).values()) for i in ids}, share))
+        if student.id not in ranked:
+            return None
         return {"position": ranked[student.id], "of": len(ranked)}
 
-    return {"stream": place([sid for sid, cid in form if cid == klass.id]), "form": place([sid for sid, _ in form])}
+    stream, form_place = place([sid for sid, cid in form if cid == klass.id]), place([sid for sid, _ in form])
+    return {"stream": stream, "form": form_place} if stream and form_place else None
 
 
 def term_summary(student, term, report=None):

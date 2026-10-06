@@ -66,16 +66,19 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
     def create(self, request, *args, **kwargs):
         student, term = self._student_and_term(request.data)
         codes = request.data.get("reasons") or []
-        if not isinstance(codes, list) or any(c not in services.REASONS for c in codes):
+        known = {**services.REASONS, **services.EXTRA_REASONS}
+        if not isinstance(codes, list) or any(c not in known for c in codes):
             raise ValidationError({"reasons": [f"Choose from: {', '.join(services.REASONS)}."]})
         self._open_exists(student)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         # The reasons as they stand now, worded with the student's numbers.
         data = SchoolGrades(student.school, recent=True, term_id=term.id if term else None)
-        found = {r["code"]: r for r in services.warning_signs(data, term or data.term(None), [student.id])
-                 .get(student.id, [])}
-        reasons = [found.get(code, {"code": code, "label": services.REASONS[code]}) for code in dict.fromkeys(codes)]
+        focus = term or data.term(None)
+        found = {r["code"]: r for r in services.warning_signs(data, focus, [student.id]).get(student.id, [])}
+        # A suggestion that came back after being dismissed also carries its "worse since" reason.
+        found.update({r["code"]: r for r in services.suggestions(data, focus, [student.id]).get(student.id, [])})
+        reasons = [found.get(code, {"code": code, "label": known[code]}) for code in dict.fromkeys(codes)]
         user = request.user
         try:
             with transaction.atomic():
@@ -83,6 +86,8 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
                     school=student.school, student=student, term=term or data.term(None),
                     status=SupportConcern.Status.OPEN, reasons=reasons,
                     source=SupportConcern.Source.AUTO if reasons else SupportConcern.Source.MANUAL,
+                    measures=services.measures(data, term or data.term(None), [student.id]).get(student.id, {})
+                    if (term or data.term(None)) else {},
                     created_by=user, created_by_name=display_name(user),
                 )
         except IntegrityError:
@@ -128,8 +133,11 @@ class SupportConcernViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         student, term = self._student_and_term(request.data)
         self._open_exists(student)
         user = request.user
+        data = SchoolGrades(student.school, recent=True, term_id=term.id if term else None)
+        term = term or data.term(None)
         concern = SupportConcern.objects.create(
-            school=student.school, student=student, term=term or SchoolGrades(student.school, recent=True).term(None),
+            school=student.school, student=student, term=term,
+            measures=services.measures(data, term, [student.id]).get(student.id, {}) if term else {},
             status=SupportConcern.Status.DISMISSED, source=SupportConcern.Source.AUTO,
             created_by=user, created_by_name=display_name(user), closed_by=user,
             closed_by_name=display_name(user), closed_at=timezone.now(),
@@ -148,6 +156,11 @@ def suggestions(request):
     term = data.term(request.query_params.get("term"))
     ids = [sid for sid in _visible_ids(user) if sid in data.students]
     found = services.suggestions(data, term, ids)
+    waiting = []
+    for sid, detail in services.not_enough_data(data, term, ids).items():
+        s = data.students[sid]
+        waiting.append({"student": sid, "name": f"{s.first_name} {s.last_name}", "detail": detail})
+    waiting.sort(key=lambda r: r["name"])
     results = []
     for sid, reasons in found.items():
         s = data.students[sid]
@@ -157,4 +170,4 @@ def suggestions(request):
                          "reasons": reasons})
     results.sort(key=lambda r: (-len(r["reasons"]), r["name"]))
     return Response({"term": term.id if term else None, "term_name": term.name if term else None,
-                     "results": results})
+                     "results": results, "not_enough_data": waiting})

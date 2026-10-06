@@ -46,6 +46,9 @@ class SupportConcern(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
     closing_note = models.TextField(blank=True)
     parents_notified_at = models.DateTimeField(null=True, blank=True)
+    # The student's numbers when a person looked at it ({"average": %, "attendance": %}), so a dismissed
+    # suggestion can come back if things get clearly worse (C-1).
+    measures = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]

@@ -8,7 +8,7 @@ class SchoolSerializer(serializers.ModelSerializer):
         model = School
         fields = ["id", "name", "report_tone", "grading_scale", "privacy_contact", "education_system", "country", "vocab_overrides", "motto",
                   "address", "phone", "email", "timezone", "support_pass_mark", "support_drop_points",
-                  "support_attendance_min", "has_boarding", "created_at"]
+                  "support_attendance_min", "support_min_marks", "support_min_days", "support_reopen_points", "ranking_min_share", "has_boarding", "created_at"]
 
     def validate_timezone(self, value):
         from .localtime import valid_zones
@@ -29,7 +29,7 @@ class SchoolSerializer(serializers.ModelSerializer):
 class YearGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = YearGroup
-        fields = ["id", "school", "name", "order", "is_final", "education_system", "grading_scale"]
+        fields = ["id", "school", "name", "order", "is_final", "education_system", "grading_scale", "support_pass_mark"]
         extra_kwargs = {"school": {"read_only": True}}
 
     def validate_education_system(self, value):

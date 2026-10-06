@@ -19,6 +19,8 @@ REASONS = {
     "big_drop": "Average dropped",
     "poor_attendance": "Low attendance",
 }
+# Shown with a suggestion that came back; not a reason a teacher picks.
+EXTRA_REASONS = {"worse": "Worse since dismissed"}
 
 
 def _num(value):
@@ -37,34 +39,88 @@ def _attendance_rates(student_ids, term):
     return {sid: round((c["present"] + c["late"]) / sum(c.values()) * 100, 1) for sid, c in counts.items() if c}
 
 
+def _attendance_days(student_ids, term):
+    """{student: days of attendance recorded} within the term's dates."""
+    if not (term.start_date and term.end_date):
+        return {}
+    return Counter(AttendanceRecord.objects.filter(
+        student_id__in=student_ids, date__gte=term.start_date, date__lte=term.end_date,
+    ).values_list("student_id", flat=True))
+
+
+def mark_count(data, sid, term):
+    return sum(len(marks) for marks in data.marks.get((sid, term.id), {}).values()) if term else 0
+
+
+def pass_mark(data, sid):
+    """The year group's pass mark if it sets one, otherwise the school's."""
+    klass = data.students[sid].school_class if sid in data.students else None
+    own = klass.year_group.support_pass_mark if klass else None
+    return own or data.school.support_pass_mark
+
+
+def measures(data, term, student_ids):
+    """{student: {"average", "attendance"}}: the numbers the signs are checked on, where there is enough data."""
+    school = data.school
+    rates, days = _attendance_rates(student_ids, term), _attendance_days(student_ids, term)
+    out = {}
+    for sid in student_ids:
+        enough = mark_count(data, sid, term) >= school.support_min_marks
+        out[sid] = {"average": data.student_average(sid, term.id) if enough else None,
+                    "attendance": rates.get(sid) if days.get(sid, 0) >= school.support_min_days else None}
+    return out
+
+
+def _previous(data, term):
+    graded = data.graded_terms
+    return graded[graded.index(term) - 1] if term in graded and graded.index(term) > 0 else None
+
+
 def warning_signs(data, term, student_ids):
-    """{student: [{code, label}]} for the students showing a warning sign this term. `data` is SchoolGrades."""
+    """{student: [{code, label}]} for the students showing a warning sign this term. `data` is SchoolGrades.
+    A sign needs enough data: School.support_min_marks marks in the term (in both terms for a drop) and
+    support_min_days days of attendance. A student who joined after last term began has no "drop"."""
     if term is None:
         return {}
     school = data.school
-    graded = data.graded_terms
-    previous = graded[graded.index(term) - 1] if term in graded and graded.index(term) > 0 else None
-    rates = _attendance_rates(student_ids, term)
+    previous = _previous(data, term)
+    now = measures(data, term, student_ids)
     found = {}
     for sid in student_ids:
         reasons = []
-        average = data.student_average(sid, term.id)
-        if average is not None and average < school.support_pass_mark:
+        average, rate = now[sid]["average"], now[sid]["attendance"]
+        mark = pass_mark(data, sid)
+        if average is not None and average < mark:
             reasons.append({"code": "low_average", "label":
-                            f"Average {_num(average)}% in {term.name}, below the pass mark of "
-                            f"{school.support_pass_mark}%"})
-        before = data.student_average(sid, previous.id) if previous else None
+                            f"Average {_num(average)}% in {term.name}, below the pass mark of {mark}%"})
+        student = data.students.get(sid)
+        joined_since = (student is not None and student.enrolled_on and previous is not None and previous.start_date
+                        and student.enrolled_on > previous.start_date)
+        before = data.student_average(sid, previous.id) \
+            if previous and not joined_since and mark_count(data, sid, previous) >= school.support_min_marks else None
         if average is not None and before is not None and before - average >= school.support_drop_points:
             reasons.append({"code": "big_drop", "label":
                             f"Average fell {_num(round(before - average, 1))} points since {previous.name} "
                             f"({_num(before)}% to {_num(average)}%)"})
-        rate = rates.get(sid)
         if rate is not None and rate < school.support_attendance_min:
             reasons.append({"code": "poor_attendance", "label":
                             f"Attended {_num(rate)}% of days in {term.name} (below {school.support_attendance_min}%)"})
         if reasons:
             found[sid] = reasons
     return found
+
+
+def not_enough_data(data, term, student_ids):
+    """{student: detail} for students with some marks this term, but too few for their average to count yet."""
+    if term is None:
+        return {}
+    need = data.school.support_min_marks
+    out = {}
+    for sid in student_ids:
+        have = mark_count(data, sid, term)
+        if 0 < have < need:
+            out[sid] = f"{have} of {need} marks so far in {term.name}: not enough data yet"
+    return out
 
 
 def handled(student_ids, term):
@@ -76,10 +132,42 @@ def handled(student_ids, term):
 
 
 def suggestions(data, term, student_ids):
-    """{student: reasons} for students showing warning signs who haven't been looked at yet."""
+    """{student: reasons} for students showing warning signs who haven't been looked at yet, or whose dismissed
+    suggestion this term has since got clearly worse (School.support_reopen_points)."""
     signs = warning_signs(data, term, student_ids)
     done = handled(list(signs), term)
-    return {sid: reasons for sid, reasons in signs.items() if sid not in done}
+    out = {sid: reasons for sid, reasons in signs.items() if sid not in done}
+    for sid, extra in _worse_since_dismissed(data, term, [s for s in signs if s in done]).items():
+        out[sid] = signs[sid] + [extra]
+    return out
+
+
+def _worse_since_dismissed(data, term, student_ids):
+    """{student: reason} for students whose only concern this term is a dismissed suggestion, and whose average or
+    attendance has fallen at least support_reopen_points since it was dismissed."""
+    if term is None or not student_ids:
+        return {}
+    open_ids = set(SupportConcern.objects.filter(student_id__in=student_ids, status=SupportConcern.Status.OPEN)
+                   .values_list("student_id", flat=True))
+    rows = SupportConcern.objects.filter(student_id__in=student_ids, term=term).exclude(student_id__in=open_ids)
+    by_student = defaultdict(list)
+    for row in rows:
+        by_student[row.student_id].append(row)
+    margin = data.school.support_reopen_points
+    now = measures(data, term, list(by_student))
+    out = {}
+    for sid, concerns in by_student.items():
+        if any(c.status != SupportConcern.Status.DISMISSED for c in concerns):
+            continue  # confirmed and resolved this term: a person has already acted
+        latest = max(concerns, key=lambda c: (c.created_at, c.id))
+        then = latest.measures or {}
+        for key, word in (("average", "Average"), ("attendance", "Attendance")):
+            old, new = then.get(key), now[sid][key]
+            if old is not None and new is not None and old - new >= margin:
+                out[sid] = {"code": "worse", "label": f"{word} {_num(old)}% to {_num(new)}% since the suggestion "
+                                                      "was dismissed"}
+                break
+    return out
 
 
 def status_for(data, term, student_ids):
