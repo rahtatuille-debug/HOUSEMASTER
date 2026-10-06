@@ -235,7 +235,7 @@ def application_row(a):
         "first_name": a.first_name, "last_name": a.last_name,
         "date_of_birth": a.date_of_birth.isoformat() if a.date_of_birth else None, "gender": a.gender,
         "nationality": a.nationality, "current_school": a.current_school, "mode_of_learning": a.mode_of_learning,
-        "health_and_learning_needs": a.medical_notes, "family_notes": a.notes, "parent_name": a.parent_name,
+        "needs_to_discuss": a.has_needs, "health_and_learning_needs": a.medical_notes, "family_notes": a.notes, "parent_name": a.parent_name,
         "parent_email": a.parent_email, "parent_phone": a.parent_phone, "relationship": a.relationship,
         "interview": a.interview_at.isoformat() if a.interview_at else None, "decision_note": a.decision_note,
         "staff_notes": a.staff_notes,

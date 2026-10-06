@@ -55,7 +55,11 @@ class Application(models.Model):
     nationality = models.CharField(max_length=60, blank=True)
     current_school = models.CharField(max_length=200, blank=True)
     mode_of_learning = models.CharField(max_length=10, blank=True)  # day or boarding
+    # Applications made before the form stopped asking for health details may still hold them.
     medical_notes = models.TextField(blank=True)
+    # The public form asks only whether there are health or learning needs to discuss (yes/no, optional); the
+    # details are collected after an offer, through the parent account (docs/DESIGN_health_notes_public_form.md).
+    has_needs = models.BooleanField(null=True, blank=True)
     notes = models.TextField(blank=True, help_text="Anything else the family wants the school to know.")
 
     parent_name = models.CharField(max_length=200)

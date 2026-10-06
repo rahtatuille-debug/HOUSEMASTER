@@ -1,6 +1,6 @@
 # Design note: health information on the public application form
 
-Status: proposal (B-4). No code changes here. A school-policy and legal decision is needed: see [VERIFY] markers.
+Status: **Option B chosen by the owner (2026-10-06) and built**: the public form asks a yes/no question (`Application.has_needs`); the free-text field is no longer on the form. Old applications keep any text they hold until retention or the purge removes it. The legal [VERIFY] items below still stand.
 
 ## Where things are today
 

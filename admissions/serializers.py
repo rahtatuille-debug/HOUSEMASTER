@@ -10,7 +10,7 @@ from .models import AdmissionsSettings, Application
 OLDEST_APPLICANT = 25
 
 FAMILY_FIELDS = ["year_group", "start", "first_name", "last_name", "date_of_birth", "gender", "nationality",
-                 "current_school", "mode_of_learning", "medical_notes", "notes", "parent_name", "parent_email",
+                 "current_school", "mode_of_learning", "has_needs", "notes", "parent_name", "parent_email",
                  "parent_phone", "relationship"]
 
 
@@ -90,10 +90,11 @@ class ApplicationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Application
-        fields = ["id", "reference", "status", "status_label", "year_group_name", *FAMILY_FIELDS, "staff_notes",
+        fields = ["id", "reference", "status", "status_label", "year_group_name", *FAMILY_FIELDS, "medical_notes",
+                  "staff_notes",
                   "interview_at", "decision_note", "decided_by_name", "student", "student_class", "student_number",
                   "age_note", "created_at", "updated_at"]
-        read_only_fields = [f for f in FAMILY_FIELDS if f != "year_group"] + [
+        read_only_fields = [f for f in FAMILY_FIELDS if f != "year_group"] + ["medical_notes",
             "decided_by_name", "student", "created_at", "updated_at"]
 
     def get_fields(self):

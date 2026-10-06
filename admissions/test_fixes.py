@@ -225,9 +225,11 @@ class FamilyDataTests(AdmissionsFixture):
     """B-4."""
 
     def enrolled(self):
-        self.apply(medical_notes="Asthma: inhaler in bag")
+        self.apply()
         app = self.application()
-        Application.objects.filter(pk=app.pk).update(status="offered", staff_notes="Met the head")
+        # Health details from an application made before the form stopped asking for them.
+        Application.objects.filter(pk=app.pk).update(status="offered", staff_notes="Met the head",
+                                                     medical_notes="Asthma: inhaler in bag")
         response = self.admin.post(f"/api/admissions/applications/{app.id}/enrol/", {"school_class": self.c7a.id},
                                    format="json")
         return app, response.data["student"]
@@ -462,3 +464,24 @@ class AdmissionsIsolationTests(AdmissionsFixture):
         theirs = YearGroup.objects.create(school=self.school_b, name="Theirs")
         response = self.admin.patch("/api/admissions/settings/", {"year_groups": [theirs.id]}, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class HealthQuestionTests(AdmissionsFixture):
+    """The public form asks only whether there are needs to discuss; details come after an offer."""
+
+    def test_the_form_takes_a_yes_or_no_and_ignores_free_text(self):
+        self.assertEqual(self.apply(has_needs=True, medical_notes="Diagnosis details").status_code, 200)
+        app = self.application()
+        self.assertEqual((app.has_needs, app.medical_notes), (True, ""))
+        row = self.admin.get(f"/api/admissions/applications/{app.id}/").data
+        self.assertIs(row["has_needs"], True)
+
+    def test_not_answering_is_allowed(self):
+        self.assertEqual(self.apply().status_code, 200)
+        self.assertIsNone(self.application().has_needs)
+
+    def test_the_answer_is_in_the_family_export(self):
+        from .services import application_row
+
+        self.apply(has_needs=False)
+        self.assertIs(application_row(self.application())["needs_to_discuss"], False)
