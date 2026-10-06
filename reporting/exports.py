@@ -339,7 +339,10 @@ def reports_pdf(school, students, term):
         details = [f"{words['term']}: {term.name}"]
         if report.class_name:  # the class they were in at the time
             details.append(f"{words['class']}: {report.class_name}")
-        elif klass:
+        elif report.status == "finalized" and not report.class_recorded:
+            # Finalized before classes were recorded: today's class may not be the one they were in.
+            details.append(f"{words['class']}: not recorded")
+        elif klass and not report.class_recorded:
             details.append(f"{words['class']}: {klass.year_group.name} · {klass.name}")
         if s.external_id:
             details.append(f"{words['student_id']}: {s.external_id}")

@@ -118,13 +118,15 @@ def sample_report_pdf(settings):
         from students.presets import school_vocab
 
         words = school_vocab(school)
-        StudentReport.objects.create(
+        report = StudentReport(
             student=student, term=term, status="finalized", finalized_at=timezone.now(), extra=extra,
             progress_summary="Sample", principal_comment=PRINCIPAL_COMMENT.format(term=words["term"].lower()),
             report_comment=TEACHER_COMMENTS.get(tone, TEACHER_COMMENTS["formal"]).format(
                 name=first, best=ranked[-1][0] if ranked else "class", weakest=ranked[0][0] if ranked else "class",
                 subjects=words["subjects"].lower(), term=words["term"].lower()),
         )
+        report.record_class()  # as finalizing would
+        report.save()
         pdf, _count = reports_pdf(school, [student], term)
         transaction.set_rollback(True)
     return pdf
