@@ -53,8 +53,13 @@ class ExportTests(SchoolScopedAPITestCase):
         self.assertIn("class-list-7a.xlsx", response["Content-Disposition"])
         rows = self.sheet(response, "Class list")
         self.assertEqual(rows[0][:3], ["Admission no.", "Last name", "First name"])
-        self.assertEqual([r[0] for r in rows[1:]], ["S2", "S1"])  # by last name: Two, Ångström sorts after
-        self.assertEqual(rows[2][-1], "Asthma")
+        # By last name, in the database's own order: where "Ångström" falls next to "Two" depends on its
+        # collation (byte order puts it last, a language-aware one puts it first), so don't fix one here.
+        expected = list(Student.objects.filter(school_class=self.c7a).order_by("last_name", "first_name")
+                        .values_list("external_id", flat=True))
+        self.assertEqual(sorted(expected), ["S1", "S2"])
+        self.assertEqual([r[0] for r in rows[1:]], expected)
+        self.assertEqual({r[0]: r[-1] for r in rows[1:]}["S1"], "Asthma")
         self.assertTrue(ActivityLog.objects.filter(action="export.downloaded").exists())
 
     def test_grades(self):
