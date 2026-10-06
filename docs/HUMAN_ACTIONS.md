@@ -276,14 +276,25 @@ Since about 20:00 UTC on 2026-10-05, every CI job in both repositories has faile
 Runner of type hosted even after multiple attempts". No test ran: the jobs never started. This usually means the
 account's included Actions minutes or the spending limit is used up, or GitHub is having an outage.
 1. GitHub → Settings → Billing and plans → check Actions usage and the spending limit; githubstatus.com for outages.
-2. When runners are back, re-run the failed checks on PRs #14 to #23 (backend) and #12 to #17 (frontend). Every
+2. When runners are back, re-run the failed checks on PRs #14 to #25 (backend) and #12 to #18 (frontend). Every
    branch passed its tests locally (FIX_REPORT.md, "Evidence").
+3. Once PR #24 is merged, add the new check **test-postgres** to the required checks on `master` (H-7). It runs
+   the tests on Postgres, including the "two at once" tests SQLite can't run.
 
 ## H-14 · Email for admissions confirmations (before turning admissions on)
 
 Families now confirm their email before an application reaches the school (B-1), so admissions doesn't work
 without a working email provider (H-3: `EMAIL_BACKEND`, `EMAIL_HOST*`, `DEFAULT_FROM_EMAIL`). Choose the provider and
-the sender name/address families will see. Optional settings: `ADMISSIONS_CONFIRM_HOURS` (48),
+the sender name/address families will see. **Chosen: Brevo.** On Render → housemaster backend → Environment:
+1. In Brevo: Settings → Senders, domains → add and verify the sending domain (it gives DNS records to add where the
+   domain is registered), then add the sender address, e.g. `noreply@<your domain>`.
+2. In Brevo: SMTP & API → SMTP → note the login and create an SMTP key (shown once; keep it in a password manager).
+3. On Render set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST=smtp-relay.brevo.com`,
+   `EMAIL_PORT=587`, `EMAIL_USE_TLS=true`, `EMAIL_HOST_USER=<the SMTP login>`, `EMAIL_HOST_PASSWORD=<the SMTP key>`,
+   `DEFAULT_FROM_EMAIL=HouseMaster <noreply@your domain>`, then Save (Render redeploys).
+4. Check: use "Forgot password" for your own account and confirm the email arrives (and not in spam).
+
+Optional settings: `ADMISSIONS_CONFIRM_HOURS` (48),
 `ADMISSIONS_DUPLICATE_DAYS` (30), `ADMISSIONS_APPLY_RATE` (30/hour), `ADMISSIONS_APPLY_EMAIL_RATE` (5/hour), all in
 docs/ENVIRONMENT.md.
 
@@ -303,16 +314,44 @@ without `--apply`. Run each first without it and check the numbers.
 
 ## H-16 · School-policy decisions raised by the fixes
 
+Decided by the owner on 2026-10-06 and built: the public form asks a yes/no health question only; admission
+numbers are always assigned; an admin can enrol a different child who shares a name and birthday; everyone with
+a mark is ranked by default (0%); a bed swap needs the admin to confirm; boarders can be marked "leave only with
+admin approval" and every parent hears about leave; phone and browser notifications now, SMS later.
+
+Still open:
 - Each school: whether to set an admissions retention period (off by default), an admission number prefix and
-  starting number, a different support pass mark for any year group, and the ranking completeness share (75%).
-- Whether the public admissions form should ask for health details before an offer
-  (docs/DESIGN_health_notes_public_form.md; counsel question 15).
-- Pick-up and leave authority policy for boarders (docs/DESIGN_leave_authority.md).
-- SMS/WhatsApp provider and sender name, if wanted (docs/DESIGN_notifications.md); quote current prices yourself.
-- Legal sign-off on the updated drafts in docs/legal (C-2), including counsel questions 15 and 16.
+  starting number, a different support pass mark for any year group, and a ranking completeness share (0% = off).
+- Each school: which boarders need "leave only with admin approval" (Boarding → Leave, admins). Set it for any
+  child under a court order or custody arrangement; the note is for staff only.
+- SMS/WhatsApp provider and sender name, when wanted (docs/DESIGN_notifications.md); quote current prices yourself.
+- Legal sign-off on the updated drafts in docs/legal (C-2), including counsel questions 15 and 16. The family data
+  export now includes beds, roll-call marks, missing-boarder records, invitations, sign-up requests and the change
+  log about the child (X-4), which answers part of question 16.
 
 ## H-17 · Real-device check
 
 The fixes were checked in a headless browser at desktop and phone widths, not on real phones. Before a pilot, try
 on one Android phone: the Found action on Boarding, a register taken offline and saved later, the Students list
 "Show more", and the admissions form from a WhatsApp link through to the confirmation email.
+
+## H-18 · Phone and browser notifications (after PR #25 and frontend PR #18 are deployed)
+
+Off until you set the keys. Do it once; changing them later turns notifications off on every device.
+1. On your computer, in the backend folder with its requirements installed, run the command under `VAPID_PUBLIC_KEY`
+   in docs/ENVIRONMENT.md. It prints two lines.
+2. Render → housemaster backend → Environment: add `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` from those lines, and
+   `VAPID_SUBJECT=mailto:<a mailbox you read>`. Save. Keep the private key in a password manager; never paste it
+   anywhere else.
+3. Check: sign in as a test parent on an Android phone (Chrome), Profile → tick "Notify me on this phone or browser
+   too", allow notifications, then publish a test announcement to that parent's class. On an iPhone, add HouseMaster
+   to the home screen first.
+4. Privacy notice: the parent notice should say notices pass through the phone or browser maker's push service
+   (Google, Apple, Mozilla or Microsoft), encrypted and without names. Add this at the next legal review.
+
+## H-19 · Check the demo data is off in production
+
+1. Render → housemaster backend → Environment: `ALLOW_DEMO_SEED` should be missing. If it is there (the seed only
+   runs when it is `1`), delete it and Save.
+2. Render → housemaster backend → Settings → Build Command and Start Command: neither should run `seed_demo_school`.
+3. Check: in the live app, sign in as an admin. Students should show only your school's real students.
