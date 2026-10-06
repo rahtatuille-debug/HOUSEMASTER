@@ -70,10 +70,26 @@ class StudentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSeriali
         ]
         extra_kwargs = {"school": {"read_only": True}, "photo_updated_at": {"read_only": True},
                         "pathway": {"read_only": True}}
+        # DRF would turn the per-school admission number constraint into a validator that makes external_id
+        # required; validate_external_id checks it instead (blank stays allowed).
+        validators = []
 
     has_photo = serializers.SerializerMethodField()
     # Marked by a teacher as needing support (support app); staff only.
     needs_support = serializers.SerializerMethodField()
+
+    def validate_external_id(self, value):
+        # Admission numbers are unique per school (a database constraint); say so instead of failing.
+        value = value.strip()
+        school = self.instance.school if self.instance else getattr(self.context.get("request"), "user", None) \
+            and self.context["request"].user.profile.school
+        if value and school is not None:
+            taken = Student.objects.filter(school=school, external_id=value)
+            if self.instance is not None:
+                taken = taken.exclude(pk=self.instance.pk)
+            if taken.exists():
+                raise serializers.ValidationError("Another student already has this admission number.")
+        return value
 
     def get_needs_support(self, obj):
         flagged = getattr(obj, "needs_support", None)  # annotated by StudentViewSet

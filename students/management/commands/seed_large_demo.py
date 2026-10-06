@@ -58,6 +58,12 @@ class Command(BaseCommand):
                 with transaction.atomic():
                     placed = fill_boarding(existing, house_names=("Darwin House", "Austen House"))
                     self.stdout.write(f"Added boarding with {placed} boarders.")
+            from admissions.demo import fill_demo as fill_admissions
+            from admissions.models import Application
+
+            if not Application.objects.filter(school=existing).exists():  # built before admissions
+                with transaction.atomic():
+                    self.stdout.write(f"Added {fill_admissions(existing, demo_large.DOMAIN)} applications.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()
