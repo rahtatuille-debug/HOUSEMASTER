@@ -15,7 +15,10 @@ DPIA practice; check it against the ODPC's DPIA guidance note and template
 
 **What:** a web application for a school's pupil records, grades,
 attendance, report cards, parent-teacher messaging, announcements and
-urgent alerts, used by the school's staff and by parents.
+urgent alerts, used by the school's staff and by parents. Optional modules
+(updated 2026-10-05): timetable, boarding (beds, roll calls, missing-boarder
+records, leave, sick bay), support suggestions and plans, class positions,
+and admissions with a public application form (PR #14, not yet merged).
 
 **Why (purposes):** to educate pupils and track their progress, report to
 parents, communicate with families, and keep pupils safe in emergencies.
@@ -62,7 +65,7 @@ the AI: docs/AI_DATA_FLOW.md.
 | Is access limited? | Yes. Schools are fully separated; teachers see only their classes; parents only their own children and only finalised reports; admins can't read conversations they're not in. |
 | Is the AI necessary and minimised? | It is optional (a teacher can write every comment). It receives no names or identifiers, a placeholder replaces the pupil's name, and a teacher always reviews the draft. |
 | Are people told? | Parents and staff accept a privacy notice when they create an account; the school's notice (template provided) explains the processing. |
-| Can people use their rights? | Admins can export everything about a family and remove a pupil's personal data; parents can update their contact details and turn notification emails off. |
+| Can people use their rights? | Admins can export a family's data and remove a pupil's personal data; parents can update their contact details and turn notification emails off. The export does not yet include boarding roll-call marks, the current house and bed, sign-up requests, invitations or activity-log entries [VERIFY whether it must]. |
 | Is data kept only as long as needed? | A retention command anonymises former pupils after a period the school sets (off until set). Backups expire after 90 days. |
 | Are transfers abroad justified? | [VERIFY: QUESTIONS_FOR_COUNSEL.md question 3.] |
 
@@ -85,6 +88,11 @@ place today.
 | 10 | Transfers abroad without a lawful ground | [pending counsel, question 3] | — | Medium | Unknown until answered |
 | 11 | Records kept longer than necessary | Retention command (off until the school sets a period); backups expire in 90 days | Medium | Medium | Low once a period is set |
 | 12 | Public source code helps an attacker | Security relies on design and tests, not secrecy; secrets are never in the code | Low | Medium | Low (question 10) |
+| 13 | A missing boarder is forgotten, or the record of it is lost | A boarder marked missing stays flagged until a person records how it was resolved (who, when); finished roll calls can only be corrected by an admin, with a reason, and the change is kept; a house with history can't be deleted (A-1 to A-3, PR #15) | Low | High | Low |
+| 14 | Sick-bay and support records disclosed | Boarding staff see only their houses; support suggestions are never shared until a teacher confirms; parents see only their own child's confirmed concern; neither is sent to the AI; activity log entries hold IDs, not notes | Low | High | Low–medium |
+| 15 | A pupil is wrongly labelled as needing support, or ranked on too little data | Suggestions need a minimum number of marks and attendance days, a person always confirms; a pupil with incomplete marks is shown as "not ranked" instead of being placed (C-1, D-1, PR #17) | Medium | Medium | Low |
+| 16 | The public admissions form is abused: someone else's email, flooding, or finding out who applied | One confirmation email naming the school and nothing about the child; nothing reaches staff until confirmed; unconfirmed applications expire; per-address and per-email limits; the same answer whatever happened; duplicates merged (B-1 to B-3, PR #14) | Medium | Medium | Low |
+| 17 | Admissions data kept for children who never join | Closed applications deleted after a school-set period (off by default); applications included in the family export and removal (B-4, PR #14); a recommendation to stop collecting health details before an offer (docs/DESIGN_health_notes_public_form.md) | Medium | Medium | Low–medium until the school sets a period |
 
 ## 5. Residual risk and actions
 
@@ -98,6 +106,10 @@ Actions that lower the residual risk, owner in brackets:
 5. Get counsel's answers on transfers, sensitive data, legal basis and
    retention, and set the retention period (owner, counsel, school).
 6. Consider two-factor sign-in for admins (HouseMaster, future).
+7. Decide whether the admissions form collects health or learning needs
+   before an offer, and set the admissions retention period (school,
+   counsel; docs/DESIGN_health_notes_public_form.md).
+8. Close the gaps in the family export listed in section 3 (HouseMaster).
 
 **Overall residual risk after actions 1–5:** [low / medium: for the
 school's DPO and counsel to decide].
