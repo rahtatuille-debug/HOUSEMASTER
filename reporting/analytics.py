@@ -11,8 +11,10 @@ Only active students count towards group figures.
 from collections import defaultdict
 from datetime import date
 
-from django.db.models import FloatField
-from django.db.models.functions import Cast
+from fractions import Fraction
+
+from django.db.models import Count, F, FloatField, Max, Min, Sum
+from django.db.models.functions import Cast, Round
 
 from gradebook.levels import SCALES, levels, school_sections
 from students.presets import SHORT_NAMES, section_for, student_section
@@ -44,9 +46,14 @@ class SchoolGrades:
             s.id: s for s in Student.objects.filter(school=school, is_active=True)
             .select_related("school", "school_class__year_group")
         }
-        # (student, term) -> {subject: [(percent, assessment type), ...]}
+        # (student, term) -> {subject: [(mean percent of that assessment type, assessment type), ...]}: one entry
+        # per assessment type, averaged by the database (E-2). Weighting only ever uses each type's mean, so the
+        # results are the same as averaging every mark here, with far fewer rows. mark_counts keeps how many
+        # marks each student has in a term.
         self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
+        self.mark_counts = defaultdict(int)
+        self._averages, self._subjects, self._years = {}, {}, None
         grades = Grade.objects.filter(student_id__in=self.students)
         graded = None
         if recent:
@@ -67,21 +74,58 @@ class SchoolGrades:
                                                                                   "education_system"):
             # Each curriculum's subjects are separate, e.g. "Mathematics · British".
             names[sid] = f"{name} · {SHORT_NAMES.get(section, section)}" if section else name
-        rows = grades.annotate(f_score=Cast("score", FloatField()), f_max=Cast("max_score", FloatField())) \
-            .values_list("student_id", "term_id", "subject_id", "f_score", "f_max", "assessment_type_id")
-        for student_id, term_id, subject_id, score, max_score, type_id in rows:
-            if max_score:
-                self.marks[(student_id, term_id)][names[subject_id]].append((score / max_score * 100, type_id))
+        # The database adds up the scores (exact decimals) per student, term, subject, assessment type and
+        # "out of"; each type's mean percent is then worked out exactly here, so it never depends on the order
+        # rows come back in.
+        # Scores and "out of" have two decimal places, so the database works in whole hundredths: exact, and plain
+        # numbers instead of a Decimal per row. One row per student, term, subject and assessment type.
+        rows = grades.filter(max_score__gt=0).order_by() \
+            .values_list("student_id", "term_id", "subject_id", "assessment_type_id") \
+            .annotate(total=Cast(Sum(Round(F("score") * 100)), FloatField()),
+                      out_of=Cast(Max(Round(F("max_score") * 100)), FloatField()),
+                      lowest=Cast(Min(Round(F("max_score") * 100)), FloatField()), n=Count("id"))
+        mixed = []
+        for student_id, term_id, subject_id, type_id, total, out_of, lowest, n in rows:
+            if out_of == lowest:  # one "out of": a single division of whole numbers, correctly rounded
+                mean = int(total) * 100 / (int(out_of) * n)
+                self.marks[(student_id, term_id)][names[subject_id]].append((mean, type_id))
+                self.mark_counts[(student_id, term_id)] += n
+            else:
+                mixed.append((student_id, term_id, subject_id, type_id))
+        if mixed:  # rare: marks of one type out of different totals; averaged exactly from the marks themselves
+            wanted = set(mixed)
+            percents = defaultdict(list)
+            for student_id, term_id, subject_id, type_id, score, out_of in grades.filter(
+                    max_score__gt=0, student_id__in={m[0] for m in mixed}).order_by().annotate(
+                    s=Cast(Round(F("score") * 100), FloatField()), o=Cast(Round(F("max_score") * 100), FloatField())) \
+                    .values_list("student_id", "term_id", "subject_id", "assessment_type_id", "s", "o"):
+                if (student_id, term_id, subject_id, type_id) in wanted:
+                    percents[(student_id, term_id, subject_id, type_id)].append(Fraction(int(score) * 100, int(out_of)))
+            for (student_id, term_id, subject_id, type_id), values in percents.items():
+                self.marks[(student_id, term_id)][names[subject_id]].append((float(sum(values) / len(values)), type_id))
+                self.mark_counts[(student_id, term_id)] += len(values)
         loaded = {k[1] for k in self.marks}
         self.graded_terms = graded if graded is not None else [t for t in self.terms if t.id in loaded]
 
+    def mark_count(self, student_id, term_id):
+        """How many marks the student has in the term (every mark, not one per assessment type)."""
+        return self.mark_counts.get((student_id, term_id), 0)
+
     def student_average(self, student_id, term_id):
-        subjects = self.marks.get((student_id, term_id))
-        return _mean([self.student_subject(student_id, term_id, s) for s in subjects]) if subjects else None
+        # Worked out once per student and term: the whole-school page asks for each many times (E-2).
+        key = (student_id, term_id)
+        if key not in self._averages:
+            subjects = self.marks.get(key)
+            self._averages[key] = _mean([self.student_subject(student_id, term_id, s) for s in subjects]) \
+                if subjects else None
+        return self._averages[key]
 
     def student_subject(self, student_id, term_id, subject):
-        result = subject_percent(self.marks.get((student_id, term_id), {}).get(subject, []), self.weights)
-        return round(result, 1) if result is not None else None
+        key = (student_id, term_id, subject)
+        if key not in self._subjects:
+            result = subject_percent(self.marks.get((student_id, term_id), {}).get(subject, []), self.weights)
+            self._subjects[key] = round(result, 1) if result is not None else None
+        return self._subjects[key]
 
     def subject_percents(self, student_id, term_id):
         """{subject: unrounded percent} for ranking, so positions match the report card's."""
@@ -121,8 +165,12 @@ class SchoolGrades:
         return [s.id for s in self.students.values() if s.school_class_id == class_id]
 
     def in_year(self, year_id):
-        return [s.id for s in self.students.values()
-                if s.school_class_id and s.school_class.year_group_id == year_id]
+        if self._years is None:  # grouped once, not scanned for every year group and term
+            self._years = defaultdict(list)
+            for s in self.students.values():
+                if s.school_class_id:
+                    self._years[s.school_class.year_group_id].append(s.id)
+        return list(self._years.get(year_id, []))
 
     def everyone(self):
         return list(self.students)
@@ -169,7 +217,7 @@ def _student_rows(data, student_ids, term, visible_ids):
         by_section[system[sid]].append(sid)
     share = data.school.ranking_min_share
     counts = {sid: len(raw[sid]) for sid in student_ids}
-    marks = {sid: sum(len(m) for m in data.marks.get((sid, term.id), {}).values()) for sid in student_ids}
+    marks = {sid: data.mark_count(sid, term.id) for sid in student_ids}
     before_counts = {sid: len(data.subject_percents(sid, previous.id)) if previous else 0 for sid in student_ids}
     overall, overall_of, improved = {}, {}, {}
     usual, complete, complete_before, notes = {}, {}, {}, {}
