@@ -15,6 +15,8 @@ from activity.services import log_activity, student_name
 from .models import School, YearGroup, SchoolClass, Student
 from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
 
+from housemaster.pagination import PagedOnRequest
+
 from .photos import process_photo
 from boarding.services import release_boarders
 
@@ -93,6 +95,8 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
     queryset = Student.objects.select_related("school", "school_class__year_group").prefetch_related("subject_choices")
     serializer_class = StudentSerializer
     filterset_fields = ["school", "school_class", "is_active"]
+    # Pages only when asked (?page= / ?page_size=); the whole list otherwise, as before (E-1).
+    pagination_class = PagedOnRequest
     school_lookup = "school"
     approval_kind = "student"
     approval_label = "student"
@@ -107,8 +111,19 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
 
         from support.models import SupportConcern
 
+        from django.db.models import Q
+
         queryset = super().get_queryset().annotate(needs_support=Exists(SupportConcern.objects.filter(
             student=OuterRef("pk"), status=SupportConcern.Status.OPEN)))
+        params = self.request.query_params
+        # Search and filters on the server, so a paged list finds students on any page (E-1).
+        for word in (params.get("q") or "").split():
+            queryset = queryset.filter(Q(first_name__icontains=word) | Q(last_name__icontains=word)
+                                       | Q(external_id__icontains=word))
+        if params.get("needs_support") in ("1", "true"):
+            queryset = queryset.filter(needs_support=True)
+        # A stable order, so pages never repeat or skip a student.
+        queryset = queryset.order_by("last_name", "first_name", "id")
         if is_admin(self.request.user):
             return queryset
         return queryset.filter(school_class_id__in=assigned_class_ids(self.request.user))
