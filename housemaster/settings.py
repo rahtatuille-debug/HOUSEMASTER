@@ -420,6 +420,13 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@housemaster.l
 
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
+# Phone and browser notifications (communications/push.py). Off until the owner
+# sets both keys: generate a pair once (docs/ENVIRONMENT.md) and keep the private
+# key secret. VAPID_SUBJECT is a contact address the push services can use.
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', 'mailto:support@housemaster.app')
+
 # Production-only hardening. Skipped when DEBUG=True so local dev over
 # plain http://127.0.0.1:8001 still works without a redirect loop.
 if not DEBUG:

@@ -13,6 +13,7 @@ from gradebook.choices import class_subject_choices
 from attendance.views import AttendanceRecordViewSet
 from reporting.views import StudentReportViewSet
 from communications.views import AnnouncementViewSet, UrgentAlertViewSet
+from communications import push_views
 from guardians.views import (
     AcceptGuardianInviteView,
     GuardianInvitePreviewView,
@@ -130,5 +131,8 @@ urlpatterns = [
     path('api/support/suggestions/', support_suggestions, name='support_suggestions'),
     path('api/tour-seen/', tour_seen, name='tour_seen'),
     path('api/signup-requests/', signup_requests, name='signup_requests'),
+    path('api/push/', push_views.push_settings, name='push_settings'),
+    path('api/push/subscribe/', push_views.push_subscribe, name='push_subscribe'),
+    path('api/push/unsubscribe/', push_views.push_unsubscribe, name='push_unsubscribe'),
     path('api/', include(router.urls)),
 ]

@@ -90,8 +90,20 @@ def announcement_recipients(announcement):
     return Guardian.objects.none()
 
 
+def _push_later(school, actor, user_ids_fn, body, target=None, what=""):
+    """Phone and browser notifications (communications/push.py), after the change is saved."""
+    from communications import push
+
+    if push.enabled():
+        _run_after_commit(lambda: push.push_and_log(school, actor, user_ids_fn(), body, target=target, what=what))
+
+
 def notify_announcement_published(announcement, actor):
+    from communications.push import announcement_user_ids
+
     school = announcement.school
+    _push_later(school, actor, lambda: announcement_user_ids(announcement), "There is a new announcement in HouseMaster.",
+                target=announcement, what=" about an announcement")
     recipients = list(announcement_recipients(announcement).select_related("user"))
     if not recipients:
         return
@@ -117,6 +129,10 @@ def notify_reports_finalized(reports, actor):
     if not reports:
         return
     school = reports[0].student.school
+    from communications.push import report_user_ids
+
+    _push_later(school, actor, lambda: report_user_ids(reports), "A new report is ready in HouseMaster.",
+                what=" that reports are ready")
     guardians = Guardian.objects.filter(
         students__in=[r.student_id for r in reports], email_notifications=True, user__is_active=True,
     ).exclude(user__email="").select_related("user").prefetch_related("students").distinct()

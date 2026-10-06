@@ -130,3 +130,20 @@ class AlertRecipient(models.Model):
 
     class Meta:
         unique_together = ("alert", "user")
+
+
+class PushSubscription(models.Model):
+    """One device (phone or browser) that asked for notifications. Holds no message content.
+
+    The endpoint is the push service's address for that device (Google, Mozilla, Apple or Microsoft);
+    p256dh and auth are the device's keys, so only it can read what we send.
+    """
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="push_subscriptions")
+    endpoint = models.URLField(max_length=1000, unique=True)
+    p256dh = models.CharField(max_length=200)
+    auth = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Push device for {self.user}"

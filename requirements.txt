@@ -19,7 +19,10 @@ cffi==2.1.1
 charset-normalizer==3.5.1
     # via requests
 cryptography==50.0.1
-    # via google-auth
+    # via
+    #   google-auth
+    #   http-ece
+    #   py-vapid
 defusedxml==0.7.1
     # via fpdf2
 dj-database-url==2.3.0
@@ -54,6 +57,8 @@ google-genai==0.8.0
     # via -r requirements.in
 gunicorn==23.0.0
     # via -r requirements.in
+http-ece==1.2.1
+    # via -r requirements.in
 idna==3.20
     # via requests
 openpyxl==3.1.5
@@ -68,6 +73,8 @@ psycopg==3.3.6
     # via -r requirements.in
 psycopg-binary==3.3.6
     # via psycopg
+py-vapid==1.9.4
+    # via -r requirements.in
 pyasn1==0.6.4
     # via pyasn1-modules
 pyasn1-modules==0.4.2
