@@ -25,6 +25,11 @@ All items A-1 to H were done in place: bugs fixed and gaps closed, with no new f
 
 Nothing was merged or force-pushed, and production was not touched.
 
+**Owner choices (2026-10-06).** The owner answered the open questions, and the follow-up work is in section 11:
+- X-1 to X-4 are on #15 and FE #13;
+- the Postgres CI job is #24;
+- web push is #25 and FE #18.
+
 ## 2. Items
 
 | ID | Status | PR (backend / frontend) | Commits | Tests | Notes |
@@ -67,8 +72,10 @@ Merge in this order. Each PR's CI must be green on its head first (H-13).
 8. **#21 + FE #16:** F.
 9. **#22 + FE #17:** G.
 10. **#23:** H.
+11. **#24:** the Postgres CI job (X-5).
+12. **#25 + FE #18:** web push (X-6).
 
-All of them were merged locally in this order with no conflicts. Two route/import lines were moved on my own branches to avoid conflicts (9726200, fb13af2).
+All of them were merged locally in this order. The one expected conflict is `students/privacy.py` between #14 and #15. Both add family-export sheets and JSON keys right after the Boarding sheet, and the fix is to keep both sides (admissions first). After #14 merges, merge master into #15 that way. Two route/import lines were moved on my own branches to avoid conflicts (9726200, fb13af2).
 
 **Backend before frontend.** The frontend PRs tolerate an older backend: new fields are optional, and the Students page falls back to filtering on screen.
 
@@ -164,14 +171,14 @@ On the demo, computing halved (0.78 s to 0.38 s) but loading rose (0.37 s to 0.6
 **Admissions**
 - There is no data migration for existing applications: admissions has never been merged, so no real rows exist.
 - The duplicate window is 30 days. Declined or withdrawn applications don't count as duplicates.
-- Re-enrolment is refused (not overridable) when name and date of birth match an existing student.
+- Re-enrolment is refused when name and date of birth match an existing student, unless an admin chooses "Enrol anyway". That override is the owner's choice, and it is logged with the existing student's ID.
 - Admission numbers are always given on enrolment, as prefix plus next number. Numbers in use are skipped and nobody is renumbered.
 - The B-2 and B-5 lock is an UPDATE on the school's admissions row, so SQLite and Postgres both serialise.
 - The race tests need concurrent writers, so they skip on SQLite (CI) and were run on Postgres.
 
 **Support and rankings**
 - C-1 defaults: 3 marks, 10 days, 10 points.
-- D-1 default: 75% of the median subject count.
+- D-1 default: 0%, so everyone with a mark is ranked (the owner's choice). A school can set a completeness share.
 
 **Stacking**
 - #17 stacks on #14 to share one migration chain; #20 stacks on #17.
@@ -187,11 +194,11 @@ On the demo, computing halved (0.78 s to 0.38 s) but loading rose (0.37 s to 0.6
 
 ## 8. Additional observations (not fixed: out of scope)
 
-- **Bed assignment** (`POST /api/boarding/beds/<id>/`) silently moves out whoever is in the bed.
-- **The family export** does not include boarding roll-call marks, the current house and bed, parent sign-up requests, invitations, or activity-log entries naming the child (counsel question 16).
-- **Open sick-bay visits** of a student who leaves are not closed.
+- ~~Bed assignment silently moves out whoever is in the bed.~~ Fixed (X-1).
+- ~~The family export misses roll calls, bed, sign-ups, invitations and the change log.~~ Fixed (X-4).
+- ~~Open sick-bay visits of a student who leaves are not closed.~~ Fixed (X-2).
 - **Parent sign-in noise:** the app asks `/api/me/` first, which logs a 403 in the browser console for every parent sign-in.
-- **CI database:** CI runs on SQLite only. A Postgres job would run the two race tests and catch Postgres-only issues.
+- ~~CI runs on SQLite only.~~ The Postgres job was added (X-5, #24).
 - **Lint:** `seed_demo_school.py` and `gradebook/systems.py` have unused imports (already there before).
 - **The backup workflow** uses actions on Node 20, which GitHub flags as deprecated.
 - **Demo data in production:** if `ALLOW_DEMO_SEED=1` was set on Render to seed the demo schools, remove it afterwards.
@@ -201,7 +208,8 @@ On the demo, computing halved (0.78 s to 0.38 s) but loading rose (0.37 s to 0.6
 ## 9. What couldn't be verified
 
 - **CI** on PRs #17 to #23 and frontend #14 to #17: runners were not available (H-13). Every branch passes locally.
-- **The full backend suite on Postgres.** Only the race tests and the benchmarks were run there.
+- ~~The full backend suite on Postgres.~~ Done locally on the merged tree: 976 tests, OK (section 11).
+- **Web push delivery** to a real Google, Apple or Mozilla push service. The encryption is proven by a decrypt round trip in tests; real delivery needs the owner's keys (H-18).
 - **Email delivery** with a real provider. The console backend was used, and no provider was contacted.
 - **Production data:** the pre-flight and backfill counts on live data, which are owner-only (H-15).
 - **Real phones** (H-17).
@@ -214,5 +222,53 @@ On the demo, computing halved (0.78 s to 0.38 s) but loading rose (0.37 s to 0.6
 - H-15: the pre-flight and one-off commands, in order, plus a daily `purge_applications` cron.
 - H-16: school-policy decisions (retention, admission number prefix, pass marks, ranking share, health questions, leave authority, SMS provider) and legal sign-off.
 - H-17: a real-device check.
+- H-18: VAPID keys for phone and browser notifications, and a privacy-notice line.
+- H-19: check that `ALLOW_DEMO_SEED` is not set in production.
+- H-14 now has the Brevo SMTP steps.
 
 Also owner-only: environment variables and secrets on Render, Vercel and GitHub, backups (H-1), branch protection (H-7), and merging and deploying.
+
+## 11. Owner choices (2026-10-06) and the work they started
+
+**What the owner chose:**
+- **Health question:** a yes/no question.
+- **Admission numbers:** always assigned.
+- **Matching child:** an admin can enrol a different child who shares a name and birthday.
+- **Defaults kept:** support 3 marks, confirmation link 48h, applications kept forever.
+- **Ranking:** rank everyone.
+- **Extra fixes:** all four selected.
+- **Leave:** a restriction flag, and both parents are told.
+- **Notifications:** push now, SMS later.
+- **Email provider:** Brevo.
+
+| ID | What | PR (backend / frontend) | Commits | Tests |
+|---|---|---|---|---|
+| B-4 (choice) | Public form asks "Does your child have health or learning needs we should discuss?" (Prefer not to say / Yes / No). There is no free text, and old text stays visible to admins until purged | #14 / FE #12 | 092a832, bfe4830 / 062fa19 | admissions.test_fixes.HealthQuestionTests; admissions.test.jsx |
+| B-2 (choice) | "Enrol anyway" for a different child with the same name and birthday; logged | #14 / FE #12 | 587efea / 2745893 | DifferentChildTests; admissions.test.jsx |
+| D-1 (choice) | Ranking completeness share defaults to 0% | #17 | 7249d36 | test_rank_basis.test_by_default_everyone_with_a_mark_is_ranked |
+| X-1 | A bed held by an active boarder needs `replace: true`, and the page asks first. The move-out is logged | #15 / FE #13 | 2ba189a / 9e2ae81 | boarding.test_extras.BedSwapTests; boarding.test.jsx X-1 |
+| X-2 | A student who leaves the school is checked out of sick bay ("Left the school") | #15 | 2ba189a | SickBayOnLeavingTests |
+| X-3 | Admins mark a boarder "leave only with admin approval" (`/api/boarding/restrictions/`). House staff can't give, approve or sign out that boarder's leave. Every parent is emailed on leave given, approved or signed out, whatever their email setting. The note is staff-only and never logged | #15 / FE #13 | 2ba189a / 9e2ae81 | LeaveRulesTests; boarding.test.jsx X-3 |
+| X-4 | The family export adds the current bed, roll-call marks, missing records, invitations, sign-up requests and change-log entries (JSON and xlsx) | #15 | 24185a1 | FamilyExportTests |
+| X-5 | CI job `test-postgres` runs the whole suite on Postgres 17 | #24 | fe40add | (workflow) |
+| X-6 | Web push for new announcements and ready reports. Parents opt in per device on Profile. The notice has the school name only. Only known push services are accepted (SSRF), and gone devices are forgotten. Off until the VAPID keys are set. New dependencies: `http-ece` and `py-vapid` (pip-audit clean) | #25 / FE #18 | df3a14d, dd12f4f / 59860c9 | communications.test_push (16); push.test.jsx (6) |
+
+**Verification on the merged tree** (all 12 backend and 7 frontend branches, in the order in section 3):
+- Backend:
+  - 976 tests OK on SQLite (2 skipped: the race tests);
+  - 976 OK on a local Postgres 16, where the race tests run;
+  - `makemigrations --check` is clean.
+- Frontend: 197 tests pass, and the build is clean.
+- **Browser smoke** (evidence/owner-choices/):
+  - an admin set a leave rule, and it shows with the note;
+  - a house staff member sees the rule with no edit controls, and approving that boarder's leave shows "Only an admin can give, approve or sign out leave for Oliver Thomas.";
+  - the admin removed the rule;
+  - the public form shows the yes/no question and no health text box;
+  - no page errors; the only console error is the expected 403.
+
+**Still owner-only:**
+- Brevo SMTP settings (H-14);
+- VAPID keys (H-18);
+- checking `ALLOW_DEMO_SEED` (H-19);
+- re-running CI once runners work (H-13), then making `test-postgres` required;
+- choosing an SMS provider when wanted.
