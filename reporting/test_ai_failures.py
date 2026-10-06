@@ -25,10 +25,10 @@ from accounts.tests import SchoolScopedAPITestCase
 BUSY = "The writing assistant is busy, please try again in a minute."
 
 
-def provider_error(cls, code):
+def provider_error(cls, code, message="provider says no", status="X"):
     response = requests.Response()
     response.status_code = code
-    response._content = json.dumps({"error": {"code": code, "message": "provider says no", "status": "X"}}).encode()
+    response._content = json.dumps({"error": {"code": code, "message": message, "status": status}}).encode()
     return cls(code, response)
 
 
@@ -76,10 +76,40 @@ class AIFailureTests(SchoolScopedAPITestCase):
         with patch("google.genai.Client", factory):
             self.assert_clean_busy(self.generate())
 
-    def test_rate_limited_provider_becomes_a_503(self):
-        factory, _ = fake_client(side_effect=provider_error(errors.ClientError, 429))
+    def assert_clean_503(self, response, words):
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(words, response.data["detail"])
+        self.assertNotEqual(response.data["detail"], BUSY)
+        self.assertFalse(StudentReport.objects.exists())
+
+    def test_rate_limited_provider_says_the_limit_was_reached(self):
+        factory, _ = fake_client(side_effect=provider_error(errors.ClientError, 429, status="RESOURCE_EXHAUSTED"))
+        with patch("google.genai.Client", factory), self.assertLogs("reporting.ai", "WARNING") as logs:
+            self.assert_clean_503(self.generate(), "usage limit")
+        self.assertIn("429", logs.output[0])
+
+    def test_refused_key_says_so_not_busy(self):
+        """A wrong or revoked GEMINI_API_KEY is a setup problem; "try again in a minute" would never work."""
+        for code, message, status in [(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT"),
+                                      (403, "Permission denied", "PERMISSION_DENIED"), (401, "Unauthenticated", "UNAUTHENTICATED")]:
+            with self.subTest(code=code):
+                factory, _ = fake_client(side_effect=provider_error(errors.ClientError, code, message, status))
+                with patch("google.genai.Client", factory), self.assertLogs("reporting.ai", "WARNING") as logs:
+                    self.assert_clean_503(self.generate(), "GEMINI_API_KEY")
+                self.assertIn(str(code), logs.output[0])
+
+    def test_unknown_model_says_so_not_busy(self):
+        factory, _ = fake_client(side_effect=provider_error(errors.ClientError, 404, "models/x is not found", "NOT_FOUND"))
         with patch("google.genai.Client", factory):
-            self.assert_clean_busy(self.generate())
+            self.assert_clean_503(self.generate(), "GEMINI_MODEL")
+
+    def test_the_log_never_holds_the_prompt_or_the_key(self):
+        factory, _ = fake_client(side_effect=provider_error(errors.ClientError, 429, "quota for key test-key-not-real"))
+        with patch("google.genai.Client", factory), self.assertLogs("reporting.ai", "WARNING") as logs:
+            self.generate()
+        text = "\n".join(logs.output)
+        self.assertNotIn("Amina", text)
+        self.assertNotIn("test-key-not-real", text)
 
     def test_provider_server_error_becomes_a_503(self):
         factory, _ = fake_client(side_effect=provider_error(errors.ServerError, 500))
@@ -134,6 +164,15 @@ class AIFailureTests(SchoolScopedAPITestCase):
             response = self.client_a.post("/api/reports/generate-class/next/",
                                           {"run": start.data["run"], "student": self.student.id}, format="json")
         self.assert_clean_busy(response)
+
+    def test_announcement_drafting_explains_a_refused_key(self):
+        factory, _ = fake_client(side_effect=provider_error(errors.ClientError, 400, "API key not valid.", "INVALID_ARGUMENT"))
+        with patch("google.genai.Client", factory):
+            response = self.client_a.post("/api/announcements/generate-text/",
+                                          {"summary": "Sports day moved to Friday", "audience": "all_parents"},
+                                          format="json")
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("GEMINI_API_KEY", response.data["detail"])
 
     def test_announcement_drafting_returns_a_clean_503(self):
         factory, _ = fake_client(side_effect=provider_error(errors.ServerError, 503))
