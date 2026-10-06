@@ -8,7 +8,7 @@ from accounts.models import Profile
 from students.localtime import school_localdate
 from students.models import School, Student
 
-from .models import Bed, BoardingHouse, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .models import Absence, Bed, BoardingHouse, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
 COMPLAINTS = [("Headache", "Paracetamol 500 mg, rest for an hour."), ("Stomach ache", "Rest and water; ate a light lunch."),
               ("Fever, 38.4°C", "Paracetamol; stayed overnight and was watched."), ("Twisted ankle in games",
@@ -107,4 +107,7 @@ def fill_demo(school, share=0.0, house_names=("Kilimanjaro House", "Elgon House"
                     in_house[-1].status = "missing"
                     in_house[-1].note = "Not in the dorm at lights out."
                 RollCallEntry.objects.bulk_create(entries)
+                for e in entries:
+                    if e.status == "missing":  # still unresolved: it stays flagged until someone finds them
+                        Absence.objects.create(student=e.student, house=house, roll_call=roll, note=e.note)
     return placed

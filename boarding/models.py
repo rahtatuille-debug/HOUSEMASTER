@@ -17,6 +17,8 @@ class BoardingHouse(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="boarding_houses")
     name = models.CharField(max_length=100)
     staff = models.ManyToManyField(Profile, related_name="boarding_houses", blank=True)
+    # A house with roll call history can't be deleted; it is archived instead (hidden, history kept).
+    is_archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]
@@ -56,7 +58,7 @@ class RollCall(models.Model):
         EVENING = "evening", "Evening"
         NIGHT = "night", "Night"
 
-    house = models.ForeignKey(BoardingHouse, on_delete=models.CASCADE, related_name="roll_calls")
+    house = models.ForeignKey(BoardingHouse, on_delete=models.PROTECT, related_name="roll_calls")
     date = models.DateField()
     session = models.CharField(max_length=10, choices=Session.choices)
     taken_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -146,3 +148,68 @@ class SickBayVisit(models.Model):
 
     class Meta:
         ordering = ["-checked_in_at", "-id"]
+
+
+class RollCallAmendment(models.Model):
+    """An admin's correction to a finished roll call: who, when, why, and each change (status codes only)."""
+
+    roll_call = models.ForeignKey(RollCall, on_delete=models.CASCADE, related_name="amendments")
+    amended_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    amended_by_name = models.CharField(max_length=200, blank=True)
+    amended_at = models.DateTimeField(auto_now_add=True)
+    reason = models.CharField(max_length=300)
+    changes = models.JSONField(default=list)  # [{student, before, after}]
+
+    class Meta:
+        ordering = ["amended_at", "id"]
+
+
+class Absence(models.Model):
+    """
+    A boarder who was marked missing at a finished roll call, and stays flagged until a person resolves it.
+    A later roll call never closes it: only an explicit resolution does (who, when, how).
+    """
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        RESOLVED = "resolved", "Resolved"
+
+    class Resolution(models.TextChoices):
+        FOUND = "found", "Found"
+        RETURNED = "returned", "Returned"
+        ON_LEAVE = "on_leave", "On authorised leave"
+        LEFT_SCHOOL = "left_school", "Left the school"
+        NO_LONGER_BOARDING = "no_longer_boarding", "No longer boarding"
+        RECORDED_IN_ERROR = "recorded_in_error", "Marked missing by mistake"
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="absences")
+    house = models.ForeignKey(BoardingHouse, on_delete=models.PROTECT, related_name="absences")
+    roll_call = models.ForeignKey(RollCall, on_delete=models.SET_NULL, null=True, blank=True, related_name="absences")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    note = models.CharField(max_length=300, blank=True)
+    resolution = models.CharField(max_length=20, choices=Resolution.choices, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+")
+    resolved_by_name = models.CharField(max_length=200, blank=True)
+    resolution_note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["opened_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["student"], condition=models.Q(status="open"),
+                                    name="one_open_absence_per_boarder"),
+        ]
+
+
+class BoarderRestriction(models.Model):
+    """Staff-only safeguarding flags for one boarder, set by an admin. Parents never see these."""
+
+    student = models.OneToOneField(Student, on_delete=models.CASCADE, related_name="boarding_restriction")
+    # Leave can be given, approved or signed out only by an admin (e.g. a court order about who may collect them).
+    leave_admin_only = models.BooleanField(default=False)
+    note = models.CharField(max_length=300, blank=True, help_text="For boarding staff; never shown to parents.")
+    set_by_name = models.CharField(max_length=200, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+

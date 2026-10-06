@@ -43,6 +43,7 @@ from accounts.models import Invite, Profile, TeachingAssignment
 from activity.services import log_activity
 from approvals.models import ChangeRequest
 from attendance.models import AttendanceRecord
+from boarding.services import delete_school_history
 from communications.models import AlertRecipient, Announcement, UrgentAlert
 from gradebook.models import AssessmentType, Grade, Subject, SubjectReport, Term
 from gradebook.systems import REPORT_EXTRAS
@@ -204,6 +205,7 @@ class Command(BaseCommand):
                     if users.exclude(profile__school=existing).exclude(guardian__school=existing) \
                             .exclude(profile__isnull=True, guardian__isnull=True).exists():
                         raise CommandError(f"Some {spec['name']} accounts belong to another school; refusing to delete.")
+                    delete_school_history(existing)
                     existing.delete()
                     users.delete()
                 password_hash = password_hash or make_password(password)
@@ -216,6 +218,7 @@ class Command(BaseCommand):
             .exclude(profile__isnull=True, guardian__isnull=True)
         if other.exists():
             raise CommandError("Some demo-domain accounts belong to another school; refusing to delete.")
+        delete_school_history(school)
         school.delete()
         users.delete()
         self.stdout.write(f"Deleted the old {SCHOOL_NAME}.")

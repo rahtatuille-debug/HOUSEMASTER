@@ -3,7 +3,7 @@ from rest_framework import serializers
 from accounts.models import Profile
 from students.models import Student
 
-from .models import BoardingHouse, Dorm, LeaveRequest, RollCall, SickBayVisit
+from .models import Absence, BoardingHouse, Dorm, LeaveRequest, RollCall, SickBayVisit
 
 
 def _student_name(student):
@@ -17,7 +17,8 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BoardingHouse
-        fields = ["id", "name", "staff", "staff_names", "dorms"]
+        fields = ["id", "name", "staff", "staff_names", "dorms", "is_archived"]
+        read_only_fields = ["is_archived"]
 
     def get_fields(self):
         fields = super().get_fields()
@@ -29,10 +30,15 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
         return [p.name for p in obj.staff.all()]
 
     def get_dorms(self, obj):
-        return [{"id": d.id, "name": d.name,
-                 "beds": [{"id": b.id, "name": b.name, "student": b.student_id,
-                           "student_name": _student_name(b.student)} for b in d.beds.select_related("student")]}
-                for d in obj.dorms.all()]
+        def holder(bed):
+            # Someone who has left, or no longer boards, doesn't hold the bed (old data from before beds were freed).
+            s = bed.student
+            return s if s is not None and s.is_active and s.mode_of_learning == "boarding" else None
+
+        return [{"id": d.id, "name": d.name, "beds": [
+            {"id": b.id, "name": b.name, "student": holder(b).id if holder(b) else None,
+             "student_name": _student_name(holder(b))} for b in d.beds.select_related("student")]}
+            for d in obj.dorms.all()]
 
 
 class DormSerializer(serializers.ModelSerializer):
@@ -98,11 +104,16 @@ class RollCallSerializer(serializers.ModelSerializer):
     session_label = serializers.CharField(source="get_session_display", read_only=True)
     entries = serializers.SerializerMethodField()
     counts = serializers.SerializerMethodField()
+    amendments = serializers.SerializerMethodField()
 
     class Meta:
         model = RollCall
         fields = ["id", "house", "house_name", "date", "session", "session_label", "taken_by_name", "created_at",
-                  "completed_at", "entries", "counts"]
+                  "completed_at", "entries", "counts", "amendments"]
+
+    def get_amendments(self, obj):
+        return [{"by": a.amended_by_name, "at": a.amended_at, "reason": a.reason, "changes": a.changes}
+                for a in obj.amendments.all()]
 
     def get_entries(self, obj):
         rows = obj.entries.select_related("student__bed__dorm").order_by("student__bed__dorm__name",
@@ -118,13 +129,29 @@ class RollCallSerializer(serializers.ModelSerializer):
         return counts
 
 
-def boarder_row(student, away):
+def boarder_row(student, away, restricted=()):
     bed = student.bed
     return {"id": student.id, "name": _student_name(student),
             "class_name": student.school_class.name if student.school_class else "",
             "house": bed.dorm.house.name, "house_id": bed.dorm.house_id, "dorm": bed.dorm.name, "bed": bed.name,
-            "where": away.get(student.id, "in")}
+            "where": away.get(student.id, "in"), "leave_admin_only": student.id in restricted}
 
 
 def bed_student_queryset(user):
     return Student.objects.filter(school=user.profile.school, is_active=True)
+
+
+class AbsenceSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    house_name = serializers.CharField(source="house.name", read_only=True)
+    resolution_label = serializers.CharField(source="get_resolution_display", read_only=True)
+    since = serializers.DateTimeField(source="opened_at", read_only=True)
+
+    class Meta:
+        model = Absence
+        fields = ["id", "student", "name", "house", "house_name", "roll_call", "status", "since", "note",
+                  "resolution", "resolution_label", "resolved_at", "resolved_by_name", "resolution_note"]
+        read_only_fields = fields
+
+    def get_name(self, obj):
+        return _student_name(obj.student)

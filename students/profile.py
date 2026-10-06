@@ -159,6 +159,7 @@ def build_profile(student, user):
         "activity": None,
         # Staff only: the guardians' view picks its own fields and never this.
         "support": _support(student),
+        "boarding": _boarding(student),
     }
     if is_admin(user):
         profile["activity"] = [
@@ -180,3 +181,11 @@ def _support(student):
     open_one = next((c for c in concerns if c.status == SupportConcern.Status.OPEN), None)
     return {"open": SupportConcernSerializer(open_one).data if open_one else None,
             "history": SupportConcernSerializer(concerns, many=True).data}
+
+
+def _boarding(student):
+    """A flag for staff when a boarder has no bed yet (e.g. arrived from admissions). None otherwise."""
+    if student.school.has_boarding and student.is_active and student.mode_of_learning == "boarding" \
+            and not hasattr(student, "bed"):
+        return {"boarder_without_bed": True}
+    return None

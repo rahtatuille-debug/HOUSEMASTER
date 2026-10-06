@@ -1,16 +1,21 @@
 """Who boarding staff are, where boarders are now, roll calls and parent emails."""
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from accounts.scoping import is_admin
-from activity.services import display_name
+from activity.services import display_name, log_activity, student_name
 from students.models import Student
 
-from .models import BoardingHouse, Bed, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .models import Absence, Bed, BoardingHouse, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
 
-def houses_for(user):
-    """The houses this staff member looks after: every house for admins."""
+def houses_for(user, archived=False):
+    """The houses this staff member looks after: every house for admins. Archived houses only when asked for
+    (their history stays readable, but nobody is boarded there or takes new roll calls)."""
     houses = BoardingHouse.objects.filter(school=user.profile.school)
+    if archived is not None:  # None: both, for reading history
+        houses = houses.filter(is_archived=archived)
     return houses if is_admin(user) else houses.filter(staff=user.profile)
 
 
@@ -52,20 +57,108 @@ def start_roll_call(house, date, session, user):
     return roll_call
 
 
+def on_authorised_leave(student_id, at=None):
+    """Signed out on leave, or approved leave whose dates cover this moment (a boarder who is allowed to be away)."""
+    at = at or timezone.now()
+    return LeaveRequest.objects.filter(student_id=student_id).filter(
+        Q(status=LeaveRequest.Status.OUT) |
+        Q(status=LeaveRequest.Status.APPROVED, leaving_at__lte=at, returning_at__gte=at)).exists()
+
+
+def open_absence(student, house, roll_call, actor, note=""):
+    """Flag a boarder as missing until someone resolves it. Returns the absence, or None when there's nothing to
+    flag (they are on authorised leave) or one is already open."""
+    if on_authorised_leave(student.id):
+        return None
+    try:
+        with transaction.atomic():
+            absence = Absence.objects.create(student=student, house=house, roll_call=roll_call, note=note[:300])
+    except IntegrityError:  # already open: one open absence per boarder
+        return None
+    log_activity(school=house.school, actor=actor, action="boarding.absence_opened", target=student,
+                 summary=f"{student_name(student)} was marked missing from {house.name}", house=house.id,
+                 roll_call=roll_call.id if roll_call else None)
+    return absence
+
+
+def open_absences_from(roll_call, actor):
+    """When a roll call is finished: every boarder marked missing (and not on authorised leave) is flagged."""
+    opened = 0
+    for entry in roll_call.entries.filter(status=RollCallEntry.Status.MISSING).select_related("student__school"):
+        if open_absence(entry.student, roll_call.house, roll_call, actor, entry.note):
+            opened += 1
+    return opened
+
+
+def resolve_absence(absence, resolution, actor, note=""):
+    absence.status = Absence.Status.RESOLVED
+    absence.resolution = resolution
+    absence.resolved_at = timezone.now()
+    absence.resolved_by = actor if actor is not None and getattr(actor, "is_authenticated", False) else None
+    absence.resolved_by_name = display_name(actor) if absence.resolved_by else "System"
+    absence.resolution_note = note[:500]
+    absence.save()
+    log_activity(school=absence.house.school, actor=absence.resolved_by, action="boarding.absence_resolved",
+                 target=absence.student, summary=f"{student_name(absence.student)}'s absence from "
+                                                 f"{absence.house.name}: {absence.get_resolution_display().lower()}",
+                 house=absence.house_id, resolution=resolution)
+    return absence
+
+
 def missing_now(user):
-    """Boarders marked missing at the latest finished roll call of each of the user's houses."""
-    found = []
-    for house in houses_for(user):
-        latest = house.roll_calls.filter(completed_at__isnull=False).order_by("-date", "-completed_at").first()
-        if latest is None:
-            continue
-        for entry in latest.entries.filter(status=RollCallEntry.Status.MISSING).select_related("student"):
-            found.append({"student": entry.student_id,
-                          "name": f"{entry.student.first_name} {entry.student.last_name}",
-                          "house": house.name, "roll_call": latest.id,
-                          "when": f"{latest.get_session_display()} roll call, {latest.date:%a %d %b}",
-                          "note": entry.note})
-    return found
+    """Every open absence in the user's houses, oldest first. They stay until a person resolves them."""
+    absences = Absence.objects.filter(status=Absence.Status.OPEN, house__in=houses_for(user)) \
+        .select_related("student", "house", "roll_call").order_by("opened_at", "id")
+    return [absence_row(a) for a in absences]
+
+
+def absence_row(a):
+    when = (f"{a.roll_call.get_session_display()} roll call, {a.roll_call.date:%a %d %b}" if a.roll_call
+            else f"{a.opened_at:%a %d %b}")
+    return {"id": a.id, "student": a.student_id, "name": f"{a.student.first_name} {a.student.last_name}",
+            "house": a.house.name, "roll_call": a.roll_call_id, "when": when, "note": a.note,
+            "since": a.opened_at}
+
+
+def release_boarders(student_ids, reason, actor=None):
+    """
+    The one place a boarder's bed is given up: leaving, graduating, deactivation, going back to day, and the
+    data tools all come through here, so every path behaves the same. Frees the bed, cancels leave that hasn't
+    happened, and resolves an open absence. Safe to repeat. Returns how many boarders were released.
+    `reason` is "left_school" or "no_longer_boarding".
+    """
+    released = 0
+    for bed in Bed.objects.filter(student_id__in=student_ids).select_related("student__school", "dorm__house"):
+        student, house = bed.student, bed.dorm.house
+        bed.student = None
+        bed.save(update_fields=["student"])
+        released += 1
+        log_activity(school=student.school, actor=actor, action="boarding.bed_released", target=student,
+                     summary=f"{student_name(student)} gave up their bed in {house.name}", house=house.id,
+                     reason=reason)
+    for leave in LeaveRequest.objects.filter(student_id__in=student_ids, status__in=[
+            LeaveRequest.Status.REQUESTED, LeaveRequest.Status.APPROVED]):
+        leave.status = LeaveRequest.Status.CANCELLED
+        leave.save(update_fields=["status"])
+    for absence in Absence.objects.filter(student_id__in=student_ids, status=Absence.Status.OPEN) \
+            .select_related("student", "house__school"):
+        resolve_absence(absence, reason, actor, "")
+    if reason == "left_school":  # someone who has left isn't in the sick bay any more
+        SickBayVisit.objects.filter(student_id__in=student_ids, checked_out_at__isnull=True).update(
+            checked_out_at=timezone.now(), checked_out_by_name="Left the school")
+    return released
+
+
+def unbedded(user):
+    """Active students who are boarders but have no bed: they arrived (admissions, an edit) and need placing."""
+    return Student.objects.filter(school=user.profile.school, is_active=True, mode_of_learning="boarding",
+                                  bed__isnull=True).select_related("school_class")
+
+
+def free_beds(houses):
+    """Beds nobody needs: empty, or held by someone who has left or no longer boards (old data)."""
+    return Bed.objects.filter(dorm__house__in=houses).filter(
+        Q(student__isnull=True) | Q(student__is_active=False) | ~Q(student__mode_of_learning="boarding"))
 
 
 def overview(user):
@@ -75,7 +168,8 @@ def overview(user):
     return {
         "houses": houses.count(),
         "boarders": len(students),
-        "beds_free": Bed.objects.filter(dorm__house__in=houses, student__isnull=True).count(),
+        "beds_free": free_beds(houses).count(),
+        "unbedded": unbedded(user).count(),
         "on_leave": sum(1 for v in away.values() if v == "on_leave"),
         "sick_bay": sum(1 for v in away.values() if v == "sick_bay"),
         "leave_waiting": LeaveRequest.objects.filter(student_id__in=students,
@@ -84,23 +178,42 @@ def overview(user):
     }
 
 
-def _parents(student):
+def _parents(student, everyone=False):
+    """The student's parents who get emails. `everyone`: safeguarding notices (leave approved, signed out) go to every
+    linked parent, even one who turned routine emails off."""
     from guardians.models import Guardian
 
-    return Guardian.objects.filter(students=student, email_notifications=True, user__is_active=True) \
-        .exclude(user__email="").select_related("user")
+    parents = Guardian.objects.filter(students=student, user__is_active=True).exclude(user__email="")
+    if not everyone:
+        parents = parents.filter(email_notifications=True)
+    return parents.select_related("user")
 
 
-def email_parents(student, subject, line):
+def email_parents(student, subject, line, everyone=False):
     """A short email to the student's parents; the details stay in HouseMaster. Returns how many."""
     from guardians.notifications import _footer, send_after_commit
 
     school = student.school
-    messages = [(subject, f"Dear {g.name},\n\n{line}" + _footer(school), g.user.email) for g in _parents(student)]
+    messages = [(subject, f"Dear {g.name},\n\n{line}" + _footer(school), g.user.email)
+                for g in _parents(student, everyone)]
     if messages:
         send_after_commit(messages)
     return len(messages)
 
 
+def leave_admin_only(student_id):
+    """Whether only an admin may give, approve or sign out leave for this boarder (BoarderRestriction)."""
+    from .models import BoarderRestriction
+
+    return BoarderRestriction.objects.filter(student_id=student_id, leave_admin_only=True).exists()
+
+
 def now():
     return timezone.now()
+
+
+def delete_school_history(school):
+    """Only for deleting a whole school (the demo resets): roll calls and absences protect their house from a
+    one-off delete, so they go first. Never used to remove a single house."""
+    Absence.objects.filter(house__school=school).delete()
+    RollCall.objects.filter(house__school=school).delete()

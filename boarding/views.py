@@ -1,20 +1,22 @@
 from django.db import transaction
 from django.db.models import Q
+from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import IsSchoolAdmin
 from accounts.scoping import is_admin
 from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 from students.models import Student
 
 from . import services
-from .models import Bed, Dorm, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
-from .serializers import (BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer, RollCallSerializer,
-                          SickBayVisitSerializer, boarder_row)
+from .models import Absence, Bed, Dorm, LeaveRequest, RollCall, RollCallAmendment, RollCallEntry, SickBayVisit
+from .serializers import (AbsenceSerializer, BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer,
+                          RollCallSerializer, SickBayVisitSerializer, boarder_row)
 
 
 class BoardingStaff(BasePermission):
@@ -57,10 +59,52 @@ class HouseViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        return services.houses_for(self.request.user).prefetch_related("staff__user", "dorms")
+        archived = bool(self.request.query_params.get("archived"))
+        return services.houses_for(self.request.user, archived=archived).prefetch_related("staff__user", "dorms")
+
+    def get_object(self):
+        # Archive and unarchive act on a house whichever list it is in.
+        if self.action in ("archive", "unarchive", "destroy"):
+            found = services.houses_for(self.request.user, archived=self.action == "unarchive").filter(
+                pk=self.kwargs["pk"]).first()
+            if found is None:
+                raise NotFound("House not found.")
+            return found
+        return super().get_object()
 
     def perform_create(self, serializer):
         serializer.save(school=self.request.user.profile.school)
+
+    def destroy(self, request, *args, **kwargs):
+        house = self.get_object()
+        if house.roll_calls.exists() or house.absences.exists():
+            raise ValidationError("This house has roll call history, so it can't be deleted. Archive it instead: "
+                                  "its history stays readable.")
+        try:
+            house.delete()
+        except ProtectedError:
+            raise ValidationError("This house has history, so it can't be deleted. Archive it instead.")
+        return Response(status=204)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        house = self.get_object()
+        if Bed.objects.filter(dorm__house=house, student__is_active=True, student__mode_of_learning="boarding").exists():
+            raise ValidationError("Boarders still have beds in this house. Move them out first, then archive it.")
+        house.is_archived = True
+        house.save(update_fields=["is_archived"])
+        log_activity(school=house.school, actor=request.user, action="boarding.house_archived",
+                     summary=f"Archived boarding house {house.name}", house=house.id)
+        return Response(self.get_serializer(house).data)
+
+    @action(detail=True, methods=["post"])
+    def unarchive(self, request, pk=None):
+        house = self.get_object()
+        house.is_archived = False
+        house.save(update_fields=["is_archived"])
+        log_activity(school=house.school, actor=request.user, action="boarding.house_unarchived",
+                     summary=f"Brought back boarding house {house.name}", house=house.id)
+        return Response(self.get_serializer(house).data)
 
 
 class DormViewSet(mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin,
@@ -116,6 +160,17 @@ def bed(request, pk):
             if str(student_id).isdigit() else None
         if student is None:
             raise ValidationError({"student": ["Choose a current student."]})
+        occupant = found.student
+        # Someone who has left or no longer boards doesn't hold the bed (A-5), so only a current boarder counts.
+        if occupant is not None and (not occupant.is_active or occupant.mode_of_learning != "boarding"):
+            occupant = None
+        if occupant is not None and occupant.pk != student.pk:
+            # Never move someone out of their bed silently: they would be left without one.
+            if request.data.get("replace") is not True:
+                raise ValidationError(f"{student_name(occupant)} is in this bed. Move them out first, or choose to "
+                                      "replace them (they will then need a bed).")
+            _log(request, "boarding.bed", occupant, f"Took {student_name(occupant)} out of {found.dorm.house.name} "
+                                                    f"{found} to make room for {student_name(student)}")
         Bed.objects.filter(student=student).update(student=None)  # moving beds
         found.student = student
         found.save(update_fields=["student"])
@@ -132,7 +187,11 @@ def boarders(request):
     students = list(services.boarders(request.user, request.query_params.get("house") or None)
                     .order_by("bed__dorm__house__name", "bed__dorm__name", "last_name", "first_name"))
     away = services.where_now([s.id for s in students])
-    return Response([boarder_row(s, away) for s in students])
+    from .models import BoarderRestriction
+
+    restricted = set(BoarderRestriction.objects.filter(student__in=students, leave_admin_only=True)
+                     .values_list("student_id", flat=True))
+    return Response([boarder_row(s, away, restricted) for s in students])
 
 
 @api_view(["GET"])
@@ -165,7 +224,9 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
     permission_classes = [IsAuthenticated, BoardingStaff]
 
     def get_queryset(self):
-        queryset = RollCall.objects.filter(house__in=services.houses_for(self.request.user)).select_related("house")
+        # History of archived houses stays readable.
+        queryset = RollCall.objects.filter(house__in=services.houses_for(self.request.user, archived=None)) \
+            .select_related("house")
         if house := self.request.query_params.get("house"):
             queryset = queryset.filter(house_id=house)
         return queryset
@@ -185,6 +246,10 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
     @action(detail=True, methods=["post"])
     def mark(self, request, pk=None):
         roll_call = self.get_object()
+        if roll_call.completed_at:
+            if is_admin(request.user):
+                raise ValidationError("This roll call is finished. Use Amend, so the change is on record.")
+            raise PermissionDenied("This roll call is finished. Ask an admin to amend it.")
         entries = request.data.get("entries") or []
         statuses = set(RollCallEntry.Status.values) | {""}
         rows = {e.student_id: e for e in roll_call.entries.all()}
@@ -200,13 +265,100 @@ class RollCallViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.C
         if request.data.get("complete"):
             if roll_call.entries.filter(status="").exists():
                 raise ValidationError("Mark every boarder before finishing the roll call.")
-            roll_call.completed_at = services.now()
-            roll_call.save(update_fields=["completed_at"])
+            with transaction.atomic():
+                roll_call.completed_at = services.now()
+                roll_call.save(update_fields=["completed_at"])
+                services.open_absences_from(roll_call, request.user)
             missing = roll_call.entries.filter(status=RollCallEntry.Status.MISSING).count()
             log_activity(school=roll_call.house.school, actor=request.user, action="boarding.roll_call",
                          summary=f"{roll_call.house.name} {roll_call.get_session_display().lower()} roll call: "
                                  f"{missing} missing")
         return Response(self.get_serializer(roll_call).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, BoardingStaff, IsSchoolAdmin])
+    def amend(self, request, pk=None):
+        """Admins correct a finished roll call: {entries: [{student, status}], reason}. Recorded with before and
+        after (status codes only) in the activity log, and the reason on the roll call."""
+        roll_call = self.get_object()
+        if not roll_call.completed_at:
+            raise ValidationError("This roll call isn't finished yet. Mark it as usual.")
+        reason = str(request.data.get("reason", "")).strip()[:300]
+        if not reason:
+            raise ValidationError({"reason": ["Say why the roll call is being changed."]})
+        rows = {e.student_id: e for e in roll_call.entries.select_related("student")}
+        changes, touched = [], []
+        for item in request.data.get("entries") or []:
+            entry = rows.get(item.get("student")) if isinstance(item, dict) else None
+            status = item.get("status") if isinstance(item, dict) else None
+            if entry is None or status not in RollCallEntry.Status.values:
+                raise ValidationError({"entries": ["Each entry needs a boarder on this roll call and a status."]})
+            if "note" in item:
+                entry.note = str(item["note"])[:300]
+            if status != entry.status:
+                changes.append({"student": entry.student_id, "before": entry.status, "after": status})
+                entry.status = status
+            touched.append(entry)
+        if not changes:
+            raise ValidationError("Nothing to change: those boarders already have those statuses.")
+        with transaction.atomic():
+            RollCallEntry.objects.bulk_update(touched, ["status", "note"])
+            RollCallAmendment.objects.create(roll_call=roll_call, amended_by=request.user,
+                                             amended_by_name=display_name(request.user), reason=reason,
+                                             changes=changes)
+            for change in changes:
+                entry = rows[change["student"]]
+                if change["after"] == RollCallEntry.Status.MISSING:
+                    services.open_absence(entry.student, roll_call.house, roll_call, request.user, entry.note)
+                elif change["before"] == RollCallEntry.Status.MISSING:
+                    # Marked missing by mistake: the absence this roll call opened is withdrawn.
+                    for absence in Absence.objects.filter(student_id=change["student"], roll_call=roll_call,
+                                                          status=Absence.Status.OPEN):
+                        services.resolve_absence(absence, Absence.Resolution.RECORDED_IN_ERROR, request.user, "")
+            log_activity(school=roll_call.house.school, actor=request.user, action="boarding.roll_call_amended",
+                         target=roll_call, changes=changes,
+                         summary=f"Amended {roll_call.house.name} {roll_call.get_session_display().lower()} roll "
+                                 f"call of {roll_call.date:%d %b}: {len(changes)} change(s)")
+        return Response(self.get_serializer(roll_call).data)
+
+
+class AbsenceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Boarders who were marked missing. ?status=open (default), resolved or all. POST <id>/resolve/
+    {resolution, note} closes one: only a person does that, never a later roll call."""
+
+    serializer_class = AbsenceSerializer
+    permission_classes = [IsAuthenticated, BoardingStaff]
+
+    def get_queryset(self):
+        queryset = Absence.objects.filter(house__in=services.houses_for(self.request.user, archived=None)) \
+            .select_related("student", "house", "roll_call")
+        status = self.request.query_params.get("status", "open" if self.action == "list" else "all")
+        if status in ("open", "resolved"):
+            queryset = queryset.filter(status=status)
+        if student := self.request.query_params.get("student"):
+            queryset = queryset.filter(student_id=student)
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        absence = self.get_object()
+        if absence.status != Absence.Status.OPEN:
+            raise ValidationError("This absence is already resolved.")
+        resolution = request.data.get("resolution")
+        allowed = [Absence.Resolution.FOUND, Absence.Resolution.RETURNED, Absence.Resolution.ON_LEAVE,
+                   Absence.Resolution.LEFT_SCHOOL]
+        if resolution not in allowed:
+            raise ValidationError({"resolution": ["Choose found, returned, on authorised leave or left the school."]})
+        services.resolve_absence(absence, resolution, request.user, str(request.data.get("note", "")))
+        return Response(self.get_serializer(absence).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, BoardingStaff])
+def unbedded(request):
+    """Boarders without a bed: students marked as boarding who haven't been placed (e.g. from admissions)."""
+    return Response([{"id": s.id, "name": f"{s.first_name} {s.last_name}",
+                      "class_name": s.school_class.name if s.school_class else ""}
+                     for s in services.unbedded(request.user).order_by("last_name", "first_name")])
 
 
 class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,
@@ -225,8 +377,13 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
             queryset = queryset.filter(student_id=student)
         return queryset
 
+    def _check_restriction(self, student):
+        if services.leave_admin_only(student.id) and not is_admin(self.request.user):
+            raise PermissionDenied(f"Only an admin can give, approve or sign out leave for {student_name(student)}.")
+
     def perform_create(self, serializer):
         student = _boarder(self.request.user, self.request.data.get("student"))
+        self._check_restriction(student)
         user = self.request.user
         leave = serializer.save(school=student.school, student=student, status=LeaveRequest.Status.APPROVED,
                                 requested_by=user, requested_by_name=display_name(user),
@@ -235,10 +392,12 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
                                                       f" leave")
         services.email_parents(student, f"Leave for {student.first_name}",
                                f"{student.school.name} has recorded {leave.get_kind_display().lower()} leave for "
-                               f"{student.first_name}. The dates are in HouseMaster.")
+                               f"{student.first_name}. The dates are in HouseMaster.", everyone=True)
 
-    def _move(self, request, allowed, to, verb, **fields):
+    def _move(self, request, allowed, to, verb, check=False, **fields):
         leave = self.get_object()
+        if check:
+            self._check_restriction(leave.student)
         if leave.status not in allowed:
             raise ValidationError(f"This leave is {leave.get_status_display().lower()}, so it can't be {verb}.")
         leave.status = to
@@ -251,10 +410,11 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        leave = self._move(request, ["requested"], "approved", "approved", decided_by_name=display_name(request.user),
+        leave = self._move(request, ["requested"], "approved", "approved", check=True,
+                           decided_by_name=display_name(request.user),
                            decided_at=services.now(), decision_note=str(request.data.get("note", ""))[:1000])
         services.email_parents(leave.student, f"Leave approved for {leave.student.first_name}",
-                               f"The leave you asked for {leave.student.first_name} has been approved.")
+                               f"The leave you asked for {leave.student.first_name} has been approved.", everyone=True)
         return Response(self.get_serializer(leave).data)
 
     @action(detail=True, methods=["post"])
@@ -269,8 +429,12 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
 
     @action(detail=True, methods=["post"], url_path="sign-out")
     def sign_out(self, request, pk=None):
-        leave = self._move(request, ["approved"], "out", "signed out", signed_out_at=services.now(),
+        leave = self._move(request, ["approved"], "out", "signed out", check=True, signed_out_at=services.now(),
                            signed_out_by_name=display_name(request.user))
+        who = f", collected by {leave.collected_by}" if leave.collected_by else ""
+        services.email_parents(leave.student, f"{leave.student.first_name} has left school on leave",
+                               f"{leave.student.first_name} was signed out of {leave.student.school.name} for "
+                               f"{leave.get_kind_display().lower()} leave{who}.", everyone=True)
         return Response(self.get_serializer(leave).data)
 
     @action(detail=True, methods=["post"], url_path="sign-in")
@@ -391,3 +555,38 @@ def guardian_cancel_leave(request, student, leave_id):
     leave.status = LeaveRequest.Status.CANCELLED
     leave.save(update_fields=["status"])
     return LeaveRequestSerializer(leave).data
+
+
+class RestrictionViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    """Staff-only flags on boarders. GET lists them for the user's houses; POST {student, leave_admin_only, note}
+    (admins) sets or clears one. Logged without the note."""
+
+    permission_classes = [IsAuthenticated, BoardingStaff]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsAuthenticated(), BoardingStaff(), IsSchoolAdmin()]
+        return super().get_permissions()
+
+    def list(self, request):
+        from .models import BoarderRestriction
+
+        rows = BoarderRestriction.objects.filter(student__in=services.boarders(request.user)).select_related("student")
+        return Response([{"student": r.student_id, "name": student_name(r.student), "leave_admin_only": r.leave_admin_only,
+                          "note": r.note, "set_by_name": r.set_by_name, "updated_at": r.updated_at} for r in rows])
+
+    def create(self, request):
+        from .models import BoarderRestriction
+
+        student = Student.objects.filter(pk=request.data.get("student"), school=request.user.profile.school).first() \
+            if str(request.data.get("student", "")).isdigit() else None
+        if student is None:
+            raise ValidationError({"student": ["Choose a student at your school."]})
+        flag = request.data.get("leave_admin_only") is True
+        row, _ = BoarderRestriction.objects.update_or_create(student=student, defaults={
+            "leave_admin_only": flag, "note": str(request.data.get("note", ""))[:300],
+            "set_by_name": display_name(request.user)})
+        _log(request, "boarding.restriction", student,
+             f"{'Set' if flag else 'Cleared'} 'leave only with admin approval' for {student_name(student)}")
+        return Response({"student": student.id, "leave_admin_only": row.leave_admin_only, "note": row.note})
+

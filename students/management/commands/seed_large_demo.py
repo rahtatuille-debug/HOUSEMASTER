@@ -18,6 +18,7 @@ from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from boarding.services import delete_school_history
 from students import demo_large
 from students.models import School
 
@@ -72,6 +73,7 @@ class Command(BaseCommand):
                 if users.exclude(profile__school=existing).exclude(guardian__school=existing) \
                         .exclude(profile__isnull=True, guardian__isnull=True).exists():
                     raise CommandError(f"Some {demo_large.NAME} accounts belong to another school; refusing to delete.")
+                delete_school_history(existing)
                 existing.delete()
                 users.delete()
             summary = demo_large.build(make_password(password))
