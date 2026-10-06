@@ -27,6 +27,8 @@ from students.setup_views import (add_section, complete_setup, finish_setup, pre
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
 from accounts.teacher_home import teacher_home, tour_seen
+from admissions import views as admissions_views
+from admissions.views import ApplicationViewSet
 from boarding import views as boarding_views
 from boarding.views import DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
@@ -74,6 +76,7 @@ router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian
 router.register(r"conversations", ConversationViewSet, basename="conversation")
 router.register(r"activity", ActivityLogViewSet)
 router.register(r"change-requests", ChangeRequestViewSet)
+router.register(r"admissions/applications", ApplicationViewSet, basename="admissions-application")
 router.register(r"boarding/houses", BoardingHouseViewSet, basename="boarding-house")
 router.register(r"boarding/dorms", BoardingDormViewSet, basename="boarding-dorm")
 router.register(r"boarding/roll-calls", RollCallViewSet, basename="boarding-roll-call")
@@ -121,6 +124,9 @@ urlpatterns = [
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/admissions/apply/<str:token>/', admissions_views.apply, name='admissions_apply'),
+    path('api/admissions/confirm/<str:token>/', admissions_views.confirm, name='admissions_confirm'),
+    path('api/admissions/settings/', admissions_views.admissions_settings, name='admissions_settings'),
     path('api/boarding/overview/', boarding_views.overview, name='boarding_overview'),
     path('api/boarding/boarders/', boarding_views.boarders, name='boarding_boarders'),
     path('api/boarding/students/', boarding_views.student_search, name='boarding_students'),

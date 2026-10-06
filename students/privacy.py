@@ -113,6 +113,12 @@ def family_export(student):
          v.treatment, v.get_outcome_display() if v.outcome else "In sick bay"]
         for v in student.sick_bay_visits.order_by("checked_in_at")
     ], widths={"Details": 60, "What": 40})
+    from admissions.services import application_row, applications_about
+
+    rows = [application_row(a) for a in applications_about(student).order_by("created_at")]
+    _sheet(wb, "Applications", [k.replace("_", " ").capitalize() for k in (rows[0] if rows else {"reference": 0})],
+           [list(r.values()) for r in rows], widths={"Health and learning needs": 50, "Family notes": 50,
+                                                     "Staff notes": 50, "Decision note": 50})
     return _workbook_bytes(wb)
 
 
@@ -186,10 +192,17 @@ def family_export_data(student):
                           "checked_out": _iso(v.checked_out_at), "outcome": v.get_outcome_display()}
                          for v in student.sick_bay_visits.order_by("checked_in_at")],
         },
+        "admissions_applications": _applications(student),
         "conversations_about_the_student": [{
             "sent": _iso(m.created_at), "from": display_name(m.sender) if m.sender else "Removed", "message": m.body,
         } for m in _messages_about(student)],
     }
+
+
+def _applications(student):
+    from admissions.services import application_row, applications_about
+
+    return [application_row(a) for a in applications_about(student).order_by("created_at")]
 
 
 def _scrub(text, old_student_name, parent_names):
@@ -268,6 +281,10 @@ def remove_personal_data(student, actor):
     Conversation.objects.filter(student=student).update(student=None)
     # Sign-up requests typed by a parent name the child and their admission number.
     counts["signup_requests_deleted"] = ParentSignupRequest.objects.filter(student=student).delete()[0]
+    # Admissions applications for the child: what the family typed in, and the school's notes on it.
+    from admissions.services import applications_about
+
+    counts["applications_deleted"] = applications_about(student).delete()[0]
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
     counts["boarding_records_deleted"] = (student.leave_requests.all().delete()[0]
                                           + student.sick_bay_visits.all().delete()[0]

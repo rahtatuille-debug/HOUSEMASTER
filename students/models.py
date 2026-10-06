@@ -157,6 +157,13 @@ class Student(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["school", "external_id"])]
+        # An admission number belongs to one student per school (blank is allowed for any number of students).
+        # The migration adding this stops with counts if a school already has duplicates: see
+        # students.preflight and `manage.py check_admission_numbers`.
+        constraints = [
+            models.UniqueConstraint(fields=["school", "external_id"], condition=~models.Q(external_id=""),
+                                    name="unique_admission_number_per_school"),
+        ]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     'support',
     'timetable',
     'boarding',
+    'admissions',
 ]
 
 MIDDLEWARE = [
@@ -201,6 +202,10 @@ REST_FRAMEWORK = {
         # Invite previews and acceptance, parent invites and class sign-up
         # links (token-guessing endpoints).
         'invite_ip': os.environ.get('INVITE_IP_RATE', '60/hour'),
+        # Applications sent through a school's public admissions form: per IP address (generous: many families
+        # can share one address) and per parent email (stricter; over it the form quietly does nothing).
+        'admissions_apply': os.environ.get('ADMISSIONS_APPLY_RATE', '30/hour'),
+        'admissions_apply_email': os.environ.get('ADMISSIONS_APPLY_EMAIL_RATE', '5/hour'),
         # Password-reset confirmation has its own bucket, so parents joining
         # from a school's shared address can't hold up someone's reset (B-3).
         # Reset links are 64 random characters, so this limit is about
@@ -419,6 +424,11 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@housemaster.local')
 
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+# How long the link that confirms an admissions application's email address works (hours).
+ADMISSIONS_CONFIRM_HOURS = int(os.environ.get('ADMISSIONS_CONFIRM_HOURS', '48'))
+# The same child (name and date of birth) from the same email within this many days is one application.
+ADMISSIONS_DUPLICATE_DAYS = int(os.environ.get('ADMISSIONS_DUPLICATE_DAYS', '30'))
 
 # Production-only hardening. Skipped when DEBUG=True so local dev over
 # plain http://127.0.0.1:8001 still works without a redirect loop.
