@@ -143,6 +143,9 @@ def release_boarders(student_ids, reason, actor=None):
     for absence in Absence.objects.filter(student_id__in=student_ids, status=Absence.Status.OPEN) \
             .select_related("student", "house__school"):
         resolve_absence(absence, reason, actor, "")
+    if reason == "left_school":  # someone who has left isn't in the sick bay any more
+        SickBayVisit.objects.filter(student_id__in=student_ids, checked_out_at__isnull=True).update(
+            checked_out_at=timezone.now(), checked_out_by_name="Left the school")
     return released
 
 
@@ -175,22 +178,34 @@ def overview(user):
     }
 
 
-def _parents(student):
+def _parents(student, everyone=False):
+    """The student's parents who get emails. `everyone`: safeguarding notices (leave approved, signed out) go to every
+    linked parent, even one who turned routine emails off."""
     from guardians.models import Guardian
 
-    return Guardian.objects.filter(students=student, email_notifications=True, user__is_active=True) \
-        .exclude(user__email="").select_related("user")
+    parents = Guardian.objects.filter(students=student, user__is_active=True).exclude(user__email="")
+    if not everyone:
+        parents = parents.filter(email_notifications=True)
+    return parents.select_related("user")
 
 
-def email_parents(student, subject, line):
+def email_parents(student, subject, line, everyone=False):
     """A short email to the student's parents; the details stay in HouseMaster. Returns how many."""
     from guardians.notifications import _footer, send_after_commit
 
     school = student.school
-    messages = [(subject, f"Dear {g.name},\n\n{line}" + _footer(school), g.user.email) for g in _parents(student)]
+    messages = [(subject, f"Dear {g.name},\n\n{line}" + _footer(school), g.user.email)
+                for g in _parents(student, everyone)]
     if messages:
         send_after_commit(messages)
     return len(messages)
+
+
+def leave_admin_only(student_id):
+    """Whether only an admin may give, approve or sign out leave for this boarder (BoarderRestriction)."""
+    from .models import BoarderRestriction
+
+    return BoarderRestriction.objects.filter(student_id=student_id, leave_admin_only=True).exists()
 
 
 def now():

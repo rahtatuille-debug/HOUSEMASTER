@@ -129,12 +129,12 @@ class RollCallSerializer(serializers.ModelSerializer):
         return counts
 
 
-def boarder_row(student, away):
+def boarder_row(student, away, restricted=()):
     bed = student.bed
     return {"id": student.id, "name": _student_name(student),
             "class_name": student.school_class.name if student.school_class else "",
             "house": bed.dorm.house.name, "house_id": bed.dorm.house_id, "dorm": bed.dorm.name, "bed": bed.name,
-            "where": away.get(student.id, "in")}
+            "where": away.get(student.id, "in"), "leave_admin_only": student.id in restricted}
 
 
 def bed_student_queryset(user):

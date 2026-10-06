@@ -78,6 +78,7 @@ router.register(r"boarding/houses", BoardingHouseViewSet, basename="boarding-hou
 router.register(r"boarding/dorms", BoardingDormViewSet, basename="boarding-dorm")
 router.register(r"boarding/roll-calls", RollCallViewSet, basename="boarding-roll-call")
 router.register(r"boarding/absences", AbsenceViewSet, basename="boarding-absence")
+router.register(r"boarding/restrictions", boarding_views.RestrictionViewSet, basename="boarding-restriction")
 router.register(r"boarding/leave", LeaveViewSet, basename="boarding-leave")
 router.register(r"boarding/sick-bay", SickBayViewSet, basename="boarding-sick-bay")
 router.register(r"timetable/periods", PeriodViewSet, basename="timetable-period")

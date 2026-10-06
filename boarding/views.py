@@ -160,6 +160,17 @@ def bed(request, pk):
             if str(student_id).isdigit() else None
         if student is None:
             raise ValidationError({"student": ["Choose a current student."]})
+        occupant = found.student
+        # Someone who has left or no longer boards doesn't hold the bed (A-5), so only a current boarder counts.
+        if occupant is not None and (not occupant.is_active or occupant.mode_of_learning != "boarding"):
+            occupant = None
+        if occupant is not None and occupant.pk != student.pk:
+            # Never move someone out of their bed silently: they would be left without one.
+            if request.data.get("replace") is not True:
+                raise ValidationError(f"{student_name(occupant)} is in this bed. Move them out first, or choose to "
+                                      "replace them (they will then need a bed).")
+            _log(request, "boarding.bed", occupant, f"Took {student_name(occupant)} out of {found.dorm.house.name} "
+                                                    f"{found} to make room for {student_name(student)}")
         Bed.objects.filter(student=student).update(student=None)  # moving beds
         found.student = student
         found.save(update_fields=["student"])
@@ -176,7 +187,11 @@ def boarders(request):
     students = list(services.boarders(request.user, request.query_params.get("house") or None)
                     .order_by("bed__dorm__house__name", "bed__dorm__name", "last_name", "first_name"))
     away = services.where_now([s.id for s in students])
-    return Response([boarder_row(s, away) for s in students])
+    from .models import BoarderRestriction
+
+    restricted = set(BoarderRestriction.objects.filter(student__in=students, leave_admin_only=True)
+                     .values_list("student_id", flat=True))
+    return Response([boarder_row(s, away, restricted) for s in students])
 
 
 @api_view(["GET"])
@@ -362,8 +377,13 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
             queryset = queryset.filter(student_id=student)
         return queryset
 
+    def _check_restriction(self, student):
+        if services.leave_admin_only(student.id) and not is_admin(self.request.user):
+            raise PermissionDenied(f"Only an admin can give, approve or sign out leave for {student_name(student)}.")
+
     def perform_create(self, serializer):
         student = _boarder(self.request.user, self.request.data.get("student"))
+        self._check_restriction(student)
         user = self.request.user
         leave = serializer.save(school=student.school, student=student, status=LeaveRequest.Status.APPROVED,
                                 requested_by=user, requested_by_name=display_name(user),
@@ -372,10 +392,12 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
                                                       f" leave")
         services.email_parents(student, f"Leave for {student.first_name}",
                                f"{student.school.name} has recorded {leave.get_kind_display().lower()} leave for "
-                               f"{student.first_name}. The dates are in HouseMaster.")
+                               f"{student.first_name}. The dates are in HouseMaster.", everyone=True)
 
-    def _move(self, request, allowed, to, verb, **fields):
+    def _move(self, request, allowed, to, verb, check=False, **fields):
         leave = self.get_object()
+        if check:
+            self._check_restriction(leave.student)
         if leave.status not in allowed:
             raise ValidationError(f"This leave is {leave.get_status_display().lower()}, so it can't be {verb}.")
         leave.status = to
@@ -388,10 +410,11 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        leave = self._move(request, ["requested"], "approved", "approved", decided_by_name=display_name(request.user),
+        leave = self._move(request, ["requested"], "approved", "approved", check=True,
+                           decided_by_name=display_name(request.user),
                            decided_at=services.now(), decision_note=str(request.data.get("note", ""))[:1000])
         services.email_parents(leave.student, f"Leave approved for {leave.student.first_name}",
-                               f"The leave you asked for {leave.student.first_name} has been approved.")
+                               f"The leave you asked for {leave.student.first_name} has been approved.", everyone=True)
         return Response(self.get_serializer(leave).data)
 
     @action(detail=True, methods=["post"])
@@ -406,8 +429,12 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
 
     @action(detail=True, methods=["post"], url_path="sign-out")
     def sign_out(self, request, pk=None):
-        leave = self._move(request, ["approved"], "out", "signed out", signed_out_at=services.now(),
+        leave = self._move(request, ["approved"], "out", "signed out", check=True, signed_out_at=services.now(),
                            signed_out_by_name=display_name(request.user))
+        who = f", collected by {leave.collected_by}" if leave.collected_by else ""
+        services.email_parents(leave.student, f"{leave.student.first_name} has left school on leave",
+                               f"{leave.student.first_name} was signed out of {leave.student.school.name} for "
+                               f"{leave.get_kind_display().lower()} leave{who}.", everyone=True)
         return Response(self.get_serializer(leave).data)
 
     @action(detail=True, methods=["post"], url_path="sign-in")
@@ -528,3 +555,38 @@ def guardian_cancel_leave(request, student, leave_id):
     leave.status = LeaveRequest.Status.CANCELLED
     leave.save(update_fields=["status"])
     return LeaveRequestSerializer(leave).data
+
+
+class RestrictionViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    """Staff-only flags on boarders. GET lists them for the user's houses; POST {student, leave_admin_only, note}
+    (admins) sets or clears one. Logged without the note."""
+
+    permission_classes = [IsAuthenticated, BoardingStaff]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsAuthenticated(), BoardingStaff(), IsSchoolAdmin()]
+        return super().get_permissions()
+
+    def list(self, request):
+        from .models import BoarderRestriction
+
+        rows = BoarderRestriction.objects.filter(student__in=services.boarders(request.user)).select_related("student")
+        return Response([{"student": r.student_id, "name": student_name(r.student), "leave_admin_only": r.leave_admin_only,
+                          "note": r.note, "set_by_name": r.set_by_name, "updated_at": r.updated_at} for r in rows])
+
+    def create(self, request):
+        from .models import BoarderRestriction
+
+        student = Student.objects.filter(pk=request.data.get("student"), school=request.user.profile.school).first() \
+            if str(request.data.get("student", "")).isdigit() else None
+        if student is None:
+            raise ValidationError({"student": ["Choose a student at your school."]})
+        flag = request.data.get("leave_admin_only") is True
+        row, _ = BoarderRestriction.objects.update_or_create(student=student, defaults={
+            "leave_admin_only": flag, "note": str(request.data.get("note", ""))[:300],
+            "set_by_name": display_name(request.user)})
+        _log(request, "boarding.restriction", student,
+             f"{'Set' if flag else 'Cleared'} 'leave only with admin approval' for {student_name(student)}")
+        return Response({"student": student.id, "leave_admin_only": row.leave_admin_only, "note": row.note})
+

@@ -116,8 +116,11 @@ class BoardingTests(SchoolScopedAPITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.day_kid.refresh_from_db()
         self.assertEqual(self.day_kid.mode_of_learning, "boarding")
-        self.matron.post(f"/api/boarding/beds/{self.beds[2].id}/", {"student": self.amina.id}, format="json")
+        # The bed is taken, so moving Amina there has to say so (X-1); then the day pupil is out of it.
+        self.matron.post(f"/api/boarding/beds/{self.beds[2].id}/", {"student": self.amina.id, "replace": True},
+                         format="json")
         self.assertEqual(Bed.objects.get(student=self.amina), self.beds[2])  # moved, not in two beds
+        self.assertFalse(Bed.objects.filter(student=self.day_kid).exists())
         self.assertIsNone(Bed.objects.get(pk=self.beds[0].pk).student)
 
     # --- roll call

@@ -201,3 +201,15 @@ class Absence(models.Model):
             models.UniqueConstraint(fields=["student"], condition=models.Q(status="open"),
                                     name="one_open_absence_per_boarder"),
         ]
+
+
+class BoarderRestriction(models.Model):
+    """Staff-only safeguarding flags for one boarder, set by an admin. Parents never see these."""
+
+    student = models.OneToOneField(Student, on_delete=models.CASCADE, related_name="boarding_restriction")
+    # Leave can be given, approved or signed out only by an admin (e.g. a court order about who may collect them).
+    leave_admin_only = models.BooleanField(default=False)
+    note = models.CharField(max_length=300, blank=True, help_text="For boarding staff; never shown to parents.")
+    set_by_name = models.CharField(max_length=200, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
