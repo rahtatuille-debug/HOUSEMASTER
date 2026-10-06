@@ -34,6 +34,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `THROTTLE_CACHE` | `db` | Keeps rate-limit counters in the database, so they survive restarts (the free tier restarts whenever it sleeps). Needs `python manage.py createcachetable` in the build command. Default: in-memory. |
 | `GEMINI_API_KEY` | A key on a paid, no-training Gemini tier (H-8) | Without it the AI buttons answer 503 "GEMINI_API_KEY is not set". |
 | `WEB_CONCURRENCY` | `1` on the free tier (512 MB), `2` on Starter | Gunicorn processes (`gunicorn.conf.py`). |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | A key pair you generate once (below) | Phone and browser notifications for new announcements and ready reports. Off until both are set. **Keep the private key secret**; changing the pair later turns notifications off on every device until people turn them on again. Generate: `python -c "from py_vapid import Vapid02; v=Vapid02(); v.generate_keys(); from py_vapid.utils import b64urlencode; from cryptography.hazmat.primitives import serialization as s; print('VAPID_PUBLIC_KEY=' + b64urlencode(v.public_key.public_bytes(s.Encoding.X962, s.PublicFormat.UncompressedPoint))); print('VAPID_PRIVATE_KEY=' + b64urlencode(v.private_key.private_numbers().private_value.to_bytes(32, 'big')))"` |
+| `VAPID_SUBJECT` | `mailto:support@housemaster.app` | A contact address the push services (Google, Mozilla, Apple, Microsoft) can use if something goes wrong. Use a mailbox you read. |
 
 ## Optional tuning
 

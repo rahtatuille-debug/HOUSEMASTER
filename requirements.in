@@ -19,3 +19,7 @@ fpdf2>=2.8,<3.0
 # Time-zone data for per-school time zones (students.localtime), so it
 # doesn't depend on the host having it.
 tzdata>=2025.2
+# Phone and browser notifications (communications/push.py): message
+# encryption and the signed sender header. Both only need cryptography.
+http-ece>=1.2,<2.0
+py-vapid>=1.9,<2.0
