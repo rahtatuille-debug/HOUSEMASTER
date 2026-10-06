@@ -113,6 +113,26 @@ def family_export(student):
          v.treatment, v.get_outcome_display() if v.outcome else "In sick bay"]
         for v in student.sick_bay_visits.order_by("checked_in_at")
     ], widths={"Details": 60, "What": 40})
+    bed = _bed(student)
+    current = [["Bed now", "", bed["house"], f"{bed['dorm']} {bed['bed']}", ""]] if bed else []
+    _sheet(wb, "Roll calls", ["Date", "Session", "Boarding house", "Mark", "Note"], current + [
+        [e.roll_call.date.isoformat(), e.roll_call.get_session_display(), e.roll_call.house.name,
+         e.get_status_display(), e.note] for e in _roll_call_marks(student)
+    ] + [
+        [_when(a.opened_at), "Marked missing", a.house.name,
+         a.get_resolution_display() if a.resolution else "Not found yet", "; ".join(
+             x for x in (a.note, a.resolution_note) if x)] for a in _missing_records(student)
+    ], widths={"Note": 60})
+    _sheet(wb, "Invitations and sign-ups", ["Kind", "Name", "Email", "Sent", "Status"], [
+        ["Invitation", i.name, i.email, _when(i.created_at), "Accepted" if i.accepted_at else "Not accepted"]
+        for i in _invitations(student)
+    ] + [
+        ["Sign-up request", r.name, r.email, _when(r.created_at), r.get_status_display()]
+        for r in _sign_up_requests(student)
+    ])
+    _sheet(wb, "Change log", ["When", "By", "What"], [
+        [_when(e.created_at), e.actor_name, e.summary] for e in _change_log(student)
+    ], widths={"What": 80})
     return _workbook_bytes(wb)
 
 
@@ -132,6 +152,36 @@ def _subject_comments(student):
 def _messages_about(student):
     """Every message in a conversation about this student, whoever took part."""
     return Message.objects.filter(conversation__student=student).select_related("sender").order_by("created_at")
+
+
+def _bed(student):
+    bed = getattr(student, "bed", None)
+    return {"house": bed.dorm.house.name, "dorm": bed.dorm.name, "bed": bed.name} if bed else None
+
+
+def _roll_call_marks(student):
+    return student.roll_call_entries.exclude(status="").select_related("roll_call__house").order_by(
+        "roll_call__date", "roll_call__id")
+
+
+def _missing_records(student):
+    from boarding.models import Absence
+
+    return Absence.objects.filter(student=student).select_related("house").order_by("opened_at")
+
+
+def _invitations(student):
+    return GuardianInvite.objects.filter(students=student).order_by("created_at")
+
+
+def _sign_up_requests(student):
+    return ParentSignupRequest.objects.filter(student=student).order_by("created_at")
+
+
+def _change_log(student):
+    """Activity log entries about the student (IDs and short descriptions, as staff see them)."""
+    return ActivityLog.objects.filter(school=student.school, target_type="student", target_id=student.id) \
+        .order_by("created_at")
 
 
 def _iso(value):
@@ -179,6 +229,14 @@ def family_export_data(student):
             "closed": _iso(c.closed_at), "closing_note": c.closing_note,
         } for c in student.support_concerns.select_related("term").order_by("created_at")],
         "boarding": {
+            "bed": _bed(student),
+            "roll_call_marks": [{"date": _iso(e.roll_call.date), "session": e.roll_call.get_session_display(),
+                                 "house": e.roll_call.house.name, "status": e.get_status_display(), "note": e.note}
+                                for e in _roll_call_marks(student)],
+            "missing_records": [{"house": a.house.name, "since": _iso(a.opened_at), "note": a.note,
+                                 "status": a.get_status_display(), "resolution": a.get_resolution_display() if a.resolution else "",
+                                 "resolved": _iso(a.resolved_at), "resolved_by": a.resolved_by_name,
+                                 "resolution_note": a.resolution_note} for a in _missing_records(student)],
             "leave": [{"kind": x.get_kind_display(), "leaving": _iso(x.leaving_at), "returning": _iso(x.returning_at),
                        "reason": x.reason, "collected_by": x.collected_by, "status": x.get_status_display(),
                        "decision_note": x.decision_note} for x in student.leave_requests.order_by("leaving_at")],
@@ -186,6 +244,14 @@ def family_export_data(student):
                           "checked_out": _iso(v.checked_out_at), "outcome": v.get_outcome_display()}
                          for v in student.sick_bay_visits.order_by("checked_in_at")],
         },
+        "parent_invitations": [{"name": i.name, "email": i.email, "sent": _iso(i.created_at),
+                                "accepted": _iso(i.accepted_at)} for i in _invitations(student)],
+        "parent_sign_up_requests": [{"name": r.name, "email": r.email, "phone": r.phone,
+                                     "relationship": r.relationship, "admission_number_given": r.admission_number,
+                                     "status": r.get_status_display(), "sent": _iso(r.created_at)}
+                                    for r in _sign_up_requests(student)],
+        "change_log": [{"when": _iso(e.created_at), "by": e.actor_name, "action": e.action, "what": e.summary}
+                       for e in _change_log(student)],
         "conversations_about_the_student": [{
             "sent": _iso(m.created_at), "from": display_name(m.sender) if m.sender else "Removed", "message": m.body,
         } for m in _messages_about(student)],

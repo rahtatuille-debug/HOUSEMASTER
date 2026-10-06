@@ -105,3 +105,31 @@ class LeaveRulesTests(Fixture):
             self.matron.post(f"/api/boarding/leave/{self.leave.id}/sign-out/")
         self.assertEqual(sorted(m.to[0] for m in mail.outbox), ["dad@example.test", "mum@example.test"])
         self.assertIn("Aunt", mail.outbox[0].body)
+
+
+class FamilyExportTests(Fixture):
+    """X-4: the family export includes everything held about the child, not just most of it."""
+
+    def test_the_export_includes_boarding_sign_ups_invites_and_the_change_log(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        from guardians.models import GuardianInvite, ParentSignupRequest
+
+        self.roll_call("evening", {self.amina.id: "missing"})  # a roll-call mark and an absence
+        invite = GuardianInvite.objects.create(school=self.school_a, name="Gran", email="gran@example.test")
+        invite.students.add(self.amina)
+        ParentSignupRequest.objects.create(school=self.school_a, school_class=self.c2, name="Uncle",
+                                           email="uncle@example.test", admission_number="A1", student=self.amina)
+        data = self.admin.get(f"/api/students/{self.amina.id}/data-export/", {"format": "json"}).data
+        boarding = data["boarding"]
+        self.assertEqual(boarding["bed"], {"house": "Uhuru House", "dorm": "Dorm A", "bed": "Bed 1"})
+        self.assertEqual([m["status"] for m in boarding["roll_call_marks"]], ["Missing"])
+        self.assertEqual(len(boarding["missing_records"]), 1)
+        self.assertEqual([i["email"] for i in data["parent_invitations"]], ["gran@example.test"])
+        self.assertEqual([r["email"] for r in data["parent_sign_up_requests"]], ["uncle@example.test"])
+        self.assertTrue(any(e["action"] == "boarding.absence_opened" for e in data["change_log"]))
+        sheets = load_workbook(BytesIO(self.admin.get(f"/api/students/{self.amina.id}/data-export/").content)).sheetnames
+        for name in ("Roll calls", "Invitations and sign-ups", "Change log"):
+            self.assertIn(name, sheets)
