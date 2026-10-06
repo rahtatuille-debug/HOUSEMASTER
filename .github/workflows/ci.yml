@@ -70,3 +70,44 @@ jobs:
       - name: Tests
         # SQLite, no DATABASE_URL: the suite never touches a real database.
         run: python manage.py test --parallel auto --noinput
+
+  test-postgres:
+    # Same tests on the database production uses. Some tests (two people
+    # sending the same form at once, two enrolments at once) need real
+    # concurrent writers and are skipped on SQLite; they run here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DJANGO_DEBUG: "True"
+      # A throwaway database inside this job. The test guard allows only
+      # localhost, so this can never reach a real server.
+      DATABASE_URL: postgresql://postgres:ci-only@localhost:5432/housemaster
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: housemaster
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Tests on Postgres
+        run: python manage.py test --parallel auto --noinput
