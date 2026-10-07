@@ -9,7 +9,7 @@ from communications.models import UrgentAlert
 from guardians.models import GuardianInvite
 from reporting.models import StudentReport
 from students.localtime import school_localdate
-from students.models import SchoolClass, Student
+from students.models import SchoolClass, Student, YearGroup
 
 from .models import Invite
 
@@ -79,8 +79,18 @@ def build_dashboard(school):
     without_parent = students.exclude(guardians__user__is_active=True).select_related("school_class") \
         .order_by("last_name", "first_name")
 
+    # The "School numbers" panel: active students per year group, by gender.
+    by_year = {row["school_class__year_group"]: row for row in students.values("school_class__year_group").annotate(
+        total=Count("id"), female=Count("id", filter=Q(gender="female")), male=Count("id", filter=Q(gender="male")))}
+    year_groups = [
+        {"id": y.id, "name": y.name, "female": by_year.get(y.id, {}).get("female", 0),
+         "male": by_year.get(y.id, {}).get("male", 0), "total": by_year.get(y.id, {}).get("total", 0)}
+        for y in YearGroup.objects.filter(school=school).order_by("order", "name")
+    ]
+
     return {
         "attendance_today": attendance,
+        "students_by_year_group": year_groups,
         "reports_waiting": {
             "count": reports.count(),
             "items": [

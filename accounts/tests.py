@@ -771,6 +771,20 @@ class DashboardTests(SchoolScopedAPITestCase):
         self.assertEqual((without["count"], without["total_students"]), (2, 3))
         self.assertNotIn("Ann A", [s["name"] for s in without["items"]])
 
+    def test_students_by_year_group_for_the_school_numbers_panel(self):
+        from students.models import SchoolClass, Student, YearGroup
+
+        y8 = YearGroup.objects.create(school=self.school_a, name="Year 8", order=1)
+        c8 = SchoolClass.objects.create(year_group=y8, name="8A")
+        Student.objects.create(school=self.school_a, first_name="D", last_name="D", school_class=c8, gender="female")
+        Student.objects.create(school=self.school_a, first_name="E", last_name="E", school_class=c8, gender="male")
+        Student.objects.create(school=self.school_a, first_name="F", last_name="F", school_class=c8, is_active=False)
+        YearGroup.objects.create(school=self.school_a, name="Year 9", order=2)  # empty: still listed
+        Student.objects.filter(first_name="Ann").update(gender="female")
+        rows = self.admin_client_a.get("/api/dashboard/").data["students_by_year_group"]
+        self.assertEqual([(r["name"], r["female"], r["male"], r["total"]) for r in rows],
+                         [("Year 7", 1, 0, 3), ("Year 8", 1, 1, 2), ("Year 9", 0, 0, 0)])
+
     def test_deactivated_parent_counts_as_no_parent(self):
         User.objects.filter(email="p@x.test").update(is_active=False)
         self.assertEqual(self.admin_client_a.get("/api/dashboard/").data["students_without_parent"]["count"], 3)
@@ -783,6 +797,7 @@ class DashboardTests(SchoolScopedAPITestCase):
         data = self.client_b.get("/api/dashboard/").data
         self.assertEqual(data["students_without_parent"]["total_students"], 1)
         self.assertEqual(data["reports_waiting"]["count"], 0)
+        self.assertEqual(data["students_by_year_group"], [])  # school B has no year groups; A's never show
 
 
 class DashboardWeekendTests(SchoolScopedAPITestCase):
