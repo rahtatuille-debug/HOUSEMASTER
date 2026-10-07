@@ -213,3 +213,16 @@ class BoarderRestriction(models.Model):
     set_by_name = models.CharField(max_length=200, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+
+
+class HouseAllocation(models.Model):
+    """The boarding house a boarder belongs to. Admins allocate; putting a boarder in a bed sets it to that bed's
+    house; house staff can then fill their house's free beds at random with its allocated boarders who have none."""
+
+    student = models.OneToOneField(Student, on_delete=models.CASCADE, related_name="house_allocation")
+    house = models.ForeignKey(BoardingHouse, on_delete=models.CASCADE, related_name="allocations")
+    allocated_by_name = models.CharField(max_length=200, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.student} in {self.house}"

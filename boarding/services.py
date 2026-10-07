@@ -1,4 +1,6 @@
 """Who boarding staff are, where boarders are now, roll calls and parent emails."""
+import random
+
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -7,7 +9,7 @@ from accounts.scoping import is_admin
 from activity.services import display_name, log_activity, student_name
 from students.models import Student
 
-from .models import Absence, Bed, BoardingHouse, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
+from .models import Absence, Bed, BoardingHouse, HouseAllocation, LeaveRequest, RollCall, RollCallEntry, SickBayVisit
 
 
 def houses_for(user, archived=False):
@@ -143,6 +145,7 @@ def release_boarders(student_ids, reason, actor=None):
     for absence in Absence.objects.filter(student_id__in=student_ids, status=Absence.Status.OPEN) \
             .select_related("student", "house__school"):
         resolve_absence(absence, reason, actor, "")
+    HouseAllocation.objects.filter(student_id__in=student_ids).delete()
     if reason == "left_school":  # someone who has left isn't in the sick bay any more
         SickBayVisit.objects.filter(student_id__in=student_ids, checked_out_at__isnull=True).update(
             checked_out_at=timezone.now(), checked_out_by_name="Left the school")
@@ -217,3 +220,67 @@ def delete_school_history(school):
     one-off delete, so they go first. Never used to remove a single house."""
     Absence.objects.filter(house__school=school).delete()
     RollCall.objects.filter(house__school=school).delete()
+
+
+def house_of(student):
+    """A boarder's house: their allocation, or (for boarders placed before allocations existed) their bed's."""
+    allocation = getattr(student, "house_allocation", None)
+    if allocation is not None:
+        return allocation.house
+    bed = getattr(student, "bed", None)
+    return bed.dorm.house if bed is not None else None
+
+
+def allocate_houses(students, house, actor):
+    """Put boarders in a house (or none). A boarder moving house gives up their bed in the old one."""
+    name = display_name(actor)
+    changed = 0
+    with transaction.atomic():
+        for student in students:
+            old = house_of(student)
+            if (old.id if old else None) == (house.id if house else None):
+                continue
+            bed = Bed.objects.filter(student=student).select_related("dorm__house").first()
+            gave_up = ""
+            if bed is not None and (house is None or bed.dorm.house_id != house.id):
+                bed.student = None
+                bed.save(update_fields=["student"])
+                gave_up = f" and gave up their bed in {bed.dorm.house.name}"
+            if house is None:
+                HouseAllocation.objects.filter(student=student).delete()
+                summary = f"Took {student_name(student)} out of {old.name if old else 'their house'}{gave_up}"
+            else:
+                HouseAllocation.objects.update_or_create(student=student, defaults={"house": house,
+                                                                                    "allocated_by_name": name})
+                summary = f"Allocated {student_name(student)} to {house.name}" + (f" (from {old.name})" if old else "") \
+                    + gave_up
+            log_activity(school=student.school, actor=actor, action="boarding.house", target=student, summary=summary,
+                         house=house.id if house else None)
+            changed += 1
+    return changed
+
+
+def waiting_for_bed(house):
+    """Boarders allocated to this house who have no bed yet."""
+    return Student.objects.filter(house_allocation__house=house, is_active=True, mode_of_learning="boarding",
+                                  bed__isnull=True)
+
+
+def fill_beds(house, actor):
+    """Put the house's waiting boarders in its free beds, at random. Nobody who already has a bed is moved.
+    Returns {placed: [{student, name, bed}], still_waiting, beds_left}."""
+    with transaction.atomic():
+        # Lock just the beds (the free-bed test joins students, which Postgres cannot lock on an outer join).
+        beds = list(free_beds([house]).select_for_update(of=("self",)).select_related("dorm"))
+        waiting = list(waiting_for_bed(house))
+        random.shuffle(beds)
+        random.shuffle(waiting)
+        placed = []
+        for student, bed in zip(waiting, beds):
+            bed.student = student
+            bed.save(update_fields=["student"])
+            log_activity(school=house.school, actor=actor, action="boarding.bed", target=student,
+                         summary=f"Put {student_name(student)} in {house.name} {bed.dorm.name} {bed.name} (at random)")
+            placed.append({"student": student.id, "name": student_name(student), "bed": f"{bed.dorm.name} {bed.name}"})
+    return {"placed": sorted(placed, key=lambda p: p["name"]), "still_waiting": max(0, len(waiting) - len(beds)),
+            "beds_left": max(0, len(beds) - len(waiting))}
