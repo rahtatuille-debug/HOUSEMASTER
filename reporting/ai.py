@@ -13,7 +13,9 @@ import os
 
 import requests
 
-DEFAULT_MODEL = "gemini-3.6-flash"
+# A fast, stable (non-preview) model: report comments are short, and slower "thinking" models
+# can run past the timeout.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 logger = logging.getLogger(__name__)
 
 BUSY_MESSAGE = "The writing assistant is busy, please try again in a minute."
@@ -82,6 +84,7 @@ def generate_text(prompt, *, missing_key_message):
         response = future.result(timeout=hard_deadline_seconds())
     except concurrent.futures.TimeoutError as exc:
         future.cancel()
+        logger.warning("AI provider took too long to answer (over %s seconds)", hard_deadline_seconds())
         raise AIUnavailable("The AI provider took too long to answer.") from exc
     except errors.APIError as exc:
         raise AIUnavailable(f"The AI provider failed: {type(exc).__name__}", _explain(exc)) from exc

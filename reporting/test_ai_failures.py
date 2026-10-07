@@ -148,6 +148,22 @@ class AIFailureTests(SchoolScopedAPITestCase):
         self.assert_clean_busy(response)
         self.assertLess(elapsed, 2.5)
 
+    def test_default_model_is_the_fast_stable_one(self):
+        factory, client = fake_client()
+        with patch("google.genai.Client", factory), patch.dict(os.environ, {"GEMINI_MODEL": ""}):
+            self.assertEqual(self.generate().status_code, 200)
+        self.assertEqual(client.models.generate_content.call_args.kwargs["model"], "gemini-3.5-flash-lite")
+
+    def test_a_timeout_is_logged(self):
+        def hang(**kwargs):
+            time.sleep(2)
+
+        factory, _ = fake_client(side_effect=hang)
+        with patch("google.genai.Client", factory), patch.object(ai, "hard_deadline_seconds", return_value=0.3), \
+                self.assertLogs("reporting.ai", "WARNING") as logs:
+            self.assert_clean_busy(self.generate())
+        self.assertIn("took too long", logs.output[0])
+
     def test_missing_key_is_still_a_503_with_its_own_message(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
             response = self.generate()

@@ -60,4 +60,4 @@ published automatically.
 - Per-user limits: 30 report generations per hour, 5 whole-class runs per
   hour and 30 announcement drafts per hour (env-overridable, see
   [ENVIRONMENT.md](ENVIRONMENT.md)).
-- The model is `GEMINI_MODEL` (default `gemini-3.6-flash`).
+- The model is `GEMINI_MODEL` (default `gemini-3.5-flash-lite`).
