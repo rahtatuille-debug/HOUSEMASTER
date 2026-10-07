@@ -43,7 +43,7 @@ reports it (CI runs that with `--fail-level ERROR`).
 |---|---|---|
 | `GUNICORN_THREADS` | `4` | Threads per process. One slow request only ties up one thread. |
 | `GUNICORN_TIMEOUT` | `60` | Seconds before gunicorn gives up on a request. Keep it above `GEMINI_TIMEOUT_SECONDS + 5`. |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | Model used for report comments and announcement drafts. |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Model used for report comments and announcement drafts. |
 | `GEMINI_TIMEOUT_SECONDS` | `20` | Per-call timeout; a hard deadline 5 s later backs it up. |
 | `JWT_ACCESS_TOKEN_MINUTES` | `60` | Lifetime of an access token. |
 | `JWT_REFRESH_TOKEN_DAYS` | `3` | Lifetime of a refresh token. Each refresh issues a new one, so active users stay signed in. |
