@@ -11,7 +11,9 @@ path that creates a conversation or lists contacts goes through them:
 - A teacher may message parents of children in the classes they teach, and
   other staff at their school. An admin may message any parent or staff
   member at their school.
-- Staff may only attach children they can see (accounts.scoping).
+- Staff may only attach children they can see (accounts.scoping), and a
+  conversation with parents may only be about one of those parents' own
+  children.
 - Deactivated accounts and people at other schools are never reachable.
 - A direct conversation never mixes families: every parent in it must share
   at least one child with every other parent in it (two parents of the same
@@ -109,3 +111,21 @@ def attachable_students(user):
     if getattr(user, "profile", None) is not None:
         return visible_students(user)
     return Student.objects.none()
+
+
+def is_every_parents_child(student_id, user_ids):
+    """True when every parent among `user_ids` is a parent of the student (or there are no parents)."""
+    from guardians.models import Guardian
+
+    parents = Guardian.objects.filter(user_id__in=user_ids)
+    return not parents.exclude(students__id=student_id).exists()
+
+
+def children_by_parent(staff_user, parent_users):
+    """{parent user id: [{id, name}]}: each parent's children that `staff_user` can see."""
+    rows = {u.id: [] for u in parent_users}
+    students = (visible_students(staff_user).filter(guardians__user_id__in=list(rows))
+                .order_by("first_name", "last_name").values("id", "first_name", "last_name", "guardians__user_id"))
+    for s in students:
+        rows[s["guardians__user_id"]].append({"id": s["id"], "name": f"{s['first_name']} {s['last_name']}"})
+    return rows
