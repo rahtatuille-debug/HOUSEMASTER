@@ -270,7 +270,8 @@ def fill_beds(house, actor):
     """Put the house's waiting boarders in its free beds, at random. Nobody who already has a bed is moved.
     Returns {placed: [{student, name, bed}], still_waiting, beds_left}."""
     with transaction.atomic():
-        beds = list(free_beds([house]).select_for_update().select_related("dorm"))
+        # Lock just the beds (the free-bed test joins students, which Postgres cannot lock on an outer join).
+        beds = list(free_beds([house]).select_for_update(of=("self",)).select_related("dorm"))
         waiting = list(waiting_for_bed(house))
         random.shuffle(beds)
         random.shuffle(waiting)
