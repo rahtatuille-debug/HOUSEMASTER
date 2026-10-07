@@ -1,7 +1,13 @@
+from datetime import date as date_cls
+
+from django.db.models import Count, Q
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
-from accounts.scoping import check_can_see_student, limit_to_visible_students
+from accounts.scoping import assigned_class_ids, check_can_see_student, is_admin, limit_to_visible_students
 from activity.services import log_activity, student_name
 from gradebook.locks import check_date_open
 from housemaster.pagination import LongListPagination
@@ -58,3 +64,36 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             status=instance.status,
         )
         instance.delete()
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """GET ?date=YYYY-MM-DD (default today): each class's register that day, for the classes this person can see
+        (all for admins, their own for teachers). Classes with no active students are left out."""
+        from students.localtime import school_localdate
+        from students.models import SchoolClass, Student
+
+        school = self.get_school()
+        raw = request.query_params.get("date")
+        try:
+            day = date_cls.fromisoformat(raw) if raw else school_localdate(school)
+        except ValueError:
+            raise ValidationError({"date": ["Use a date like 2026-10-07."]})
+        classes = SchoolClass.objects.filter(year_group__school=school).select_related("year_group")
+        if not is_admin(request.user):
+            classes = classes.filter(id__in=assigned_class_ids(request.user))
+        students = Student.objects.filter(school=school, is_active=True, school_class__in=classes)
+        sizes = dict(students.values("school_class").annotate(n=Count("id")).values_list("school_class", "n"))
+        marks = {row["student__school_class"]: row for row in AttendanceRecord.objects.filter(
+            student__in=students, date=day).values("student__school_class").annotate(
+            marked=Count("id"), present=Count("id", filter=Q(status="present")), late=Count("id", filter=Q(status="late")),
+            absent=Count("id", filter=Q(status="absent")), excused=Count("id", filter=Q(status="excused")))}
+        rows = []
+        for c in classes.order_by("year_group__order", "year_group__name", "name"):
+            if not sizes.get(c.id):
+                continue
+            m = marks.get(c.id, {})
+            rows.append({"id": c.id, "name": c.name, "year_group": c.year_group.name, "students": sizes[c.id],
+                         **{k: m.get(k, 0) for k in ("marked", "present", "late", "absent", "excused")}})
+        totals = {k: sum(r[k] for r in rows) for k in ("students", "marked", "present", "late", "absent", "excused")}
+        totals["not_taken"] = sum(1 for r in rows if r["marked"] == 0)
+        return Response({"date": day.isoformat(), "classes": rows, "totals": totals})
