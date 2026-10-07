@@ -14,7 +14,8 @@ from students.localtime import school_localdate
 from students.models import Student
 
 from . import services
-from .models import Absence, Bed, Dorm, LeaveRequest, RollCall, RollCallAmendment, RollCallEntry, SickBayVisit
+from .models import (Absence, Bed, BoardingHouse, Dorm, HouseAllocation, LeaveRequest, RollCall, RollCallAmendment,
+                     RollCallEntry, SickBayVisit)
 from .serializers import (AbsenceSerializer, BoardingHouseSerializer, DormSerializer, LeaveRequestSerializer,
                           RollCallSerializer, SickBayVisitSerializer, boarder_row)
 
@@ -56,6 +57,8 @@ class HouseViewSet(viewsets.ModelViewSet):
         # Admins set up houses before anyone is boarding staff (once the school has turned boarding on).
         if is_admin(self.request.user) and self.request.user.profile.school.has_boarding:
             return [IsAuthenticated()]
+        if self.action == "fill_beds":  # house staff place their own house's boarders
+            return [IsAuthenticated(), BoardingStaff()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -85,6 +88,12 @@ class HouseViewSet(viewsets.ModelViewSet):
         except ProtectedError:
             raise ValidationError("This house has history, so it can't be deleted. Archive it instead.")
         return Response(status=204)
+
+    @action(detail=True, methods=["post"], url_path="fill-beds")
+    def fill_beds(self, request, pk=None):
+        """Put the house's allocated boarders who have no bed in its free beds, at random."""
+        house = self.get_object()
+        return Response(services.fill_beds(house, request.user))
 
     @action(detail=True, methods=["post"])
     def archive(self, request, pk=None):
@@ -176,6 +185,9 @@ def bed(request, pk):
         found.save(update_fields=["student"])
         if student.mode_of_learning != "boarding":
             Student.objects.filter(pk=student.pk).update(mode_of_learning="boarding")
+        # A bed is in a house: the boarder now belongs to it.
+        HouseAllocation.objects.update_or_create(student=student, defaults={
+            "house": found.dorm.house, "allocated_by_name": display_name(request.user)})
     _log(request, "boarding.bed", student, f"Put {student_name(student)} in {found.dorm.house.name} {found}")
     return Response({"bed": found.id, "student": student.id})
 
@@ -590,3 +602,44 @@ class RestrictionViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewset
              f"{'Set' if flag else 'Cleared'} 'leave only with admin approval' for {student_name(student)}")
         return Response({"student": student.id, "leave_admin_only": row.leave_admin_only, "note": row.note})
 
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, BoardingStaff])
+def allocations(request):
+    """GET: every current boarder with their house and bed (house staff: their houses' boarders, plus those not yet
+    allocated). POST {students: [ids], house: id or null} (admins): allocate them to a boarding house."""
+    school = request.user.profile.school
+    if request.method == "POST":
+        if not is_admin(request.user):
+            raise PermissionDenied("Only admins allocate boarders to houses.")
+        house_id = request.data.get("house")
+        house = None
+        if house_id not in (None, ""):
+            house = BoardingHouse.objects.filter(pk=house_id, school=school, is_archived=False).first() \
+                if str(house_id).isdigit() else None
+            if house is None:
+                raise ValidationError({"house": ["Choose one of your school's boarding houses."]})
+        ids = request.data.get("students")
+        if not isinstance(ids, list) or not ids or not all(str(i).isdigit() for i in ids):
+            raise ValidationError({"students": ["Choose at least one boarder."]})
+        students = list(Student.objects.filter(pk__in=ids, school=school, is_active=True, mode_of_learning="boarding")
+                        .select_related("house_allocation__house", "bed__dorm__house"))
+        if len(students) != len(set(int(i) for i in ids)):
+            raise ValidationError({"students": ["Only current boarders at your school can be allocated to a house."]})
+        return Response({"allocated": services.allocate_houses(students, house, request.user)})
+
+    students = Student.objects.filter(school=school, is_active=True, mode_of_learning="boarding") \
+        .select_related("school_class", "house_allocation__house", "bed__dorm__house").order_by("last_name", "first_name")
+    mine = None if is_admin(request.user) else set(services.houses_for(request.user).values_list("id", flat=True))
+    rows = []
+    for s in students:
+        house = services.house_of(s)
+        if mine is not None and house is not None and house.id not in mine:
+            continue
+        bed = getattr(s, "bed", None)
+        rows.append({"id": s.id, "name": f"{s.first_name} {s.last_name}", "admission_number": s.external_id,
+                     "class_name": s.school_class.name if s.school_class else "", "gender": s.gender,
+                     "house": house.name if house else "", "house_id": house.id if house else None,
+                     "bed": f"{bed.dorm.name} {bed.name}" if bed else ""})
+    return Response(rows)

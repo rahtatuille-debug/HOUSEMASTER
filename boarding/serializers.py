@@ -17,8 +17,22 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BoardingHouse
-        fields = ["id", "name", "staff", "staff_names", "dorms", "is_archived"]
+        fields = ["id", "name", "staff", "staff_names", "dorms", "is_archived", "allocated_waiting", "beds_free"]
         read_only_fields = ["is_archived"]
+
+    # For "Fill free beds at random": how many of the house's boarders have no bed, and how many beds are free.
+    allocated_waiting = serializers.SerializerMethodField()
+    beds_free = serializers.SerializerMethodField()
+
+    def get_allocated_waiting(self, obj):
+        from .services import waiting_for_bed
+
+        return waiting_for_bed(obj).count()
+
+    def get_beds_free(self, obj):
+        from .services import free_beds
+
+        return free_beds([obj]).count()
 
     def get_fields(self):
         fields = super().get_fields()

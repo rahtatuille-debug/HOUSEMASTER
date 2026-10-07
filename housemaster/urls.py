@@ -137,6 +137,7 @@ urlpatterns = [
     path('api/boarding/students/', boarding_views.student_search, name='boarding_students'),
     path('api/boarding/unbedded/', boarding_views.unbedded, name='boarding_unbedded'),
     path('api/boarding/beds/<int:pk>/', boarding_views.bed, name='boarding_bed'),
+    path('api/boarding/allocations/', boarding_views.allocations, name='boarding_allocations'),
     path('api/timetable/week/', timetable_week, name='timetable_week'),
     path('api/timetable/school-week/', timetable_school_week, name='timetable_school_week'),
     path('api/support/suggestions/', support_suggestions, name='support_suggestions'),
