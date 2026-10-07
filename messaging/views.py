@@ -13,7 +13,7 @@ from students.models import SchoolClass
 
 from .classes import can_post, guardian_class_ids, start_class_conversation, sync_class_participants
 from .models import Conversation, ConversationParticipant, Message
-from .contacts import contact_list
+from .contacts import children_by_parent, contact_list
 from .permissions import CanMessage, user_school
 from .throttles import ClassMessageThrottle
 from .serializers import (
@@ -161,7 +161,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
         messaging/contacts.py (parents see their children's teachers and the
         admins; teachers see parents of their own pupils).
         """
-        users = contact_list(request.user)
-        return Response([
-            {"id": u.id, "name": _display_name(u)[0], "kind": _display_name(u)[1]} for u in users
-        ])
+        users = list(contact_list(request.user))
+        rows = [{"id": u.id, "name": _display_name(u)[0], "kind": _display_name(u)[1]} for u in users]
+        # Staff also get each parent's children, so a message can only be
+        # about one of them.
+        if getattr(request.user, "guardian", None) is None and getattr(request.user, "profile", None) is not None:
+            children = children_by_parent(request.user, users)
+            for row in rows:
+                row["children"] = children.get(row["id"], [])
+        return Response(rows)

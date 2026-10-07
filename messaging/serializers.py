@@ -208,6 +208,16 @@ class ConversationCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(self.STUDENT_NOT_FOUND)
         return value
 
+    def validate(self, attrs):
+        from .contacts import is_every_parents_child
+
+        # A conversation with parents can only be about one of their own
+        # children, never another family's (same answer as "not found").
+        student = attrs.get("student")
+        if student is not None and not is_every_parents_child(student, attrs["participant_ids"]):
+            raise serializers.ValidationError({"student": [self.STUDENT_NOT_FOUND]})
+        return attrs
+
 
 class ClassMessageSerializer(serializers.Serializer):
     """Input for a teacher's message to every parent of one class."""
