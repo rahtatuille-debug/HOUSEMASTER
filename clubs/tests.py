@@ -157,6 +157,9 @@ class FixtureTests(Base):
         response = self.coach.patch(f"{FIXTURES}{fid}/", {"our_score": 3, "their_score": 1, "report": "A great win."}, format="json")
         self.assertEqual(response.data["outcome"], "win")
         self.assertEqual(self.client_a.get(FIXTURES, {"results": 1}).data[0]["outcome"], "win")
+        self.assertEqual(self.client_a.get(FIXTURES, {"upcoming": 1}).data, [])  # played early: a result now
+        clubs = self.parent.get(f"/api/guardian-students/{self.amina.id}/profile/").data["clubs"]
+        self.assertEqual((clubs[0]["upcoming"], clubs[0]["results"][0]["report"]), ([], "A great win."))
         self.assertTrue(ActivityLog.objects.filter(action="clubs.fixture_updated", summary__contains="the result of").exists())
 
     def test_a_result_in_words(self):

@@ -295,7 +295,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
     {club (create only), date, start_time, opponent, venue, location,
     competition, team, our_score, their_score, result_note, report,
     players: [member ids]}. Filter with ?club=, ?upcoming=1 (today on,
-    soonest first), ?results=1 (with a result, latest first), ?from=, ?to=.
+    soonest first, no result yet), ?results=1 (with a result, latest first),
+    ?from=, ?to=.
     """
 
     serializer_class = FixtureSerializer
@@ -314,8 +315,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
             if params.get(param):
                 queryset = queryset.filter(**{lookup: _day(params[param], param)})
         today = school_localdate(school)
-        if params.get("upcoming"):
-            queryset = queryset.filter(date__gte=today)
+        if params.get("upcoming"):  # still to be played: today on, no result yet
+            queryset = queryset.filter(date__gte=today, our_score__isnull=True, result_note="")
         if params.get("results"):
             queryset = (queryset.filter(Q(our_score__isnull=False) | ~Q(result_note=""))
                         .order_by("-date", "-start_time", "-id"))

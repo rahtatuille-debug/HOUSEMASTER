@@ -51,8 +51,9 @@ def parent_view(student):
         club = m.club
         counts = attendance_counts(club, [student.id]).get(student.id, {"present": 0, "absent": 0, "excused": 0, "sessions": 0})
         fixtures = Fixture.objects.filter(club=club).select_related("club")
-        upcoming = list(fixtures.filter(date__gte=today).order_by("date", "start_time")[:5])
-        results = [f for f in fixtures.filter(date__lte=today).order_by("-date", "-id")[:10] if f.has_result][:5]
+        played = Q(our_score__isnull=False) | ~Q(result_note="")
+        upcoming = list(fixtures.filter(date__gte=today).exclude(played).order_by("date", "start_time")[:5])
+        results = list(fixtures.filter(played).order_by("-date", "-id")[:5])
         clubs.append({
             "id": club.id, "name": club.name, "kind_label": club.get_kind_display(), "meets": club.meets,
             "location": club.location, "leaders": leader_names(club), "role": m.role, "joined_on": m.joined_on,
