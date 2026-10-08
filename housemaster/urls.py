@@ -36,6 +36,7 @@ from timetable import views as timetable_views
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
+from billing.views import billing as billing_view, invoice_pdf, report_payment
 from clubs.views import ClubViewSet, FixtureViewSet
 from homework.views import AssignmentViewSet
 from studentaccounts.views import StudentAccountViewSet, student_hand_in, student_me, student_password
@@ -146,6 +147,9 @@ urlpatterns = [
     path('api/guardian-invites/accept/', AcceptGuardianInviteView.as_view(), name='guardian_invite_accept'),
     path('api/guardian-me/', guardian_me, name='guardian_me'),
     path('api/calendar/', calendar, name='calendar'),
+    path('api/billing/', billing_view, name='billing'),
+    path('api/billing/invoices/<int:invoice_id>/paid/', report_payment, name='billing_report_payment'),
+    path('api/billing/invoices/<int:invoice_id>/pdf/', invoice_pdf, name='billing_invoice_pdf'),
     path('api/student/me/', student_me, name='student_me'),
     path('api/student/password/', student_password, name='student_password'),
     path('api/student/homework/<int:assignment_id>/', student_hand_in, name='student_hand_in'),

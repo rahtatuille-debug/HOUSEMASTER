@@ -97,8 +97,19 @@ def me(request):
                        "year_group": r.year_group_id, "subject": r.subject_id, "school_class": r.school_class_id}
                       for r in profile.staff_roles.select_related("year_group", "subject", "school_class")],
             "permissions": permissions_for(request.user),
+            # Admins only: whether a subscription invoice is due, overdue or the school is locked (billing).
+            "billing": _billing(profile),
         }
     )
+
+
+def _billing(profile):
+    if profile.role != Profile.Role.ADMIN:
+        return None
+    from billing.services import status
+
+    state = status(profile.school)
+    return {k: state[k] for k in ("status", "label", "locked_from", "days_left")}
 
 
 class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):

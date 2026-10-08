@@ -122,6 +122,9 @@ def build(spec, password_hash, today=None):
         report_tone=spec["tone"], motto=spec["motto"], address=spec["address"], phone=spec["phone"],
         email=f"office@{dom}", setup_completed_at=now,
     )
+    from billing.services import make_exempt
+
+    make_exempt(school)  # demo schools are never invoiced
     words = school_vocab(school)
 
     def user(local, name):

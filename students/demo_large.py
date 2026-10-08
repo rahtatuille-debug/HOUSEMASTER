@@ -126,6 +126,10 @@ def build(password_hash, today=None, scale=1.0):
         email=f"office@{DOMAIN}", setup_completed_at=now - timedelta(days=365 * YEARS_ACTIVE),
     )
 
+    from billing.services import make_exempt
+
+    make_exempt(school)  # demo schools are never invoiced
+
     # --- structure
     year_groups, forms = {}, {}
     for g in range(7, 14):

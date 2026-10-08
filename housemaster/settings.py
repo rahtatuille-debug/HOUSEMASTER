@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     'clubs',
     'homework',
     'studentaccounts',
+    'billing',
     'schoolcalendar',
     'timetable',
     'boarding',
@@ -429,6 +430,11 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@housemaster.local')
 
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+# Subscriptions (billing app). How schools pay you, shown on their Billing page and in invoices,
+# e.g. "M-Pesa Paybill 123456, account: your invoice number". Where "I've paid" notices go.
+BILLING_PAYMENT_INSTRUCTIONS = os.environ.get('BILLING_PAYMENT_INSTRUCTIONS', '')
+BILLING_OWNER_EMAIL = os.environ.get('BILLING_OWNER_EMAIL', '')
 
 # How long the link that confirms an admissions application's email address works (hours).
 ADMISSIONS_CONFIRM_HOURS = int(os.environ.get('ADMISSIONS_CONFIRM_HOURS', '48'))

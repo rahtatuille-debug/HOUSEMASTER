@@ -10,6 +10,9 @@ GOVERNOR_PATHS = ("/api/me/", "/api/governor/", "/api/logout/", "/api/tour-seen/
 # A student account sees only what's about that student (studentaccounts):
 # their own record through the parents' child view, the calendar, and the
 # student API. Until they choose their own password, only that.
+# A school whose subscription has lapsed (billing): its admins may still see their account and pay; nobody
+# else at the school gets in until the payment is recorded.
+LOCKED_ADMIN_PATHS = ("/api/me/", "/api/billing/", "/api/logout/")
 STUDENT_PATHS = ("/api/student/", "/api/guardian-students/", "/api/calendar/", "/api/logout/")
 STUDENT_FIRST_PATHS = ("/api/student/me/", "/api/student/password/", "/api/logout/")
 
@@ -31,6 +34,7 @@ class VersionedJWTAuthentication(JWTAuthentication):
                 raise PermissionDenied("Governor accounts can only see the school's summary.")
             if profile is None and getattr(result[0], "guardian", None) is None:
                 self._student_gate(result[0], request.path)
+            self._billing_gate(result[0], profile, request.path)
         return result
 
     @staticmethod
@@ -46,3 +50,28 @@ class VersionedJWTAuthentication(JWTAuthentication):
             raise PermissionDenied({"detail": "Choose your own password first.", "code": "password_change_required"})
         if not path.startswith(STUDENT_PATHS) or path.startswith("/api/calendar/events/"):
             raise PermissionDenied("Student accounts can only see their own information.")
+
+    @staticmethod
+    def _billing_gate(user, profile, path):
+        from django.utils import timezone
+
+        from billing.services import is_locked
+
+        if profile is not None:
+            school_id = profile.school_id
+        elif getattr(user, "guardian", None) is not None:
+            school_id = user.guardian.school_id
+        else:
+            from studentaccounts.services import account_of
+
+            account = account_of(user)
+            school_id = account.student.school_id if account else None
+        if school_id is None or not is_locked(school_id, timezone.localdate()):
+            return
+        if profile is not None and profile.role == "admin" and path.startswith(LOCKED_ADMIN_PATHS):
+            return
+        raise PermissionDenied({
+            "detail": "HouseMaster is paused for your school because the subscription hasn't been paid. "
+                      "Please contact your school's administrator.",
+            "code": "school_locked",
+        })
