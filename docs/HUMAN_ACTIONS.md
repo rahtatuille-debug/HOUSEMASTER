@@ -355,3 +355,18 @@ Off until you set the keys. Do it once; changing them later turns notifications 
    runs when it is `1`), delete it and Save.
 2. Render → housemaster backend → Settings → Build Command and Start Command: neither should run `seed_demo_school`.
 3. Check: in the live app, sign in as an admin. Students should show only your school's real students.
+
+## H-20 · Subscriptions: set up billing (after the billing PR is deployed)
+
+Schools on HouseMaster before subscriptions began, and the demo schools, are **exempt** (free) until you change it. New schools are billed from the day they register (no trial), but **nothing is invoiced until you set prices**.
+
+1. **Sign in to the owner's admin.** Open `<backend address>/<DJANGO_ADMIN_PATH>` (default `/admin/`). If you have no admin login yet, in the Render shell run `python manage.py createsuperuser` and choose a strong password.
+2. **Set your prices.** Admin → *Billing* → *Plans*: Small (up to 300 students), Medium (up to 1,000), Large (any size). Enter each monthly price and currency (default KES). A plan with no price is never invoiced. You can rename tiers or change limits.
+3. **Tell schools how to pay.** In Render → Environment, set:
+   - `BILLING_PAYMENT_INSTRUCTIONS`, e.g. `M-Pesa Paybill 123456, account: your invoice number. Or bank transfer to ...` (shown on invoices, emails and each school's Billing page);
+   - `BILLING_OWNER_EMAIL`, where "we've paid" notices from schools go.
+4. **Run billing every day.** Add a Render cron job (daily, e.g. 06:00) running `python manage.py billing_run`. It issues each month's invoice a week before it starts, sends reminders (3 days before due, the day after, 3 days before locking, on locking), and keeps lock dates up to date. Without it no invoices go out.
+5. **When a school pays:** Admin → *Billing* → *Invoices* → open the invoice, set *Status* to Paid, the date, method and reference, and save (or tick it and use *Mark paid today*). The school is emailed a thank-you and unlocked straight away. Schools can press "We've paid" on their Billing page; you get an email to check it.
+6. **Free or partner schools:** Admin → *Billing* → *Subscriptions* → tick *Exempt*. Also change *Grace days* (default 14) per school there.
+
+What a lock means: 14 days (the grace period) after an unpaid invoice was due, nobody at that school can use HouseMaster except its admins, who can only see Billing and pay. No data is deleted; everything comes back the moment the payment is recorded.

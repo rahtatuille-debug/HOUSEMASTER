@@ -263,6 +263,9 @@ class Command(BaseCommand):
             address="Ngong Road, Nairobi", phone="+254 000 100 200", email=f"office@{DOMAIN}",
             setup_completed_at=timezone.now(),
         )
+        from billing.services import make_exempt
+
+        make_exempt(school)  # demo schools are never invoiced
 
         # Hashing is deliberately slow, so hash the shared demo password once.
         password_hash = make_password(password)

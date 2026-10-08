@@ -153,5 +153,5 @@ class RecentTermsTests(SchoolScopedAPITestCase):
 
     def test_bad_requests_are_refused_before_loading_marks(self):
         teacher = self.authed_client(self.user_a)
-        with self.assertNumQueries(5):  # sign-in, profile and their staff roles only
+        with self.assertNumQueries(6):  # sign-in, profile, the subscription check and their staff roles only
             self.assertEqual(teacher.get("/api/analytics/performance/", {"scope": "school"}).status_code, 403)
