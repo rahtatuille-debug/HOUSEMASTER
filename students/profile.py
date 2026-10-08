@@ -159,6 +159,7 @@ def build_profile(student, user):
         "activity": None,
         # Staff only: the guardians' view picks its own fields and never this.
         "support": _support(student),
+        "discipline": _discipline(student),
         "boarding": _boarding(student),
     }
     if is_admin(user):
@@ -181,6 +182,14 @@ def _support(student):
     open_one = next((c for c in concerns if c.status == SupportConcern.Status.OPEN), None)
     return {"open": SupportConcernSerializer(open_one).data if open_one else None,
             "history": SupportConcernSerializer(concerns, many=True).data}
+
+
+def _discipline(student):
+    """The student's latest behaviour records (discipline app). Staff only."""
+    from discipline.serializers import DisciplineIncidentSerializer
+
+    incidents = student.discipline_incidents.select_related("student__school_class")
+    return {"count": incidents.count(), "recent": DisciplineIncidentSerializer(incidents[:10], many=True).data}
 
 
 def _boarding(student):

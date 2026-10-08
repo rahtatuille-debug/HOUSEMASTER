@@ -113,6 +113,13 @@ def family_export(student):
          v.treatment, v.get_outcome_display() if v.outcome else "In sick bay"]
         for v in student.sick_bay_visits.order_by("checked_in_at")
     ], widths={"Details": 60, "What": 40})
+    _sheet(wb, "Discipline", ["Date", "Category", "Severity", "What happened", "Action", "Action detail",
+                              "Staff notes", "Shared with parents", "Recorded by"], [
+        [i.date.isoformat(), i.get_category_display(), i.get_severity_display(), i.description,
+         i.get_action_display(), i.action_detail, i.staff_notes, "Yes" if i.shared_with_parents else "No",
+         i.recorded_by_name]
+        for i in student.discipline_incidents.order_by("date", "id")
+    ], widths={"What happened": 60, "Staff notes": 50})
     from admissions.services import application_row, applications_about
 
     rows = [application_row(a) for a in applications_about(student).order_by("created_at")]
@@ -234,6 +241,12 @@ def family_export_data(student):
             "review_date": _iso(c.review_date), "marked_by": c.created_by_name, "marked": _iso(c.created_at),
             "closed": _iso(c.closed_at), "closing_note": c.closing_note,
         } for c in student.support_concerns.select_related("term").order_by("created_at")],
+        "discipline": [{
+            "date": _iso(i.date), "category": i.get_category_display(), "severity": i.get_severity_display(),
+            "what_happened": i.description, "action": i.get_action_display(), "action_detail": i.action_detail,
+            "staff_notes": i.staff_notes, "shared_with_parents": i.shared_with_parents,
+            "recorded_by": i.recorded_by_name,
+        } for i in student.discipline_incidents.order_by("date", "id")],
         "boarding": {
             "bed": _bed(student),
             "roll_call_marks": [{"date": _iso(e.roll_call.date), "session": e.roll_call.get_session_display(),
@@ -352,6 +365,7 @@ def remove_personal_data(student, actor):
 
     counts["applications_deleted"] = applications_about(student).delete()[0]
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
+    counts["discipline_records_deleted"] = student.discipline_incidents.all().delete()[0]
     counts["boarding_records_deleted"] = (student.leave_requests.all().delete()[0]
                                           + student.sick_bay_visits.all().delete()[0]
                                           + student.roll_call_entries.all().delete()[0])
