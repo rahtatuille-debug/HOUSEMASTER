@@ -42,6 +42,8 @@ class Profile(models.Model):
     class Role(models.TextChoices):
         ADMIN = "admin", "Admin"
         TEACHER = "teacher", "Teacher"
+        # Read-only: school-wide figures, never a named student (accounts.scoping).
+        GOVERNOR = "governor", "Governor"
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
@@ -99,6 +101,57 @@ class TeachingAssignment(models.Model):
 
     def __str__(self):
         return f"{self.teacher.name}: {self.school_class.name} {self.subject.name if self.subject else 'all subjects'}"
+
+
+class StaffRole(models.Model):
+    """
+    An extra responsibility on top of a staff member's account, e.g. Head of
+    Year for Form 2 or the school nurse. One person can hold several. What
+    each role may see and do lives in accounts.scoping, so the rules stay in
+    one place. Set by admins.
+    """
+
+    class Role(models.TextChoices):
+        LEADERSHIP = "leadership", "Leadership"
+        HEAD_OF_YEAR = "head_of_year", "Head of Year"
+        HEAD_OF_DEPARTMENT = "head_of_department", "Head of Department"
+        CLASS_TEACHER = "class_teacher", "Class Teacher"
+        NURSE = "nurse", "Nurse"
+        ADMISSIONS = "admissions", "Admissions Officer"
+        SECRETARY = "secretary", "Secretary"
+
+    # Which roles need what scope.
+    SCOPE = {
+        Role.HEAD_OF_YEAR: "year_group",
+        Role.HEAD_OF_DEPARTMENT: "subject",
+        Role.CLASS_TEACHER: "school_class",
+    }
+
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="staff_roles")
+    role = models.CharField(max_length=30, choices=Role.choices)
+    year_group = models.ForeignKey("students.YearGroup", on_delete=models.CASCADE, null=True, blank=True,
+                                   related_name="staff_roles")
+    subject = models.ForeignKey("gradebook.Subject", on_delete=models.CASCADE, null=True, blank=True,
+                                related_name="staff_roles")
+    school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE, null=True, blank=True,
+                                     related_name="staff_roles")
+    assigned_by_name = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["role", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["profile", "role", "year_group", "subject", "school_class"],
+                                    name="unique_staff_role"),
+        ]
+
+    @property
+    def scope_name(self):
+        scoped = self.year_group or self.subject or self.school_class
+        return scoped.name if scoped else ""
+
+    def __str__(self):
+        return f"{self.profile.name}: {self.get_role_display()}{f' ({self.scope_name})' if self.scope_name else ''}"
 
 
 class Invite(models.Model):

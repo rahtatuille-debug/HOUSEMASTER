@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,8 +15,9 @@ from gradebook.levels import school_summary
 
 from .emails import send_admin_password_reset, send_staff_invite_email
 
-from .models import Invite, Profile, TeachingAssignment
-from .permissions import HasSchoolProfile, IsSchoolAdmin
+from .models import Invite, Profile, StaffRole, TeachingAssignment
+from .permissions import HasSchoolProfile, IsLeader, IsSchoolAdmin
+from .scoping import permissions_for
 from .throttles import (
     InviteIPThrottle,
     InviteSendRecipientThrottle,
@@ -38,6 +39,7 @@ from .serializers import (
     ProfileNameSerializer,
     RequestPasswordResetSerializer,
     StaffMemberSerializer,
+    StaffRoleSerializer,
     TeachingAssignmentSerializer,
 )
 
@@ -90,6 +92,11 @@ def me(request):
             "assignments": TeachingAssignmentSerializer(
                 profile.assignments.select_related("school_class", "subject"), many=True
             ).data,
+            # Extra responsibilities, and what the app should offer because of them.
+            "roles": [{"role": r.role, "role_label": r.get_role_display(), "scope_name": r.scope_name,
+                       "year_group": r.year_group_id, "subject": r.subject_id, "school_class": r.school_class_id}
+                      for r in profile.staff_roles.select_related("year_group", "subject", "school_class")],
+            "permissions": permissions_for(request.user),
         }
     )
 
@@ -133,12 +140,27 @@ class InviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+@permission_classes([IsAuthenticated, HasSchoolProfile, IsLeader])
 def dashboard(request):
-    """Admin home page: today's attendance and everything waiting on an admin."""
+    """The school's home page (admins and leadership): today's attendance and everything waiting."""
     from .dashboard import build_dashboard
 
     return Response(build_dashboard(request.user.profile.school))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def governor_summary(request):
+    """
+    School-wide figures for governors (and leaders): numbers only, never a
+    named student or parent.
+    """
+    from .dashboard import governor_figures
+    from .scoping import is_governor, is_leader
+
+    if not (is_governor(request.user) or is_leader(request.user)):
+        raise PermissionDenied("Only governors and school leaders can see this.")
+    return Response(governor_figures(request.user.profile.school))
 
 
 class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
@@ -176,11 +198,13 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         profile = self.get_object()
         role = request.data.get("role")
         if role not in Profile.Role.values:
-            raise ValidationError({"role": "Role must be admin or teacher."})
+            raise ValidationError({"role": "Role must be admin, teacher or governor."})
         old = profile.role
         if role != old:
             if old == Profile.Role.ADMIN:
                 self._guard_admin_loss(profile, "remove admin rights from")
+            if role == Profile.Role.GOVERNOR and (profile.assignments.exists() or profile.staff_roles.exists()):
+                raise ValidationError({"role": "Remove their classes and roles first: governor accounts are read-only."})
             profile.role = role
             profile.save(update_fields=["role"])
             log_activity(
@@ -270,6 +294,41 @@ class TeachingAssignmentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet)
             school=self.get_school(), actor=self.request.user, action="assignment.deleted",
             target=instance, summary=f"Removed {self._describe(instance)}",
         )
+        instance.delete()
+
+
+class StaffRoleViewSet(viewsets.ModelViewSet):
+    """
+    Admin-only: staff members' extra roles (Head of Year, Nurse, ...). POST
+    {profile, role, year_group|subject|school_class as the role needs};
+    DELETE removes one. Filter with ?profile=.
+    """
+
+    serializer_class = StaffRoleSerializer
+    permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        queryset = StaffRole.objects.filter(profile__school=self.request.user.profile.school).select_related(
+            "profile__user", "year_group", "subject", "school_class")
+        if self.request.query_params.get("profile"):
+            queryset = queryset.filter(profile=self.request.query_params["profile"])
+        return queryset
+
+    @staticmethod
+    def _describe(role):
+        return f"{role.get_role_display()}{f' for {role.scope_name}' if role.scope_name else ''}"
+
+    def perform_create(self, serializer):
+        from activity.services import display_name
+
+        role = serializer.save(assigned_by_name=display_name(self.request.user))
+        log_activity(school=role.profile.school, actor=self.request.user, action="staff.role_added",
+                     target=role.profile, summary=f"Made {role.profile.name} {self._describe(role)}")
+
+    def perform_destroy(self, instance):
+        log_activity(school=instance.profile.school, actor=self.request.user, action="staff.role_removed",
+                     target=instance.profile, summary=f"Removed {self._describe(instance)} from {instance.profile.name}")
         instance.delete()
 
 

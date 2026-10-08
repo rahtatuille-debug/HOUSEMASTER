@@ -7,7 +7,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import is_admin, visible_students
+from accounts.scoping import ACADEMIC, ATTENDANCE, RECORDS, can_use_class, visible_students
 from activity.services import log_activity
 from gradebook.models import Term
 from students.models import SchoolClass
@@ -18,16 +18,17 @@ from . import exports
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def _class(request):
-    """The requested class, if it's at the requester's school and they may see it."""
+def _class(request, area):
+    """The requested class, if it's at the requester's school and they may see it for this export."""
     try:
         school_class = SchoolClass.objects.select_related("year_group").get(
             pk=request.query_params.get("school_class"), year_group__school=request.user.profile.school
         )
     except (SchoolClass.DoesNotExist, ValueError, TypeError):
         raise NotFound("Class not found.")
-    if not is_admin(request.user) and not request.user.profile.assignments.filter(school_class=school_class).exists():
+    if not can_use_class(request.user, school_class.id, area):
         raise PermissionDenied("You can only export classes you teach.")
+    request._export_area = area
     return school_class
 
 
@@ -44,7 +45,7 @@ def _term(request):
 
 
 def _students(request, school_class):
-    return (visible_students(request.user).filter(school_class=school_class, is_active=True)
+    return (visible_students(request.user, request._export_area).filter(school_class=school_class, is_active=True)
             .select_related("school_class__year_group").prefetch_related("guardians__user")
             .order_by("last_name", "first_name"))
 
@@ -60,7 +61,7 @@ def _file(content, content_type, filename, request, what):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_class_list(request):
-    school_class = _class(request)
+    school_class = _class(request, RECORDS)
     content = exports.class_list_xlsx(_students(request, school_class), words=_words(request))
     return _file(content, XLSX, f"class-list-{slugify(school_class.name)}.xlsx", request,
                  f"the class list for {school_class.name}")
@@ -69,7 +70,7 @@ def export_class_list(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_grades(request):
-    school_class, term = _class(request), _term(request)
+    school_class, term = _class(request, ACADEMIC), _term(request)
     # The class's own curriculum and grading (a school can run two).
     system, scale = section_for(school_class.year_group, request.user.profile.school)
     content = exports.grades_xlsx(_students(request, school_class), term, scale=scale, words=_words(request),
@@ -81,7 +82,7 @@ def export_grades(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_attendance(request):
-    school_class = _class(request)
+    school_class = _class(request, ATTENDANCE)
     try:
         start = date.fromisoformat(request.query_params.get("start", ""))
         end = date.fromisoformat(request.query_params.get("end", ""))
@@ -97,7 +98,7 @@ def export_attendance(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def export_reports(request):
-    school_class, term = _class(request), _term(request)
+    school_class, term = _class(request, ACADEMIC), _term(request)
     content, count = exports.reports_pdf(request.user.profile.school, _students(request, school_class), term)
     if count == 0:
         raise NotFound(f"No finalized {term.name} reports for {school_class.name} yet.")

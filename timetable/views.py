@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from accounts.models import Profile
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import visible_students
+from accounts.scoping import RECORDS, visible_students
 from activity.services import log_activity
 from students.localtime import school_localdate
 from students.models import SchoolClass
@@ -123,7 +123,7 @@ def week_view(request):
         room = get_object_or_404(Room, pk=value, school=school)
         lessons, title = lessons.filter(room=room), room.name
     elif value := params.get("student"):
-        student = visible_students(request.user).filter(pk=value).first() if str(value).isdigit() else None
+        student = visible_students(request.user, RECORDS).filter(pk=value).first() if str(value).isdigit() else None
         if student is None:
             raise NotFound("Student not found.")
         lessons, title = services.student_lessons(student), f"{student.first_name} {student.last_name}"

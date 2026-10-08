@@ -44,6 +44,7 @@ from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
 from accounts.views import (
     dashboard,
+    governor_summary,
     me,
     AcceptInviteView,
     ConfirmPasswordResetView,
@@ -53,6 +54,7 @@ from accounts.views import (
     InvitePreviewView,
     InviteViewSet,
     RequestPasswordResetView,
+    StaffRoleViewSet,
     StaffViewSet,
     TeachingAssignmentViewSet,
 )
@@ -73,6 +75,7 @@ router.register(r"alerts", UrgentAlertViewSet, basename="alert")
 router.register(r"invites", InviteViewSet)
 router.register(r"staff", StaffViewSet)
 router.register(r"teaching-assignments", TeachingAssignmentViewSet)
+router.register(r"staff-roles", StaffRoleViewSet, basename="staff-role")
 router.register(r"guardian-invites", GuardianInviteViewSet)
 router.register(r"parents", ParentViewSet)
 router.register(r"guardian-students", GuardianStudentViewSet, basename="guardian-student")
@@ -100,6 +103,7 @@ urlpatterns = [
     path('api/logout/', LogoutView.as_view(), name='logout'),
     path('api/me/', me, name='me'),
     path('api/dashboard/', dashboard, name='dashboard'),
+    path('api/governor/summary/', governor_summary, name='governor_summary'),
     path('api/import/', import_school_workbook, name='import_workbook'),
     path('api/promotion/', promote_students, name='promote_students'),
     path('api/analytics/performance/', performance, name='performance'),

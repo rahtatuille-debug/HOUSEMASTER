@@ -23,7 +23,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
-from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.permissions import CanManageParents, HasSchoolProfile
 from accounts.throttles import InviteIPThrottle
 from activity.services import log_activity, student_name
 from students.models import SchoolClass, Student
@@ -131,7 +131,7 @@ def _class(request, value):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+@permission_classes([IsAuthenticated, HasSchoolProfile, CanManageParents])
 def signup_links(request):
     """
     GET: every class with its sign-up link (if any) and how many requests
@@ -258,7 +258,7 @@ def approve(signup, admin):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+@permission_classes([IsAuthenticated, HasSchoolProfile, CanManageParents])
 def signup_requests(request):
     """
     GET ?status=pending|approved|rejected: sign-up requests. POST {ids,

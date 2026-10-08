@@ -13,6 +13,9 @@ class ResetEmailNotSent(APIException):
     default_code = "email_not_sent"
 
 
+ROLE_WORDS = {"admin": "an admin", "teacher": "a teacher", "governor": "a governor (read-only)"}
+
+
 def send_admin_password_reset(user):
     """
     Email a user a password reset link on an admin's behalf. Returns the
@@ -65,7 +68,7 @@ def send_staff_invite_email(invite, invited_by_name):
     school = invite.school
     body = (
         f"Hello {invite.name or 'there'},\n\n{invited_by_name} has invited you to join {school.name} on "
-        f"HouseMaster as {'an admin' if invite.role == 'admin' else 'a teacher'}.\n\n"
+        f"HouseMaster as {ROLE_WORDS.get(invite.role, 'a member of staff')}.\n\n"
         f"Create your account here (the link works until {invite.expires_at:%d %B %Y}):\n"
         f"{settings.FRONTEND_URL}/invite/{invite.token}\n"
     )

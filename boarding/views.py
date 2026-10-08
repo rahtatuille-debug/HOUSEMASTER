@@ -8,7 +8,7 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthentic
 from rest_framework.response import Response
 
 from accounts.permissions import IsSchoolAdmin
-from accounts.scoping import is_admin
+from accounts.scoping import is_admin, is_leader, is_nurse
 from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 from students.models import Student
@@ -461,16 +461,34 @@ class LeaveViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Crea
         return Response(self.get_serializer(leave).data)
 
 
+class BoardingStaffOrNurse(BasePermission):
+    message = "Only the nurse, boarding staff or admins can use the sick bay."
+
+    def has_permission(self, request, view):
+        return is_nurse(request.user) or services.is_boarding_staff(request.user)
+
+
 class SickBayViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin,
                      mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    """Sick bay: check a boarder in (optionally emailing parents), note treatment, check out with an outcome."""
+    """
+    Sick bay: check a student in (optionally emailing parents), note
+    treatment, check out with an outcome. House staff see their boarders;
+    the school nurse sees every student, day students included.
+    """
 
     serializer_class = SickBayVisitSerializer
-    permission_classes = [IsAuthenticated, BoardingStaff]
+    permission_classes = [IsAuthenticated, BoardingStaffOrNurse]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
+    def _patients(self):
+        user = self.request.user
+        if is_nurse(user):
+            return Student.objects.filter(school=user.profile.school)
+        return services.boarders(user)
+
     def get_queryset(self):
-        queryset = SickBayVisit.objects.filter(student__in=services.boarders(self.request.user)) \
+        queryset = SickBayVisit.objects.filter(school=self.request.user.profile.school,
+                                               student__in=self._patients()) \
             .select_related("student")
         if self.request.query_params.get("open"):
             queryset = queryset.filter(checked_out_at__isnull=True)
@@ -479,7 +497,13 @@ class SickBayViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         return queryset
 
     def perform_create(self, serializer):
-        student = _boarder(self.request.user, self.request.data.get("student"))
+        if is_nurse(self.request.user):
+            value = self.request.data.get("student")
+            student = self._patients().filter(pk=value, is_active=True).first() if str(value).isdigit() else None
+            if student is None:
+                raise ValidationError({"student": ["Choose a student."]})
+        else:
+            student = _boarder(self.request.user, self.request.data.get("student"))
         if SickBayVisit.objects.filter(student=student, checked_out_at__isnull=True).exists():
             raise ValidationError({"student": [f"{student_name(student)} is already in sick bay."]})
         visit = serializer.save(school=student.school, student=student,
@@ -631,7 +655,7 @@ def allocations(request):
 
     students = Student.objects.filter(school=school, is_active=True, mode_of_learning="boarding") \
         .select_related("school_class", "house_allocation__house", "bed__dorm__house").order_by("last_name", "first_name")
-    mine = None if is_admin(request.user) else set(services.houses_for(request.user).values_list("id", flat=True))
+    mine = None if is_leader(request.user) else set(services.houses_for(request.user).values_list("id", flat=True))
     rows = []
     for s in students:
         house = services.house_of(s)

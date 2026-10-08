@@ -5,7 +5,7 @@ from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from approvals.mixins import ApprovalRequiredMixin
-from accounts.scoping import check_can_grade, limit_to_visible_students
+from accounts.scoping import ACADEMIC, check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
 from housemaster.pagination import LongListPagination
 
@@ -102,7 +102,7 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         # Teachers see every subject's grades for students in their classes,
         # but can only add or change grades for the subjects they teach.
-        return limit_to_visible_students(super().get_queryset(), self.request.user)
+        return limit_to_visible_students(super().get_queryset(), self.request.user, area=ACADEMIC)
 
     def _validate_related(self, validated_data):
         self.check_belongs_to_school(validated_data["student"].school, "student")

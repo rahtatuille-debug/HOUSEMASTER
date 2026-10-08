@@ -6,7 +6,7 @@ from django.db.models import Q
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from accounts.scoping import is_admin
+from accounts.scoping import PASTORAL, can_use_class
 from activity.services import log_activity
 from housemaster.pagination import LongListPagination
 from students.models import SchoolClass
@@ -125,9 +125,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
         except SchoolClass.DoesNotExist:
             raise ValidationError({"school_class": "Class not found."})
-        if not is_admin(request.user) and not request.user.profile.assignments.filter(
-            school_class=school_class
-        ).exists():
+        if not can_use_class(request.user, school_class.id, PASTORAL):
             raise PermissionDenied("You can only message classes you teach.")
 
         from .classes import class_parent_users

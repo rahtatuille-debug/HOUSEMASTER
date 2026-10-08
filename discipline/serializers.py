@@ -24,12 +24,12 @@ class DisciplineIncidentSerializer(serializers.ModelSerializer):
         extra_kwargs = {"description": {"max_length": 4000}, "staff_notes": {"max_length": 4000}}
 
     def get_can_edit(self, obj):
-        """The person who recorded it, or an admin, may change it."""
-        from accounts.scoping import is_admin
+        """The person who recorded it, leadership or an admin may change it."""
+        from accounts.scoping import is_leader
 
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        return bool(user and (obj.recorded_by_id == user.id or is_admin(user)))
+        return bool(user and (obj.recorded_by_id == user.id or is_leader(user)))
 
     def get_student_name(self, obj):
         return student_name(obj.student)

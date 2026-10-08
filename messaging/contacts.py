@@ -8,9 +8,11 @@ path that creates a conversation or lists contacts goes through them:
   children (through TeachingAssignment) and the school's admins. Never
   another parent, and never staff who don't teach their children.
 - A parent may only attach one of their own children to a conversation.
-- A teacher may message parents of children in the classes they teach, and
-  other staff at their school. An admin may message any parent or staff
-  member at their school.
+- A teacher may message parents of children in the classes they teach (or
+  lead, as Class Teacher or Head of Year), and other staff at their school.
+  Admins and leadership may message any parent or staff member at their
+  school. Parents also reach their child's Class Teacher, Head of Year and
+  the school's leadership. Governor accounts never take part in messages.
 - Staff may only attach children they can see (accounts.scoping), and a
   conversation with parents may only be about one of those parents' own
   children.
@@ -30,8 +32,8 @@ exist, so the endpoints can't be used to discover names or IDs.
 from django.contrib.auth.models import User
 from django.db.models import Count, Q
 
-from accounts.models import Profile, TeachingAssignment
-from accounts.scoping import assigned_class_ids, is_admin, visible_students
+from accounts.models import Profile, StaffRole, TeachingAssignment
+from accounts.scoping import PASTORAL, scope_class_ids, visible_students
 from students.models import Student
 
 from .classes import guardian_class_ids
@@ -40,24 +42,33 @@ from .classes import guardian_class_ids
 def messageable_guardian_users(staff_user):
     """
     Parents a staff member may start a conversation with: every parent at
-    the school for admins, and parents of students in their own classes
-    for teachers.
+    the school for admins and leadership, and parents of students in the
+    classes they teach or lead for everyone else (accounts.scoping, "pastoral").
     """
     users = User.objects.filter(guardian__school=staff_user.profile.school, is_active=True).exclude(id=staff_user.id)
-    if is_admin(staff_user):
+    scope = scope_class_ids(staff_user, PASTORAL)
+    if scope is None:
         return users
-    return users.filter(
-        guardian__students__school_class_id__in=assigned_class_ids(staff_user)
-    ).distinct()
+    return users.filter(guardian__students__school_class_id__in=scope).distinct()
 
 
 def messageable_staff_for_guardian(guardian):
-    """The staff a parent may message: their children's teachers and the school's admins."""
+    """
+    The staff a parent may message: their children's teachers, Class Teachers
+    and Heads of Year, the school's leadership and its admins.
+    """
+    class_ids = list(guardian_class_ids(guardian))
     teacher_profile_ids = TeachingAssignment.objects.filter(
-        school_class_id__in=guardian_class_ids(guardian)
+        school_class_id__in=class_ids
     ).values_list("teacher_id", flat=True)
+    role_profile_ids = StaffRole.objects.filter(
+        Q(role=StaffRole.Role.LEADERSHIP)
+        | Q(role=StaffRole.Role.CLASS_TEACHER, school_class_id__in=class_ids)
+        | Q(role=StaffRole.Role.HEAD_OF_YEAR, year_group__classes__id__in=class_ids)
+    ).values_list("profile_id", flat=True)
     return User.objects.filter(
-        Q(profile__id__in=teacher_profile_ids) | Q(profile__role=Profile.Role.ADMIN),
+        Q(profile__id__in=teacher_profile_ids) | Q(profile__id__in=role_profile_ids)
+        | Q(profile__role=Profile.Role.ADMIN),
         profile__school=guardian.school,
         is_active=True,
     ).exclude(id=guardian.user_id).distinct()
@@ -69,7 +80,8 @@ def messageable_users(user):
     if guardian is not None:
         return messageable_staff_for_guardian(guardian)
     if getattr(user, "profile", None) is not None:
-        staff = User.objects.filter(profile__school=user.profile.school, is_active=True).exclude(id=user.id)
+        staff = User.objects.filter(profile__school=user.profile.school, is_active=True).exclude(id=user.id) \
+            .exclude(profile__role=Profile.Role.GOVERNOR)
         guardians = messageable_guardian_users(user)
         return User.objects.filter(Q(id__in=staff.values("id")) | Q(id__in=guardians.values("id")))
     return User.objects.none()

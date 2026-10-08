@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.mixins import SchoolScopedViewSetMixin
-from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.permissions import CanManageParents, HasSchoolProfile
 from accounts.emails import send_admin_password_reset
 from accounts.throttles import InviteIPThrottle, InviteSendRecipientThrottle, InviteSendUserThrottle
 from accounts.tokens import tokens_for
@@ -36,11 +36,11 @@ from .serializers import (
 
 
 class GuardianInviteViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
-    """Admin-only creation/management of guardian invites, scoped to the caller's school."""
+    """Guardian invites for admins and the school secretary, scoped to the caller's school."""
 
     queryset = GuardianInvite.objects.all()
     serializer_class = GuardianInviteSerializer
-    permission_classes = [HasSchoolProfile, IsSchoolAdmin]
+    permission_classes = [HasSchoolProfile, CanManageParents]
     throttle_classes = [InviteSendUserThrottle, InviteSendRecipientThrottle]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
@@ -90,7 +90,7 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         "-user__is_active", "display_name"
     )
     serializer_class = ParentSerializer
-    permission_classes = [HasSchoolProfile, IsSchoolAdmin]
+    permission_classes = [HasSchoolProfile, CanManageParents]
     http_method_names = ["get", "patch", "post", "head", "options"]
 
     def create(self, request, *args, **kwargs):

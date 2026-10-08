@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from approvals.mixins import ApprovalRequiredMixin
-from accounts.scoping import assigned_class_ids, check_can_use_class, is_admin
+from accounts.scoping import ACADEMIC, PASTORAL, RECORDS, check_can_use_class, is_admin, is_nurse, scope_class_ids
 from activity.services import log_activity, student_name
 
 from .models import School, YearGroup, SchoolClass, Student
@@ -113,8 +113,13 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
 
         from django.db.models import Q
 
-        queryset = super().get_queryset().annotate(needs_support=Exists(SupportConcern.objects.filter(
-            student=OuterRef("pk"), status=SupportConcern.Status.OPEN)))
+        user = self.request.user
+        # The "needs support" label is pastoral: only for students the viewer sees pastorally.
+        pastoral = scope_class_ids(user, PASTORAL)
+        concerns = SupportConcern.objects.filter(student=OuterRef("pk"), status=SupportConcern.Status.OPEN)
+        if pastoral is not None:
+            concerns = concerns.filter(student__school_class_id__in=pastoral)
+        queryset = super().get_queryset().annotate(needs_support=Exists(concerns))
         params = self.request.query_params
         # Search and filters on the server, so a paged list finds students on any page (E-1).
         for word in (params.get("q") or "").split():
@@ -124,9 +129,27 @@ class StudentViewSet(ApprovalRequiredMixin, SchoolScopedViewSetMixin, viewsets.M
             queryset = queryset.filter(needs_support=True)
         # A stable order, so pages never repeat or skip a student.
         queryset = queryset.order_by("last_name", "first_name", "id")
-        if is_admin(self.request.user):
+        scope = scope_class_ids(user, self._area())
+        if scope is None:
             return queryset
-        return queryset.filter(school_class_id__in=assigned_class_ids(self.request.user))
+        return queryset.filter(school_class_id__in=scope)
+
+    READ_ACTIONS = {"list", "retrieve", "profile"}
+
+    def _area(self):
+        """
+        Reading a student's record is "records" (e.g. the nurse and office see
+        everyone); changing it needs the pastoral scope (teachers of the
+        class, Heads of Year, leaders). A nurse may update health notes.
+        """
+        if self.action == "term_summary":
+            return ACADEMIC
+        if self.action in self.READ_ACTIONS or (self.action == "photo" and self.request.method == "GET"):
+            return RECORDS
+        if self.action in ("update", "partial_update") and is_nurse(self.request.user) \
+                and set(self.request.data.keys()) <= {"medical_notes"}:
+            return RECORDS
+        return PASTORAL
 
     def perform_create(self, serializer):
         school_class = serializer.validated_data.get("school_class")
