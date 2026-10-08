@@ -7,6 +7,8 @@ them; parents see their own child's.
 from datetime import timedelta
 
 from django.contrib.auth.models import User
+from django.core import mail
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from accounts.test_roles import RoleFixture
@@ -267,3 +269,52 @@ class DemoTests(Base):
         self.assertTrue(football.fixtures.filter(our_score__isnull=False).exists())
         self.assertTrue(football.leaders.exists())
         self.assertEqual(football.sessions.count(), 6)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", NOTIFICATIONS_IN_BACKGROUND=False)
+class SquadEmailTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.ben_parent = User.objects.create_user(username="pb@alpha.test", email="pb@alpha.test", password="x")
+        Guardian.objects.create(user=self.ben_parent, school=self.school_a, display_name="Bo").students.add(self.ben)
+
+    def pick(self, fid, players):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.coach.patch(f"{FIXTURES}{fid}/", {"players": players}, format="json")
+
+    def test_parents_hear_once_when_their_child_is_picked(self):
+        fid = self.fixture().data["id"]
+        response = self.pick(fid, [self.amina.id])
+        self.assertEqual(response.data["parents_emailed"], 1)
+        self.assertEqual([p["name"] for p in response.data["players"]], ["Amina K"])  # the new squad, not a stale one
+        (email,) = mail.outbox
+        self.assertEqual(email.to, ["pa@alpha.test"])
+        self.assertIn("Amina is in the Football squad v St Mary's", email.subject)
+        self.assertIn("Where: Away", email.body)
+        self.assertNotIn("Ben", email.body)
+        # Adding Ben emails only Ben's parent; Amina's parent isn't told again.
+        self.assertEqual(self.pick(fid, [self.amina.id, self.ben.id]).data["parents_emailed"], 1)
+        self.assertEqual([m.to for m in mail.outbox], [["pa@alpha.test"], ["pb@alpha.test"]])
+
+    def test_no_email_for_past_fixtures_or_parents_who_opted_out(self):
+        past = Fixture.objects.create(club=self.club, date=self.today - timedelta(days=1), opponent="Old")
+        self.assertEqual(self.pick(past.id, [self.amina.id]).data["parents_emailed"], 0)
+        Guardian.objects.filter(user__email="pa@alpha.test").update(email_notifications=False)
+        fid = self.fixture().data["id"]
+        self.assertEqual(self.pick(fid, [self.amina.id]).data["parents_emailed"], 0)
+        self.assertEqual(mail.outbox, [])
+
+    def test_picked_when_the_fixture_is_added(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.fixture(players=[self.amina.id, self.ben.id])
+        self.assertEqual(response.data["parents_emailed"], 2)
+
+
+class TeacherHomeClubsTests(Base):
+    def test_the_coach_sees_their_clubs_and_fixtures_coming_up(self):
+        self.fixture()
+        Fixture.objects.create(club=self.club, date=self.today + timedelta(days=30), opponent="Far off")
+        (club,) = self.coach.get("/api/teacher-home/").data["clubs"]
+        self.assertEqual((club["name"], club["member_count"]), ("Football", 2))
+        self.assertEqual([f["opponent"] for f in club["fixtures"]], ["St Mary's"])
+        self.assertEqual(self.client_a.get("/api/teacher-home/").data["clubs"], [])

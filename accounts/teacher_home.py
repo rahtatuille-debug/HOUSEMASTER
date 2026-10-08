@@ -99,7 +99,7 @@ def teacher_home(request):
         profile.save(update_fields=["checklist_hidden"])
     return Response({"classes": teacher_classes(profile), "checklist": teacher_checklist(profile),
                      "support": support_summary(request.user), "today": _today(request.user),
-                     "boarding": _boarding(request.user)})
+                     "boarding": _boarding(request.user), "clubs": _clubs(request.user)})
 
 
 def support_summary(user):
@@ -140,6 +140,13 @@ def _today(user):
     from timetable.views import today_for
 
     return today_for(user.profile)
+
+
+def _clubs(user):
+    """The clubs this teacher runs and their fixtures in the next two weeks."""
+    from clubs.services import my_clubs
+
+    return my_clubs(user)
 
 
 def _boarding(user):

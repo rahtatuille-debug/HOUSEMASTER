@@ -63,3 +63,55 @@ def parent_view(student):
             "results": [fixture_row(f, f.id in picked, with_report=f.id in picked) for f in results],
         })
     return clubs
+
+
+def notify_squad(fixture, student_ids):
+    """
+    Email the parents of students just picked for a fixture (one email per
+    parent). Only when, where and who against; never the rest of the squad.
+    Returns how many parents are emailed.
+    """
+    from guardians.models import Guardian
+    from guardians.notifications import _footer, send_after_commit
+
+    if not student_ids:
+        return 0
+    club, school = fixture.club, fixture.club.school
+    when = f"{fixture.date.strftime('%A')} {fixture.date.day} {fixture.date.strftime('%B')}"
+    if fixture.start_time:
+        when += f" at {fixture.start_time.strftime('%H:%M')}"
+    where = fixture.get_venue_display() + (f", {fixture.location}" if fixture.location else "")
+    parents = (Guardian.objects.filter(students__in=student_ids, email_notifications=True, user__is_active=True)
+               .exclude(user__email="").select_related("user").prefetch_related("students").distinct())
+    messages = []
+    for g in parents:
+        kids = sorted(s.first_name for s in g.students.all() if s.id in student_ids)
+        names = " and ".join(kids)
+        messages.append((
+            f"{names} {'is' if len(kids) == 1 else 'are'} in the {club.name} squad v {fixture.opponent}",
+            f"Dear {g.name},\n\n{names} {'has' if len(kids) == 1 else 'have'} been picked for {club.name}"
+            f"{f' ({fixture.team})' if fixture.team else ''} v {fixture.opponent}.\n\n"
+            f"When: {when}\nWhere: {where}" + _footer(school),
+            g.user.email,
+        ))
+    if messages:
+        send_after_commit(messages)
+    return len(messages)
+
+
+def my_clubs(user):
+    """The clubs this person runs, with their fixtures in the next two weeks (for the teacher's Home page)."""
+    from datetime import timedelta
+
+    from .models import Club
+
+    school = user.profile.school
+    today = school_localdate(school)
+    clubs = (Club.objects.filter(school=school, leaders=user, is_active=True)
+             .annotate(member_count=Count("members", filter=Q(members__student__is_active=True), distinct=True)))
+    return [{
+        "id": c.id, "name": c.name, "meets": c.meets, "member_count": c.member_count,
+        "fixtures": [fixture_row(f, with_report=False) for f in Fixture.objects.filter(
+            club=c, date__gte=today, date__lte=today + timedelta(days=14)).select_related("club")
+            .order_by("date", "start_time")[:5]],
+    } for c in clubs]
