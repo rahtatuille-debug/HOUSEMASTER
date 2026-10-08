@@ -21,6 +21,8 @@ class EmailBackend(ModelBackend):
     def authenticate(self, request, email=None, password=None, **kwargs):
         if not email or not password:
             return None
+        if "@" not in email:
+            return self._student(email, password)
         try:
             user = UserModel.objects.get(email__iexact=email)
         except UserModel.DoesNotExist:
@@ -32,6 +34,17 @@ class EmailBackend(ModelBackend):
             # Email isn't enforced unique at the DB level. If more than one
             # account shares it, refuse rather than guessing which was
             # meant — this needs cleaning up in the admin, not a silent pick.
+            return None
+        if user.check_password(password) and self.user_can_authenticate(user):
+            return user
+        return None
+
+    def _student(self, username, password):
+        """A school-made student username (studentaccounts): only active students, only student accounts."""
+        user = UserModel.objects.filter(username__iexact=username.strip(), student_account__isnull=False,
+                                        student_account__student__is_active=True).first()
+        if user is None:
+            UserModel().set_password(password)
             return None
         if user.check_password(password) and self.user_can_authenticate(user):
             return user

@@ -17,12 +17,17 @@ def can_manage(user):
 
 
 def viewer(user):
-    """(school, students) for a parent; (school, None) for staff; (None, None) for anyone else."""
+    """(school, students) for a parent or a student; (school, None) for staff; (None, None) for anyone else."""
     if getattr(user, "profile", None) is not None:
         return user.profile.school, None
     guardian = getattr(user, "guardian", None)
     if guardian is not None:
         return guardian.school, list(guardian.students.filter(is_active=True).select_related("school_class__year_group"))
+    from studentaccounts.services import account_of
+
+    account = account_of(user)
+    if account is not None and account.student.is_active:
+        return account.student.school, [account.student]
     return None, None
 
 

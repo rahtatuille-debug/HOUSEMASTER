@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -11,19 +11,21 @@ from accounts.permissions import CanManageParents, HasSchoolProfile
 from accounts.emails import send_admin_password_reset
 from accounts.throttles import InviteIPThrottle, InviteSendRecipientThrottle, InviteSendUserThrottle
 from accounts.tokens import tokens_for
-from activity.services import log_activity, student_name
+from activity.services import display_name, log_activity, student_name
 from gradebook.levels import school_summary
 
 from clubs.services import parent_view as clubs_parent_view
 from homework.services import student_view as homework_view
 from discipline.serializers import parent_merit_rows
 from discipline.serializers import parent_rows as discipline_parent_rows
+from students.models import Student
+from studentaccounts.services import account_of
 from support.services import parent_view as support_parent_view
 
 from . import health_notes
 from .invite_emails import send_invite_email
 from .models import Guardian, GuardianInvite
-from .permissions import IsGuardian
+from .permissions import IsGuardian, IsGuardianOrStudent
 from .serializers import (
     CONTACT_FIELDS,
     AcceptGuardianInviteSerializer,
@@ -186,13 +188,26 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
 
 class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
-    """A guardian's read-only view of the children linked to their account."""
+    """
+    A guardian's read-only view of the children linked to their account.
+    A student account (studentaccounts) gets the same view of their own
+    record and nothing else, and can't use the parents-only actions (leave,
+    health notes).
+    """
 
     serializer_class = GuardianStudentSerializer
-    permission_classes = [IsAuthenticated, IsGuardian]
+    permission_classes = [IsAuthenticated, IsGuardianOrStudent]
 
     def get_queryset(self):
-        return self.request.user.guardian.students.select_related("school_class__year_group").all()
+        guardian = getattr(self.request.user, "guardian", None)
+        if guardian is not None:
+            return guardian.students.select_related("school_class__year_group").all()
+        account = account_of(self.request.user)
+        return Student.objects.filter(pk=account.student_id, is_active=True).select_related("school_class__year_group")
+
+    def _parents_only(self):
+        if getattr(self.request.user, "guardian", None) is None:
+            raise PermissionDenied("Only parents can do this.")
 
     @action(detail=True, methods=["get"])
     def grades(self, request, pk=None):
@@ -212,12 +227,14 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"], url_path="leave-requests")
     def leave_requests(self, request, pk=None):
         """Ask for leave for a boarder; boarding staff decide."""
+        self._parents_only()
         from boarding.views import guardian_request_leave
 
         return Response(guardian_request_leave(request, self.get_object()), status=201)
 
     @action(detail=True, methods=["post"], url_path=r"leave-requests/(?P<leave_id>\d+)/cancel")
     def cancel_leave(self, request, pk=None, leave_id=None):
+        self._parents_only()
         from boarding.views import guardian_cancel_leave
 
         return Response(guardian_cancel_leave(request, self.get_object(), leave_id))
@@ -249,7 +266,8 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             "attendance": full["attendance"],
             "performance": [{"term": p["term"], "student": p["student"]} for p in full["performance"]],
             # This parent's latest suggestion for the health notes, if any.
-            "health_notes_request": health_notes.as_data(health_notes.latest(request.user, student)),
+            "health_notes_request": health_notes.as_data(health_notes.latest(request.user, student))
+            if getattr(request.user, "guardian", None) is not None else None,
             # Only once a teacher has confirmed it: suggestions stay with staff.
             "support": support_parent_view(student),
             # Only the records staff chose to share, without staff notes.
@@ -268,6 +286,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         POST {medical_notes, reason?}: suggest new health notes for the school
         to approve (guardians.health_notes). DELETE: withdraw a waiting one.
         """
+        self._parents_only()
         student = self.get_object()
         if request.method == "DELETE":
             return Response(health_notes.as_data(health_notes.withdraw(request.user, student)))
@@ -325,7 +344,7 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         content, _ = reports_pdf(student.school, [student], report.term)
         log_activity(
             school=student.school, actor=request.user, action="report.downloaded", target=report,
-            summary=f"{request.user.guardian.name} downloaded the {report.term.name} report card for "
+            summary=f"{display_name(request.user)} downloaded the {report.term.name} report card for "
                     f"{student_name(student)}",
         )
         response = HttpResponse(content, content_type="application/pdf")
