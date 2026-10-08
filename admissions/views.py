@@ -5,7 +5,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from accounts.permissions import HasSchoolProfile, IsSchoolAdmin
+from accounts.permissions import CanManageAdmissions, HasSchoolProfile
 from accounts.throttles import EmailThrottle, InviteIPThrottle, IPThrottle
 from activity.services import display_name, log_activity
 from gradebook.levels import school_summary
@@ -95,11 +95,11 @@ def confirm(request, token):
 
 class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
                          mixins.DestroyModelMixin, viewsets.GenericViewSet):
-    """Admins: the applications, filtered by ?status=, ?year_group=, ?q=. PATCH moves them on (families are
+    """Admins and the admissions officer: the applications, filtered by ?status=, ?year_group=, ?q=. PATCH moves them on (families are
     emailed at interview, offer, waiting list and decline); POST enrol/ {school_class} enrols."""
 
     serializer_class = ApplicationSerializer
-    permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
+    permission_classes = [IsAuthenticated, HasSchoolProfile, CanManageAdmissions]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
@@ -159,7 +159,7 @@ class ApplicationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixin
 
 
 @api_view(["GET", "PATCH", "POST"])
-@permission_classes([IsAuthenticated, HasSchoolProfile, IsSchoolAdmin])
+@permission_classes([IsAuthenticated, HasSchoolProfile, CanManageAdmissions])
 def admissions_settings(request):
     """GET/PATCH {is_open, intro, year_groups}; POST {new_link: true} replaces the link (the old one stops)."""
     found = services.settings_for(request.user.profile.school)

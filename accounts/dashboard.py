@@ -121,3 +121,33 @@ def build_dashboard(school):
             for a in UrgentAlert.objects.filter(school=school, ended_at__isnull=True)
         ],
     }
+
+
+def governor_figures(school):
+    """School-wide numbers for governors: no student, parent or staff names."""
+    from discipline.models import DisciplineIncident
+    from support.models import SupportConcern
+
+    from .models import Profile
+
+    full = build_dashboard(school)
+    today = school_localdate(school)
+    att = full["attendance_today"]
+    since = today - timedelta(days=30)
+    incidents = DisciplineIncident.objects.filter(school=school, date__gte=since)
+    return {
+        "school": school.name,
+        "date": today,
+        "students": Student.objects.filter(school=school, is_active=True).count(),
+        "staff": Profile.objects.filter(school=school, user__is_active=True).exclude(role=Profile.Role.GOVERNOR).count(),
+        "students_by_year_group": full["students_by_year_group"],
+        "attendance": {"date": att["date"], "is_today": att["is_today"], "rate": att["rate"],
+                       "marked": att["marked"], "students": att["students"], "absent": att["absent"],
+                       "classes": len(att["classes"]), "classes_not_taken": len(att["classes_not_taken"])},
+        "support_open": SupportConcern.objects.filter(school=school, status=SupportConcern.Status.OPEN).count(),
+        "behaviour_last_30_days": {
+            "total": incidents.count(),
+            **{sev: incidents.filter(severity=sev).count() for sev in DisciplineIncident.Severity.values},
+        },
+        "reports_waiting": full["reports_waiting"]["count"],
+    }

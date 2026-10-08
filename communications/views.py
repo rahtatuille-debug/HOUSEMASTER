@@ -8,7 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import assigned_class_ids, is_admin
+from accounts.scoping import PASTORAL, can_send_announcements, can_use_class, is_leader, scope_class_ids
 from activity.services import log_activity
 
 from students.models import SchoolClass, YearGroup
@@ -78,14 +78,15 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
 
         school = self.request.user.profile.school
         queryset = super().get_queryset().filter(school=school)
-        if self.request.user.profile.role == "admin":
+        if can_send_announcements(self.request.user):
             return queryset
         # Teachers see staff notices, anything published to a class they
-        # teach, and their own announcements at any stage.
+        # teach or lead, and their own announcements at any stage.
+        classes = scope_class_ids(self.request.user, PASTORAL)
         return queryset.filter(
             Q(status=Announcement.Status.PUBLISHED, audience=Announcement.Audience.ALL_STAFF)
             | Q(status=Announcement.Status.PUBLISHED, audience=Announcement.Audience.SCHOOL_CLASS,
-                school_class_id__in=assigned_class_ids(self.request.user))
+                school_class_id__in=classes)
             | Q(created_by=self.request.user)
         )
 
@@ -99,19 +100,19 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("school_class does not belong to your school.")
 
     def _check_teacher_audience(self, serializer):
-        """Teachers may only address the parents of a class they teach."""
-        if is_admin(self.request.user):
+        """Teachers may only address the parents of a class they teach (admins, leadership and the Secretary: anyone)."""
+        if can_send_announcements(self.request.user):
             return
         instance = serializer.instance
         data = serializer.validated_data
         audience = data.get("audience", instance.audience if instance else None)
         school_class = data.get("school_class", instance.school_class if instance else None)
         if audience != Announcement.Audience.SCHOOL_CLASS or school_class is None \
-                or school_class.id not in set(assigned_class_ids(self.request.user)):
+                or not can_use_class(self.request.user, school_class.id, PASTORAL):
             raise PermissionDenied("Teachers can only send announcements to a class they teach.")
 
     def _check_can_manage(self, announcement):
-        if not (is_admin(self.request.user) or announcement.created_by_id == self.request.user.id):
+        if not (can_send_announcements(self.request.user) or announcement.created_by_id == self.request.user.id):
             raise PermissionDenied("You can only change announcements you wrote.")
 
     def perform_create(self, serializer):
@@ -226,8 +227,9 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         return owner.school
 
     def _is_admin(self):
+        """Admins and leadership see and manage every alert."""
         profile = getattr(self.request.user, "profile", None)
-        return profile is not None and profile.is_admin
+        return profile is not None and is_leader(self.request.user)
 
     def get_queryset(self):
         alerts = UrgentAlert.objects.filter(school=self._school()).select_related("created_by")
@@ -248,13 +250,13 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
         is_test = data.get("is_test", False)
         if is_test:
             # A test goes to staff only, whatever audience was chosen.
-            if not profile.is_admin:
-                raise PermissionDenied("Only an admin can send a test alert.")
+            if not is_leader(self.request.user):
+                raise PermissionDenied("Only an admin or leadership can send a test alert.")
             data.update(audience=UrgentAlert.Audience.ALL_STAFF, year_group=None, school_class=None)
-        elif not profile.is_admin:
+        elif not is_leader(self.request.user):
             if data["audience"] != UrgentAlert.Audience.SCHOOL_CLASS:
                 raise PermissionDenied("Teachers can only send urgent alerts to the parents of a class they teach.")
-            if not profile.assignments.filter(school_class=data["school_class"]).exists():
+            if not can_use_class(self.request.user, data["school_class"].id, PASTORAL):
                 raise PermissionDenied("You can only send urgent alerts to classes you teach.")
         alert = UrgentAlert(school=profile.school, created_by=self.request.user, **data)
         users = list(alert_recipient_users(alert))

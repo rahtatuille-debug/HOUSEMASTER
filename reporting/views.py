@@ -8,7 +8,10 @@ from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle
 
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.permissions import IsSchoolAdmin
-from accounts.scoping import check_can_see_student, is_admin, limit_to_visible_students, visible_students
+from accounts.scoping import (
+    ACADEMIC, PASTORAL, can_approve_report, can_use_class, check_can_see_student, head_of_year_ids, is_leader,
+    limit_to_visible_students, visible_students,
+)
 from activity.services import log_activity, student_name
 from gradebook.locks import check_term_open
 from guardians.notifications import notify_reports_finalized
@@ -66,8 +69,15 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             return [ClassRunThrottle()]
         return []
 
+    # Reading reports follows the academic scope (a Head of Department can read
+    # them); writing one is for the student's own teachers, Heads of Year and
+    # leaders (the pastoral scope), checked on each change below.
     def get_queryset(self):
-        return limit_to_visible_students(super().get_queryset(), self.request.user)
+        return limit_to_visible_students(super().get_queryset(), self.request.user, area=ACADEMIC)
+
+    def _check_can_approve(self, report):
+        if not can_approve_report(self.request.user, report):
+            raise PermissionDenied("Only leadership, or the Head of Year for this student, can approve reports.")
 
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
@@ -79,8 +89,8 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         report = serializer.instance
         new_principal = serializer.validated_data.get("principal_comment", report.principal_comment)
-        if new_principal != report.principal_comment and not is_admin(self.request.user):
-            raise PermissionDenied("Only admins can write the principal's remarks.")
+        if new_principal != report.principal_comment and not is_leader(self.request.user):
+            raise PermissionDenied("Only admins and leadership can write the principal's remarks.")
         if report.status == "finalized":
             raise ValidationError("A finalized report can't be edited. An admin must send it back first.")
         student = serializer.validated_data.get("student", report.student)
@@ -93,6 +103,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         self._log(report, "report.edited", "Edited")
 
     def perform_destroy(self, instance):
+        check_can_see_student(self.request.user, instance.student, PASTORAL)
         check_term_open(instance.term)
         if instance.status == "finalized":
             raise ValidationError("A finalized report can't be deleted. An admin must send it back first.")
@@ -108,6 +119,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
         report = self.get_object()
+        check_can_see_student(request.user, report.student, PASTORAL)
         check_term_open(report.term)
         if report.status != "draft":
             raise ValidationError("Only draft reports can be submitted for approval.")
@@ -120,9 +132,10 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         self._log(report, "report.submitted", "Submitted for approval")
         return Response(self.get_serializer(report).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsSchoolAdmin])
+    @action(detail=True, methods=["post"])
     def finalize(self, request, pk=None):
         report = self.get_object()
+        self._check_can_approve(report)
         check_term_open(report.term)
         if report.status == "finalized":
             raise ValidationError("This report is already finalized.")
@@ -160,9 +173,10 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
                   fields=["school_class", "class_name", "education_system", "grading_scale"])
         return Response(self.get_serializer(report).data)
 
-    @action(detail=True, methods=["post"], url_path="send-back", permission_classes=[IsSchoolAdmin])
+    @action(detail=True, methods=["post"], url_path="send-back")
     def send_back(self, request, pk=None):
         report = self.get_object()
+        self._check_can_approve(report)
         check_term_open(report.term)
         if report.status == "draft":
             raise ValidationError("This report is already a draft.")
@@ -239,9 +253,7 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             term = Term.objects.get(pk=request.data.get("term"), school=school)
         except (Term.DoesNotExist, ValueError, TypeError):
             raise NotFound("Term not found.")
-        if not is_admin(request.user) and not request.user.profile.assignments.filter(
-            school_class=school_class
-        ).exists():
+        if not can_use_class(request.user, school_class.id, PASTORAL):
             raise PermissionDenied("You can only do this for classes you teach.")
         return school_class, term
 
@@ -328,10 +340,12 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             )
         return Response({"count": count, "blank": blank})
 
-    @action(detail=False, methods=["post"], url_path="finalize-class", permission_classes=[IsSchoolAdmin])
+    @action(detail=False, methods=["post"], url_path="finalize-class")
     def finalize_class(self, request):
         # Only reports a teacher has submitted; drafts still need their review.
         school_class, term = self._class_and_term(request)
+        if not (is_leader(request.user) or school_class.year_group_id in head_of_year_ids(request.user)):
+            raise PermissionDenied("Only leadership, or this year group's Head of Year, can approve reports.")
         check_term_open(term)
         submitted = self._class_reports(request, school_class, term, "submitted")
         blank = submitted.blank().count()

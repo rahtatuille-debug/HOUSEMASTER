@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import is_admin, visible_students
+from accounts.scoping import is_admin, is_leader, visible_students
 from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 
@@ -79,8 +79,8 @@ class DisciplineIncidentViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         incident = self.get_object()
         user = request.user
-        if not (is_admin(user) or incident.recorded_by_id == user.id):
-            raise PermissionDenied("Only the person who recorded this, or an admin, can change it.")
+        if not (is_leader(user) or incident.recorded_by_id == user.id):
+            raise PermissionDenied("Only the person who recorded this, leadership or an admin can change it.")
         was_shared = incident.shared_with_parents
         data = {k: v for k, v in request.data.items() if k in EDITABLE}
         serializer = self.get_serializer(incident, data=data, partial=True)

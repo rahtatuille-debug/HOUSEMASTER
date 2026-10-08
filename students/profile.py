@@ -4,7 +4,7 @@ from datetime import date
 from django.db.models import Count
 
 from accounts.models import TeachingAssignment
-from accounts.scoping import is_admin
+from accounts.scoping import ACADEMIC, PASTORAL, can_use_class, is_admin
 from activity.models import ActivityLog
 from attendance.models import AttendanceRecord
 from gradebook.models import Grade, Term
@@ -144,6 +144,16 @@ def build_profile(student, user):
         for r in StudentReport.objects.filter(student=student).select_related("term").order_by("-generated_at")
     ]
 
+    # Staff see each part of the profile only if their role covers it for this
+    # student (accounts.scoping); parents' views pick their own fields.
+    staff = getattr(user, "profile", None) is not None
+    academic = not staff or can_use_class(user, student.school_class_id, ACADEMIC)
+    pastoral = not staff or can_use_class(user, student.school_class_id, PASTORAL)
+    if not academic:
+        grades_by_term, performance, reports = [], [], []
+    if not pastoral:
+        attendance = None
+
     profile = {
         "class_name": school_class.name if school_class else None,
         "year_group_name": year_group.name if year_group else None,
@@ -158,8 +168,10 @@ def build_profile(student, user):
         "reports": reports,
         "activity": None,
         # Staff only: the guardians' view picks its own fields and never this.
-        "support": _support(student),
-        "discipline": _discipline(student),
+        "support": _support(student) if pastoral else None,
+        "discipline": _discipline(student) if pastoral else None,
+        # Which parts this person may see, so the page can say so.
+        "sections": {"academic": academic, "pastoral": pastoral},
         "boarding": _boarding(student),
     }
     if is_admin(user):

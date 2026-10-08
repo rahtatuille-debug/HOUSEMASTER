@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
-from accounts.scoping import assigned_class_ids, check_can_see_student, is_admin, limit_to_visible_students
+from accounts.scoping import ATTENDANCE, check_can_see_student, limit_to_visible_students, scope_class_ids
 from activity.services import log_activity, student_name
 from gradebook.locks import check_date_open
 from housemaster.pagination import LongListPagination
@@ -25,11 +25,11 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     school_lookup = "student__school"
 
     def get_queryset(self):
-        return limit_to_visible_students(super().get_queryset(), self.request.user)
+        return limit_to_visible_students(super().get_queryset(), self.request.user, area=ATTENDANCE)
 
     def perform_create(self, serializer):
         self.check_belongs_to_school(serializer.validated_data["student"].school, "student")
-        check_can_see_student(self.request.user, serializer.validated_data["student"])
+        check_can_see_student(self.request.user, serializer.validated_data["student"], ATTENDANCE)
         check_date_open(self.get_school(), serializer.validated_data["date"])
         record = serializer.save()
         log_activity(
@@ -41,7 +41,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         student = serializer.validated_data.get("student", serializer.instance.student)
         self.check_belongs_to_school(student.school, "student")
-        check_can_see_student(self.request.user, student)
+        check_can_see_student(self.request.user, student, ATTENDANCE)
         check_date_open(self.get_school(), serializer.instance.date)
         check_date_open(self.get_school(), serializer.validated_data.get("date", serializer.instance.date))
         old = serializer.instance.status
@@ -68,7 +68,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def summary(self, request):
         """GET ?date=YYYY-MM-DD (default today): each class's register that day, for the classes this person can see
-        (all for admins, their own for teachers). Classes with no active students are left out."""
+        (all for admins and leaders; their own, their year or class for other staff). Classes with no active students are left out."""
         from students.localtime import school_localdate
         from students.models import SchoolClass, Student
 
@@ -79,8 +79,9 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         except ValueError:
             raise ValidationError({"date": ["Use a date like 2026-10-07."]})
         classes = SchoolClass.objects.filter(year_group__school=school).select_related("year_group")
-        if not is_admin(request.user):
-            classes = classes.filter(id__in=assigned_class_ids(request.user))
+        scope = scope_class_ids(request.user, ATTENDANCE)
+        if scope is not None:
+            classes = classes.filter(id__in=scope)
         students = Student.objects.filter(school=school, is_active=True, school_class__in=classes)
         sizes = dict(students.values("school_class").annotate(n=Count("id")).values_list("school_class", "n"))
         marks = {row["student__school_class"]: row for row in AttendanceRecord.objects.filter(

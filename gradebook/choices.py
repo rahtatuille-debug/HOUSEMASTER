@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import HasSchoolProfile
-from accounts.scoping import is_admin, visible_students
+from accounts.scoping import PASTORAL, can_use_class, visible_students
 from activity.services import log_activity
 from students.models import SchoolClass
 
@@ -76,7 +76,7 @@ def class_subject_choices(request):
     data = request.query_params if request.method == "GET" else request.data
     school_class = _class(request, data.get("school_class"))
     school = request.user.profile.school
-    if not is_admin(request.user) and not request.user.profile.assignments.filter(school_class=school_class).exists():
+    if not can_use_class(request.user, school_class.id, PASTORAL):
         raise PermissionDenied("You can only set subject choices for a class you teach.")
     students = list(visible_students(request.user).filter(school_class=school_class, is_active=True)
                     .order_by("last_name", "first_name"))

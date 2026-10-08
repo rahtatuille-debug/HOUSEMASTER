@@ -9,7 +9,7 @@ from activity.services import log_activity
 
 from .emails import send_password_reset_email
 from .mixins import SchoolScopedRelatedFieldsMixin, requester_school
-from .models import Invite, PasswordResetToken, Profile, TeachingAssignment, username_for_email
+from .models import Invite, PasswordResetToken, Profile, StaffRole, TeachingAssignment, username_for_email
 from .tokens import VersionedRefreshToken
 
 
@@ -94,9 +94,54 @@ class StaffMemberSerializer(serializers.ModelSerializer):
     date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
 
+    roles = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
-        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login"]
+        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login", "roles"]
+
+    def get_roles(self, obj):
+        return [{"id": r.id, "role": r.role, "role_label": r.get_role_display(), "scope_name": r.scope_name}
+                for r in obj.staff_roles.select_related("year_group", "subject", "school_class")]
+
+
+class StaffRoleSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):
+    """One extra responsibility (accounts.StaffRole). Scoped roles need their year group, subject or class."""
+
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
+    scope_name = serializers.CharField(read_only=True)
+    profile_name = serializers.CharField(source="profile.name", read_only=True)
+
+    class Meta:
+        model = StaffRole
+        fields = ["id", "profile", "profile_name", "role", "role_label", "year_group", "subject", "school_class",
+                  "scope_name", "assigned_by_name", "created_at"]
+        read_only_fields = ["assigned_by_name", "created_at"]
+        validators = []  # duplicates checked in validate() with a readable message
+        extra_kwargs = {"year_group": {"required": False, "allow_null": True},
+                        "subject": {"required": False, "allow_null": True},
+                        "school_class": {"required": False, "allow_null": True}}
+
+    LABELS = {"year_group": "year group", "subject": "subject", "school_class": "class"}
+
+    def validate(self, attrs):
+        role = attrs["role"]
+        needed = StaffRole.SCOPE.get(role)
+        for field in ("year_group", "subject", "school_class"):
+            attrs.setdefault(field, None)
+            if field != needed:
+                attrs[field] = None  # only the one scope that role uses
+        if needed and attrs[needed] is None:
+            raise serializers.ValidationError({needed: [f"Choose the {self.LABELS[needed]}."]})
+        profile = attrs["profile"]
+        if profile.role == Profile.Role.GOVERNOR:
+            raise serializers.ValidationError({"profile": ["Governor accounts are read-only and can't hold roles."]})
+        if profile.role == Profile.Role.ADMIN and role == StaffRole.Role.LEADERSHIP:
+            raise serializers.ValidationError({"role": ["Admins can already do everything Leadership can."]})
+        if StaffRole.objects.filter(profile=profile, role=role, year_group=attrs["year_group"],
+                                    subject=attrs["subject"], school_class=attrs["school_class"]).exists():
+            raise serializers.ValidationError("They already have this role.")
+        return attrs
 
 
 class TeachingAssignmentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializer):

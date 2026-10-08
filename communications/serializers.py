@@ -120,8 +120,9 @@ class UrgentAlertSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSer
         viewer = self._viewer()
         if viewer is None:
             return False
-        profile = getattr(viewer, "profile", None)
-        return obj.created_by_id == viewer.id or (profile is not None and profile.is_admin)
+        from accounts.scoping import is_leader
+
+        return obj.created_by_id == viewer.id or is_leader(viewer)
 
     def get_my_acknowledged_at(self, obj):
         viewer = self._viewer()

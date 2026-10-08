@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.scoping import is_admin
+from accounts.scoping import is_leader
 from activity.services import display_name, log_activity, student_name
 from students.models import Student
 
@@ -13,19 +13,19 @@ from .models import Absence, Bed, BoardingHouse, HouseAllocation, LeaveRequest, 
 
 
 def houses_for(user, archived=False):
-    """The houses this staff member looks after: every house for admins. Archived houses only when asked for
+    """The houses this staff member looks after: every house for admins and leadership. Archived houses only when asked for
     (their history stays readable, but nobody is boarded there or takes new roll calls)."""
     houses = BoardingHouse.objects.filter(school=user.profile.school)
     if archived is not None:  # None: both, for reading history
         houses = houses.filter(is_archived=archived)
-    return houses if is_admin(user) else houses.filter(staff=user.profile)
+    return houses if is_leader(user) else houses.filter(staff=user.profile)
 
 
 def is_boarding_staff(user):
-    """House staff and admins, at a school that has turned boarding on."""
+    """House staff, admins and leadership, at a school that has turned boarding on."""
     profile = getattr(user, "profile", None)
     return (profile is not None and profile.school.has_boarding
-            and (is_admin(user) or profile.boarding_houses.exists()))
+            and (is_leader(user) or profile.boarding_houses.exists()))
 
 
 def boarders(user, house=None):
