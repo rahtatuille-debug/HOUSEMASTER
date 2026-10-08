@@ -83,3 +83,38 @@ class LessonSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         return services.lesson_row(instance)
+
+
+class StaffAbsenceSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.CharField(source="teacher.name", read_only=True)
+    reason_label = serializers.CharField(source="get_reason_display", read_only=True)
+
+    class Meta:
+        from .models import StaffAbsence
+
+        model = StaffAbsence
+        fields = ["id", "teacher", "teacher_name", "start_date", "end_date", "periods", "reason", "reason_label",
+                  "note", "recorded_by_name", "created_at"]
+        read_only_fields = ["recorded_by_name", "created_at"]
+        extra_kwargs = {"periods": {"required": False}}
+
+    def get_fields(self):
+        from accounts.models import Profile
+
+        from .models import Period
+
+        fields = super().get_fields()
+        request = self.context.get("request")
+        school = request.user.profile.school if request else None
+        fields["teacher"].queryset = Profile.objects.filter(school=school).exclude(role=Profile.Role.GOVERNOR)
+        fields["periods"].child_relation.queryset = Period.objects.filter(school=school, is_break=False)
+        return fields
+
+    def validate(self, attrs):
+        if attrs["end_date"] < attrs["start_date"]:
+            raise serializers.ValidationError({"end_date": ["The last day can't be before the first."]})
+        if (attrs["end_date"] - attrs["start_date"]).days > 366:
+            raise serializers.ValidationError({"end_date": ["An absence can be at most a year long."]})
+        if attrs.get("periods") and attrs["end_date"] != attrs["start_date"]:
+            raise serializers.ValidationError({"periods": ["Choose periods only for a one-day absence."]})
+        return attrs
