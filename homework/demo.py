@@ -12,14 +12,18 @@ TITLES = ["Chapter review questions", "Practice worksheet", "Short essay", "Revi
           "Research task", "Problem set", "Reading and summary", "Vocabulary list"]
 
 
-def fill_demo(school, seed=11, limit=60):
-    """Returns how many pieces of homework were added."""
+def fill_demo(school, seed=11, per_class=2):
+    """Returns how many pieces of homework were added (two subjects in every class)."""
     if Assignment.objects.filter(school=school).exists():
         return 0
     rng = random.Random(seed)
     today = school_localdate(school)
-    pairs = (TeachingAssignment.objects.filter(teacher__school=school, subject__isnull=False)
-             .select_related("teacher__user", "school_class", "subject").order_by("id")[:limit // 2])
+    pairs, per = [], {}
+    for t in (TeachingAssignment.objects.filter(teacher__school=school, subject__isnull=False)
+              .select_related("teacher__user", "school_class", "subject").order_by("school_class_id", "id")):
+        if per.get(t.school_class_id, 0) < per_class:
+            per[t.school_class_id] = per.get(t.school_class_id, 0) + 1
+            pairs.append(t)
     added = 0
     for t in pairs:
         for days in (-6, 4):
