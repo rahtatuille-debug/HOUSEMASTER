@@ -91,7 +91,7 @@ class ManagingTests(Base):
     def test_bad_requests(self):
         self.assertEqual(self.admin.post(ACCOUNTS, {"students": []}, format="json").status_code, 400)
         self.assertEqual(self.admin.post(ACCOUNTS, {"students": ["x"]}, format="json").status_code, 400)
-        self.assertEqual(self.admin.post(ACCOUNTS, {"students": list(range(1, 300))}, format="json").status_code, 400)
+        self.assertEqual(self.admin.post(ACCOUNTS, {"students": list(range(1, 42))}, format="json").status_code, 400)
 
 
 class SigningInTests(Base):

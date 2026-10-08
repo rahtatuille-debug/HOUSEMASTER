@@ -17,7 +17,9 @@ from gradebook.levels import school_summary
 from . import services
 from .models import StudentAccount
 
-MAX_AT_ONCE = 200
+# Each login's password is hashed (about a second each), so a request makes at most this many;
+# the app sends bigger groups in batches.
+MAX_AT_ONCE = 40
 
 
 def _row(student, account=None):
