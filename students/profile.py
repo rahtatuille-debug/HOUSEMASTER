@@ -170,6 +170,9 @@ def build_profile(student, user):
         # Staff only: the guardians' view picks its own fields and never this.
         "support": _support(student) if pastoral else None,
         "discipline": _discipline(student) if pastoral else None,
+        "clubs": [{"id": m.club_id, "name": m.club.name, "role": m.role}
+                  for m in student.club_memberships.filter(club__is_active=True).select_related("club")
+                  .order_by("club__name")],
         # Which parts this person may see, so the page can say so.
         "sections": {"academic": academic, "pastoral": pastoral},
         "boarding": _boarding(student),

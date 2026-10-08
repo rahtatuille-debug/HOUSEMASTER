@@ -120,6 +120,13 @@ def family_export(student):
          i.recorded_by_name]
         for i in student.discipline_incidents.order_by("date", "id")
     ], widths={"What happened": 60, "Staff notes": 50})
+    _sheet(wb, "Clubs", ["Kind", "Club", "Date", "Details"], [
+        ["Member", m.club.name, m.joined_on.isoformat(), m.role] for m in _club_memberships(student)
+    ] + [
+        ["Register", a.session.club.name, a.session.date.isoformat(), a.get_status_display()] for a in _club_marks(student)
+    ] + [
+        ["Picked for", f.club.name, f.date.isoformat(), f"v {f.opponent}"] for f in _club_fixtures(student)
+    ], widths={"Club": 30, "Details": 40})
     from admissions.services import application_row, applications_about
 
     rows = [application_row(a) for a in applications_about(student).order_by("created_at")]
@@ -247,6 +254,13 @@ def family_export_data(student):
             "staff_notes": i.staff_notes, "shared_with_parents": i.shared_with_parents,
             "recorded_by": i.recorded_by_name,
         } for i in student.discipline_incidents.order_by("date", "id")],
+        "clubs": {
+            "memberships": [{"club": m.club.name, "joined": _iso(m.joined_on), "role": m.role}
+                            for m in _club_memberships(student)],
+            "registers": [{"club": a.session.club.name, "date": _iso(a.session.date), "status": a.get_status_display()}
+                          for a in _club_marks(student)],
+            "picked_for": [{"club": f.club.name, "date": _iso(f.date), "against": f.opponent} for f in _club_fixtures(student)],
+        },
         "boarding": {
             "bed": _bed(student),
             "roll_call_marks": [{"date": _iso(e.roll_call.date), "session": e.roll_call.get_session_display(),
@@ -366,6 +380,9 @@ def remove_personal_data(student, actor):
     counts["applications_deleted"] = applications_about(student).delete()[0]
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
     counts["discipline_records_deleted"] = student.discipline_incidents.all().delete()[0]
+    counts["club_records_deleted"] = (student.club_memberships.all().delete()[0]
+                                      + student.club_attendance.all().delete()[0])
+    student.fixtures.clear()
     counts["boarding_records_deleted"] = (student.leave_requests.all().delete()[0]
                                           + student.sick_bay_visits.all().delete()[0]
                                           + student.roll_call_entries.all().delete()[0])
@@ -405,3 +422,15 @@ def remove_personal_data(student, actor):
         summary="Removed a student's personal details at the family's request", **dict(counts),
     )
     return dict(counts)
+
+
+def _club_memberships(student):
+    return student.club_memberships.select_related("club").order_by("joined_on", "id")
+
+
+def _club_marks(student):
+    return student.club_attendance.select_related("session__club").order_by("session__date", "id")
+
+
+def _club_fixtures(student):
+    return student.fixtures.select_related("club").order_by("date", "id")
