@@ -219,6 +219,7 @@ def permissions_for(user):
         "nurse": is_nurse(user),
         "all_registers": scope_class_ids(user, ATTENDANCE) is None,
         "school_dashboard": leader,
+        "manage_cover": leader,
         # The classes this person may work with in each area: null for the whole school.
         "classes": {area: (None if scope is None else sorted(scope))
                     for area in (*AREAS, ATTENDANCE) for scope in [scope_class_ids(user, area)]},

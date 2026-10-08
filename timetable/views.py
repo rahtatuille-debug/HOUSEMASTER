@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, ValidationError
+from accounts.permissions import IsLeader
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
@@ -13,8 +14,9 @@ from students.localtime import school_localdate
 from students.models import SchoolClass
 
 from . import services
-from .models import Lesson, Period, Room, SchoolWeek
-from .serializers import LessonSerializer, PeriodSerializer, RoomSerializer
+from . import cover as cover_service
+from .models import CoverAssignment, Lesson, Period, Room, SchoolWeek, StaffAbsence
+from .serializers import LessonSerializer, PeriodSerializer, RoomSerializer, StaffAbsenceSerializer
 
 
 class AdminWritesStaffReads(BasePermission):
@@ -133,14 +135,16 @@ def week_view(request):
 
 
 def today_for(profile):
-    """A teacher's lessons today, for their home page."""
+    """A teacher's lessons today, for their home page, with any cover they're taking (`cover`: true)."""
     school = profile.school
-    day = school_localdate(school).isoweekday()
-    lessons = Lesson.objects.filter(school=school, teacher=profile, day=day) \
+    today = school_localdate(school)
+    lessons = Lesson.objects.filter(school=school, teacher=profile, day=today.isoweekday()) \
         .select_related("school_class", "subject", "room", "period", "teacher")
-    return [{**services.lesson_row(lesson), "start_time": lesson.period.start_time.strftime("%H:%M"),
+    rows = [{**services.lesson_row(lesson), "start_time": lesson.period.start_time.strftime("%H:%M"),
              "end_time": lesson.period.end_time.strftime("%H:%M"), "period_name": lesson.period.name}
             for lesson in lessons]
+    rows += cover_service.my_cover(profile, today)
+    return sorted(rows, key=lambda r: r["start_time"])
 
 
 def guardian_week(student):
@@ -155,3 +159,92 @@ def unstaffed(request):
     """Lessons with no teacher, or a teacher whose account was deactivated, so an admin can cover them."""
     return Response(services.unstaffed(request.user.profile.school))
 
+
+
+class StaffAbsenceViewSet(viewsets.ModelViewSet):
+    """
+    Staff away (admins and leadership). POST {teacher, start_date, end_date,
+    periods: [ids] (one day only; empty = all day), reason, note}. Filter
+    with ?date= (away that day), ?teacher=. The note never goes in the log.
+    """
+
+    serializer_class = StaffAbsenceSerializer
+    permission_classes = [IsAuthenticated, IsLeader]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        queryset = StaffAbsence.objects.filter(school=self.request.user.profile.school) \
+            .select_related("teacher__user").prefetch_related("periods")
+        params = self.request.query_params
+        if params.get("date"):
+            day = _date(params["date"])
+            queryset = queryset.filter(start_date__lte=day, end_date__gte=day)
+        if params.get("teacher"):
+            queryset = queryset.filter(teacher=params["teacher"])
+        return queryset
+
+    def perform_create(self, serializer):
+        from activity.services import display_name
+
+        absence = serializer.save(school=self.request.user.profile.school,
+                                  recorded_by_name=display_name(self.request.user))
+        log_activity(school=absence.school, actor=self.request.user, action="timetable.absence",
+                     target=absence.teacher,
+                     summary=f"Recorded {absence.teacher.name} as away ({absence.get_reason_display().lower()}) "
+                             f"{absence.start_date.isoformat()}"
+                             f"{'' if absence.end_date == absence.start_date else ' to ' + absence.end_date.isoformat()}")
+
+    def perform_destroy(self, instance):
+        log_activity(school=instance.school, actor=self.request.user, action="timetable.absence_removed",
+                     target=instance.teacher, summary=f"Removed {instance.teacher.name}'s absence from "
+                                                      f"{instance.start_date.isoformat()}")
+        # Cover arranged only because of this absence goes with it.
+        CoverAssignment.objects.filter(school=instance.school, lesson__teacher=instance.teacher,
+                                       date__gte=instance.start_date, date__lte=instance.end_date).delete()
+        instance.delete()
+
+
+def _date(value):
+    from datetime import date
+
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise ValidationError({"date": ["Use a date like 2026-10-08."]})
+
+
+@api_view(["GET", "POST", "DELETE"])
+@permission_classes([IsAuthenticated, IsLeader])
+def cover(request):
+    """
+    GET ?date= (default today): the lessons needing cover that day, who's away,
+    the cover arranged and who is free each period. POST {lesson, date,
+    cover_teacher (null: supervised another way), note}: arrange cover.
+    DELETE ?lesson&date: undo it. Admins and leadership.
+    """
+    school = request.user.profile.school
+    if request.method == "GET":
+        day = _date(request.query_params["date"]) if request.query_params.get("date") else school_localdate(school)
+        return Response(cover_service.cover_day(school, day))
+    data = request.data if request.method == "POST" else request.query_params
+    day = _date(data.get("date"))
+    lesson = Lesson.objects.filter(pk=data.get("lesson"), school=school).select_related(
+        "school_class", "subject", "teacher__user", "period").first() if str(data.get("lesson")).isdigit() else None
+    if lesson is None:
+        raise NotFound("Lesson not found.")
+    if request.method == "DELETE":
+        CoverAssignment.objects.filter(lesson=lesson, date=day).delete()
+        log_activity(school=school, actor=request.user, action="timetable.cover",
+                     summary=f"Cover removed for {lesson.school_class.name} {lesson.label} ({day.isoformat()})")
+        return Response(status=204)
+    teacher = None
+    if data.get("cover_teacher") not in (None, ""):
+        teacher = Profile.objects.filter(pk=data.get("cover_teacher"), school=school, user__is_active=True) \
+            .exclude(role=Profile.Role.GOVERNOR).first() if str(data.get("cover_teacher")).isdigit() else None
+        if teacher is None:
+            raise ValidationError({"cover_teacher": ["Choose a member of staff at your school."]})
+    try:
+        cover_service.arrange(lesson, day, teacher, str(data.get("note", "")), request.user)
+    except ValueError as exc:
+        raise ValidationError(str(exc))
+    return Response(cover_service.cover_day(school, day), status=201)

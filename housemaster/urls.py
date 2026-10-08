@@ -27,11 +27,12 @@ from students.setup_views import (add_section, complete_setup, finish_setup, pre
                                   setup_people, setup_state)
 from students.checklist import first_week_checklist
 from guardians.signup import join, signup_links, signup_requests
-from accounts.teacher_home import teacher_home, tour_seen
+from accounts.teacher_home import class_performance_view, teacher_home, tour_seen
 from admissions import views as admissions_views
 from admissions.views import ApplicationViewSet
 from boarding import views as boarding_views
 from boarding.views import AbsenceViewSet, DormViewSet as BoardingDormViewSet, HouseViewSet as BoardingHouseViewSet, LeaveViewSet, RollCallViewSet, SickBayViewSet
+from timetable import views as timetable_views
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
@@ -93,6 +94,7 @@ router.register(r"boarding/sick-bay", SickBayViewSet, basename="boarding-sick-ba
 router.register(r"timetable/periods", PeriodViewSet, basename="timetable-period")
 router.register(r"timetable/rooms", RoomViewSet, basename="timetable-room")
 router.register(r"timetable/lessons", LessonViewSet, basename="timetable-lesson")
+router.register(r"timetable/absences", timetable_views.StaffAbsenceViewSet, basename="timetable-absence")
 router.register(r"support/concerns", SupportConcernViewSet, basename="support-concern")
 router.register(r"discipline/incidents", DisciplineIncidentViewSet, basename="discipline-incident")
 
@@ -115,6 +117,7 @@ urlpatterns = [
     path('api/subject-reports/', class_subject_reports, name='class_subject_reports'),
     path('api/subject-choices/', class_subject_choices, name='class_subject_choices'),
     path('api/timetable/unstaffed/', timetable_unstaffed, name='timetable_unstaffed'),
+    path('api/timetable/cover/', timetable_views.cover, name='timetable_cover'),
     path('api/setup/finish/', finish_setup, name='finish_setup'),
     path('api/setup/people/', setup_people, name='setup_people'),
     path('api/setup/complete/', complete_setup, name='complete_setup'),
@@ -135,6 +138,7 @@ urlpatterns = [
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
+    path('api/teacher-home/performance/', class_performance_view, name='teacher_class_performance'),
     path('api/admissions/apply/<str:token>/', admissions_views.apply, name='admissions_apply'),
     path('api/admissions/confirm/<str:token>/', admissions_views.confirm, name='admissions_confirm'),
     path('api/admissions/settings/', admissions_views.admissions_settings, name='admissions_settings'),

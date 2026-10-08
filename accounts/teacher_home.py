@@ -3,6 +3,8 @@ A teacher's home page: their classes at a glance, and a getting-started
 checklist that ticks itself as they use HouseMaster for the first time.
 Also records when someone has been through the guided tour.
 """
+from collections import defaultdict
+
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
@@ -145,3 +147,83 @@ def _boarding(user):
     from boarding.services import is_boarding_staff, overview
 
     return overview(user) if is_boarding_staff(user) else None
+
+
+def _rank(values, mine):
+    """Competition ranking (1, 2, 2, 4) of `mine` among `values`, highest first, on the shown (1 dp) figures."""
+    if mine is None:
+        return None
+    return 1 + sum(1 for v in values if v is not None and v > mine)
+
+
+def class_performance(user, term_id=None):
+    """
+    How each of this teacher's classes is doing this term, compared with the
+    other classes in its year group: the class average and its position, and
+    for each subject the class's average, the year group's and its position.
+    Other classes are counted but never named.
+    """
+    from reporting.analytics import SchoolGrades
+    from students.models import SchoolClass
+
+    from .scoping import ACADEMIC, scope_class_ids
+
+    profile = user.profile
+    school = profile.school
+    # Classes they teach; plus a Class Teacher's class and a Head of Year's year (leaders: just what they teach).
+    mine = set(profile.assignments.values_list("school_class_id", flat=True))
+    scope = scope_class_ids(user, ACADEMIC)
+    if scope is not None:
+        mine |= scope
+    data = SchoolGrades(school, recent=True, term_id=term_id)
+    term = data.term(term_id)
+    taught = defaultdict(set)
+    for class_id, subject_name, section in profile.assignments.filter(subject__isnull=False).values_list(
+            "school_class_id", "subject__name", "subject__education_system"):
+        taught[class_id].add((subject_name, section))
+    rows = []
+    if term is None:
+        return {"term": None, "term_name": None, "terms": [], "classes": []}
+    classes = SchoolClass.objects.filter(id__in=mine).select_related("year_group").order_by(
+        "year_group__order", "year_group__name", "name")
+    by_year = defaultdict(list)
+    for klass in SchoolClass.objects.filter(year_group__school=school, year_group_id__in={c.year_group_id for c in classes}):
+        by_year[klass.year_group_id].append(klass.id)
+    cache = {}
+
+    def stats(class_id):
+        if class_id not in cache:
+            ids = data.in_class(class_id)
+            cache[class_id] = (data.group_average(ids, term.id), data.group_subjects(ids, term.id), len(ids))
+        return cache[class_id]
+
+    for klass in classes:
+        average, subjects, size = stats(klass.id)
+        others = [stats(c) for c in by_year[klass.year_group_id]]
+        year_ids = data.in_year(klass.year_group_id)
+        year_subjects = data.group_subjects(year_ids, term.id)
+        subject_rows = []
+        for name in sorted(subjects):
+            value = subjects[name]
+            peers = [o[1].get(name) for o in others if o[1].get(name) is not None]
+            base = name.split(" · ")[0]
+            subject_rows.append({
+                "subject": name, "average": value, "year_average": year_subjects.get(name),
+                "rank": _rank(peers, value), "of": len(peers),
+                "teaches": any(base == t[0] for t in taught[klass.id]),
+            })
+        ranked = [o[0] for o in others if o[0] is not None]
+        rows.append({
+            "id": klass.id, "name": klass.name, "year_group": klass.year_group.name, "students": size,
+            "average": average, "year_average": data.group_average(year_ids, term.id),
+            "rank": _rank(ranked, average), "of": len(ranked), "subjects": subject_rows,
+        })
+    return {"term": term.id, "term_name": term.name,
+            "terms": [{"id": t.id, "name": t.name} for t in data.graded_terms], "classes": rows}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def class_performance_view(request):
+    """GET ?term=: the teacher's classes' averages and positions in their year groups (see class_performance)."""
+    return Response(class_performance(request.user, request.query_params.get("term")))
