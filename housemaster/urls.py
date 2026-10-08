@@ -37,6 +37,7 @@ from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_we
 from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
 from clubs.views import ClubViewSet, FixtureViewSet
+from homework.views import AssignmentViewSet
 from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
@@ -102,6 +103,7 @@ router.register(r"discipline/incidents", DisciplineIncidentViewSet, basename="di
 router.register(r"discipline/merits", MeritViewSet, basename="discipline-merit")
 router.register(r"clubs", ClubViewSet, basename="club")
 router.register(r"fixtures", FixtureViewSet, basename="fixture")
+router.register(r"homework", AssignmentViewSet, basename="homework")
 router.register(r"calendar/events", EventViewSet, basename="calendar-event")
 
 urlpatterns = [

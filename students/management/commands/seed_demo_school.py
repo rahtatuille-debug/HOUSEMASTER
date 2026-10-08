@@ -173,6 +173,15 @@ class Command(BaseCommand):
                     added = fill_calendar(school)
                 if added:
                     self.stdout.write(f"{name}: {added} calendar events.")
+        from homework.demo import fill_demo as fill_homework
+
+        for name in [SCHOOL_NAME, *(spec["name"] for spec in demo_systems.DEMOS)]:
+            school = School.objects.filter(name=name).first()
+            if school:
+                with transaction.atomic():
+                    added = fill_homework(school)
+                if added:
+                    self.stdout.write(f"{name}: {added} pieces of homework.")
 
     def _admissions(self):
         """Open admissions with applications at every stage, for demo schools that don't have them yet."""

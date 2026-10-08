@@ -15,6 +15,7 @@ from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
 from clubs.services import parent_view as clubs_parent_view
+from homework.services import student_view as homework_view
 from discipline.serializers import parent_merit_rows
 from discipline.serializers import parent_rows as discipline_parent_rows
 from support.services import parent_view as support_parent_view
@@ -257,6 +258,8 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             "merits": parent_merit_rows(student),
             # Clubs and teams: when they meet, attendance, fixtures and results.
             "clubs": clubs_parent_view(student),
+            # Homework due from a month ago on, with how it went.
+            "homework": homework_view(student),
         })
 
     @action(detail=True, methods=["post", "delete"], url_path="health-notes-request")
