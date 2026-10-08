@@ -120,6 +120,11 @@ def family_export(student):
          i.recorded_by_name]
         for i in student.discipline_incidents.order_by("date", "id")
     ], widths={"What happened": 60, "Staff notes": 50})
+    _sheet(wb, "Merits", ["Date", "For", "Points", "Reason", "Shared with parents", "Given by"], [
+        [m.date.isoformat(), m.get_category_display(), m.points, m.reason, "Yes" if m.shared_with_parents else "No",
+         m.awarded_by_name]
+        for m in student.merits.order_by("date", "id")
+    ], widths={"Reason": 60})
     _sheet(wb, "Clubs", ["Kind", "Club", "Date", "Details"], [
         ["Member", m.club.name, m.joined_on.isoformat(), m.role] for m in _club_memberships(student)
     ] + [
@@ -254,6 +259,10 @@ def family_export_data(student):
             "staff_notes": i.staff_notes, "shared_with_parents": i.shared_with_parents,
             "recorded_by": i.recorded_by_name,
         } for i in student.discipline_incidents.order_by("date", "id")],
+        "merits": [{
+            "date": _iso(m.date), "for": m.get_category_display(), "points": m.points, "reason": m.reason,
+            "shared_with_parents": m.shared_with_parents, "given_by": m.awarded_by_name,
+        } for m in student.merits.order_by("date", "id")],
         "clubs": {
             "memberships": [{"club": m.club.name, "joined": _iso(m.joined_on), "role": m.role}
                             for m in _club_memberships(student)],
@@ -380,6 +389,7 @@ def remove_personal_data(student, actor):
     counts["applications_deleted"] = applications_about(student).delete()[0]
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
     counts["discipline_records_deleted"] = student.discipline_incidents.all().delete()[0]
+    counts["merits_deleted"] = student.merits.all().delete()[0]
     counts["club_records_deleted"] = (student.club_memberships.all().delete()[0]
                                       + student.club_attendance.all().delete()[0])
     student.fixtures.clear()

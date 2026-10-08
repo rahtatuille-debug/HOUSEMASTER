@@ -66,3 +66,47 @@ class DisciplineIncident(models.Model):
 
     def __str__(self):
         return f"{self.student} {self.get_category_display()} ({self.date})"
+
+
+class Merit(models.Model):
+    """
+    A reward for a student: what it was for and how many points it's worth,
+    so a student's record isn't only incidents.
+
+    Staff who can see the student see every merit. Parents see a merit in
+    the app when it is shared with them (the default); they aren't emailed.
+    """
+
+    class Category(models.TextChoices):
+        WORK = "work", "Excellent work"
+        EFFORT = "effort", "Effort"
+        IMPROVEMENT = "improvement", "Big improvement"
+        KINDNESS = "kindness", "Kindness and respect"
+        HELPING = "helping", "Helping others"
+        LEADERSHIP = "leadership", "Leadership"
+        SERVICE = "service", "Service to the school"
+        SPORT = "sport", "Sport"
+        ARTS = "arts", "Music, drama or art"
+        ATTENDANCE = "attendance", "Attendance and punctuality"
+        OTHER = "other", "Other"
+
+    MAX_POINTS = 5
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="merits")
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="merits")
+    date = models.DateField()
+    category = models.CharField(max_length=20, choices=Category.choices)
+    points = models.PositiveSmallIntegerField(default=1)
+    reason = models.CharField(max_length=500, blank=True, help_text="What it was for. Parents see it if shared.")
+    shared_with_parents = models.BooleanField(default=True)
+    awarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    awarded_by_name = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        indexes = [models.Index(fields=["school", "-date"])]
+
+    def __str__(self):
+        return f"{self.student} {self.get_category_display()} +{self.points} ({self.date})"
