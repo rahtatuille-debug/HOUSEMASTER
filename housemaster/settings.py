@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     'activity',
     'approvals',
     'support',
+    'discipline',
     'timetable',
     'boarding',
     'admissions',
