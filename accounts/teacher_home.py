@@ -227,3 +227,67 @@ def class_performance(user, term_id=None):
 def class_performance_view(request):
     """GET ?term=: the teacher's classes' averages and positions in their year groups (see class_performance)."""
     return Response(class_performance(request.user, request.query_params.get("term")))
+
+
+MIN_GROUP = 3  # fewer students than this with marks, and an average would show their own results
+
+
+def _class_average(data, student_ids, term_id, subject=None):
+    """The class's average (overall, or in one subject) and how many students it's built from."""
+    if subject is None:
+        values = [data.student_average(s, term_id) for s in student_ids]
+    else:
+        values = [data.student_subject(s, term_id, subject) for s in student_ids
+                  if subject in data.marks.get((s, term_id), {})]
+    values = [v for v in values if v is not None]
+    if len(values) < MIN_GROUP:
+        return None, len(values)
+    return round(sum(values) / len(values), 1), len(values)
+
+
+def all_classes(user, term_id=None):
+    """
+    Every class at the school with its average for the term and its position
+    in its year group, plus each subject's class average: class figures only,
+    never a student. A figure built from fewer than MIN_GROUP students is left
+    out (it would show those students' own results).
+    """
+    from reporting.analytics import SchoolGrades
+    from students.models import SchoolClass, YearGroup
+
+    school = user.profile.school
+    data = SchoolGrades(school, recent=True, term_id=term_id)
+    term = data.term(term_id)
+    if term is None:
+        return {"term": None, "term_name": None, "terms": [], "year_groups": [], "min_group": MIN_GROUP}
+    mine = set(user.profile.assignments.values_list("school_class_id", flat=True))
+    years = []
+    for year in YearGroup.objects.filter(school=school).order_by("order", "name"):
+        classes = list(SchoolClass.objects.filter(year_group=year).order_by("name"))
+        rows, subjects = [], set()
+        for klass in classes:
+            ids = data.in_class(klass.id)
+            average, marked = _class_average(data, ids, term.id)
+            names = {name for s in ids for name in data.marks.get((s, term.id), {})}
+            subjects |= names
+            rows.append({"id": klass.id, "name": klass.name, "students": len(ids), "average": average,
+                         "mine": klass.id in mine,
+                         "subjects": {n: _class_average(data, ids, term.id, n)[0] for n in names}})
+        # Listed once anyone in the year has marks, even if every figure is too small to show.
+        if not subjects:
+            continue
+        averages = [r["average"] for r in rows]
+        for r in rows:
+            r["rank"] = _rank(averages, r["average"])
+            r["of"] = sum(1 for a in averages if a is not None)
+        years.append({"id": year.id, "name": year.name, "classes": rows, "subjects": sorted(subjects),
+                      "average": _class_average(data, data.in_year(year.id), term.id)[0]})
+    return {"term": term.id, "term_name": term.name, "terms": [{"id": t.id, "name": t.name} for t in data.graded_terms],
+            "year_groups": years, "min_group": MIN_GROUP}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def all_classes_view(request):
+    """GET ?term=: every class's average and position in its year group, and its subject averages (no students)."""
+    return Response(all_classes(request.user, request.query_params.get("term")))
