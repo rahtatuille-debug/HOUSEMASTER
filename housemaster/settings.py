@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     'support',
     'discipline',
     'clubs',
+    'homework',
     'timetable',
     'boarding',
     'admissions',

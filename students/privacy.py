@@ -125,6 +125,12 @@ def family_export(student):
          m.awarded_by_name]
         for m in student.merits.order_by("date", "id")
     ], widths={"Reason": 60})
+    _sheet(wb, "Homework", ["Due", "Subject", "Homework", "Recorded as", "Mark", "Teacher's comment", "Marked done",
+                            "Answer"], [
+        [r.assignment.due_date.isoformat(), r.assignment.subject.name, r.assignment.title,
+         r.get_status_display() if r.status else "", r.mark, r.comment, _when(r.done_at) if r.done_at else "", r.answer]
+        for r in _homework(student)
+    ], widths={"Homework": 40, "Teacher's comment": 50, "Answer": 60})
     _sheet(wb, "Clubs", ["Kind", "Club", "Date", "Details"], [
         ["Member", m.club.name, m.joined_on.isoformat(), m.role] for m in _club_memberships(student)
     ] + [
@@ -263,6 +269,11 @@ def family_export_data(student):
             "date": _iso(m.date), "for": m.get_category_display(), "points": m.points, "reason": m.reason,
             "shared_with_parents": m.shared_with_parents, "given_by": m.awarded_by_name,
         } for m in student.merits.order_by("date", "id")],
+        "homework": [{
+            "due": _iso(r.assignment.due_date), "subject": r.assignment.subject.name, "homework": r.assignment.title,
+            "recorded_as": r.get_status_display() if r.status else "", "mark": r.mark, "comment": r.comment,
+            "marked_done": _iso(r.done_at), "answer": r.answer,
+        } for r in _homework(student)],
         "clubs": {
             "memberships": [{"club": m.club.name, "joined": _iso(m.joined_on), "role": m.role}
                             for m in _club_memberships(student)],
@@ -390,6 +401,7 @@ def remove_personal_data(student, actor):
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
     counts["discipline_records_deleted"] = student.discipline_incidents.all().delete()[0]
     counts["merits_deleted"] = student.merits.all().delete()[0]
+    counts["homework_records_deleted"] = student.homework_records.all().delete()[0]
     counts["club_records_deleted"] = (student.club_memberships.all().delete()[0]
                                       + student.club_attendance.all().delete()[0])
     student.fixtures.clear()
@@ -444,3 +456,7 @@ def _club_marks(student):
 
 def _club_fixtures(student):
     return student.fixtures.select_related("club").order_by("date", "id")
+
+
+def _homework(student):
+    return student.homework_records.select_related("assignment__subject").order_by("assignment__due_date", "id")

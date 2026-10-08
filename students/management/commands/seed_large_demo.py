@@ -70,6 +70,12 @@ class Command(BaseCommand):
             if not Club.objects.filter(school=existing).exists():  # built before clubs
                 with transaction.atomic():
                     self.stdout.write(f"Added {fill_clubs(existing)} clubs.")
+            from homework.demo import fill_demo as fill_homework
+
+            with transaction.atomic():
+                added = fill_homework(existing)  # nothing when it already has homework
+            if added:
+                self.stdout.write(f"Added {added} pieces of homework.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()
@@ -86,4 +92,7 @@ class Command(BaseCommand):
             from clubs.demo import fill_demo as fill_clubs
 
             fill_clubs(School.objects.get(name=demo_large.NAME))
+            from homework.demo import fill_demo as fill_homework
+
+            fill_homework(School.objects.get(name=demo_large.NAME))
         self.stdout.write(self.style.SUCCESS(f"{summary} ({time.monotonic() - started:.0f} s)"))
