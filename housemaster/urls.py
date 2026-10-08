@@ -38,6 +38,7 @@ from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
 from clubs.views import ClubViewSet, FixtureViewSet
 from homework.views import AssignmentViewSet
+from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
@@ -103,6 +104,7 @@ router.register(r"discipline/merits", MeritViewSet, basename="discipline-merit")
 router.register(r"clubs", ClubViewSet, basename="club")
 router.register(r"fixtures", FixtureViewSet, basename="fixture")
 router.register(r"homework", AssignmentViewSet, basename="homework")
+router.register(r"calendar/events", EventViewSet, basename="calendar-event")
 
 urlpatterns = [
     path(settings.ADMIN_PATH, admin.site.urls),
@@ -141,6 +143,9 @@ urlpatterns = [
     path('api/guardian-invites/preview/<str:token>/', GuardianInvitePreviewView.as_view(), name='guardian_invite_preview'),
     path('api/guardian-invites/accept/', AcceptGuardianInviteView.as_view(), name='guardian_invite_accept'),
     path('api/guardian-me/', guardian_me, name='guardian_me'),
+    path('api/calendar/', calendar, name='calendar'),
+    path('api/calendar/feed/', calendar_feed, name='calendar_feed'),
+    path('api/calendar/ical/<str:token>.ics', calendar_ical, name='calendar_ical'),
     path('api/join/<str:token>/', join, name='parent_join'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),

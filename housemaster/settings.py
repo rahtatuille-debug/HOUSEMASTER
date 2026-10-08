@@ -104,6 +104,7 @@ INSTALLED_APPS = [
     'discipline',
     'clubs',
     'homework',
+    'schoolcalendar',
     'timetable',
     'boarding',
     'admissions',

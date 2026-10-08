@@ -70,6 +70,13 @@ class Command(BaseCommand):
             if not Club.objects.filter(school=existing).exists():  # built before clubs
                 with transaction.atomic():
                     self.stdout.write(f"Added {fill_clubs(existing)} clubs.")
+            from schoolcalendar.demo import fill_demo as fill_calendar
+
+            with transaction.atomic():
+                added = fill_calendar(existing)  # nothing when it already has events
+            if added:
+                self.stdout.write(f"Added {added} calendar events.")
+
             from homework.demo import fill_demo as fill_homework
 
             with transaction.atomic():
@@ -91,7 +98,10 @@ class Command(BaseCommand):
             summary = demo_large.build(make_password(password))
             from clubs.demo import fill_demo as fill_clubs
 
+            from schoolcalendar.demo import fill_demo as fill_calendar
+
             fill_clubs(School.objects.get(name=demo_large.NAME))
+            fill_calendar(School.objects.get(name=demo_large.NAME))
             from homework.demo import fill_demo as fill_homework
 
             fill_homework(School.objects.get(name=demo_large.NAME))
