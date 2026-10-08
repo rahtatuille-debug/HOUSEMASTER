@@ -125,7 +125,7 @@ def build_dashboard(school):
 
 def governor_figures(school):
     """School-wide numbers for governors: no student, parent or staff names."""
-    from discipline.models import DisciplineIncident
+    from discipline.models import DisciplineIncident, Merit
     from support.models import SupportConcern
 
     from .models import Profile
@@ -149,5 +149,6 @@ def governor_figures(school):
             "total": incidents.count(),
             **{sev: incidents.filter(severity=sev).count() for sev in DisciplineIncident.Severity.values},
         },
+        "merits_last_30_days": Merit.objects.filter(school=school, date__gte=since).count(),
         "reports_waiting": full["reports_waiting"]["count"],
     }

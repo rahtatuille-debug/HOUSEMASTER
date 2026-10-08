@@ -36,7 +36,7 @@ from timetable import views as timetable_views
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
-from discipline.views import DisciplineIncidentViewSet
+from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import performance
@@ -97,6 +97,7 @@ router.register(r"timetable/lessons", LessonViewSet, basename="timetable-lesson"
 router.register(r"timetable/absences", timetable_views.StaffAbsenceViewSet, basename="timetable-absence")
 router.register(r"support/concerns", SupportConcernViewSet, basename="support-concern")
 router.register(r"discipline/incidents", DisciplineIncidentViewSet, basename="discipline-incident")
+router.register(r"discipline/merits", MeritViewSet, basename="discipline-merit")
 
 urlpatterns = [
     path(settings.ADMIN_PATH, admin.site.urls),

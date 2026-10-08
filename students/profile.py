@@ -170,6 +170,7 @@ def build_profile(student, user):
         # Staff only: the guardians' view picks its own fields and never this.
         "support": _support(student) if pastoral else None,
         "discipline": _discipline(student) if pastoral else None,
+        "merits": _merits(student) if pastoral else None,
         # Which parts this person may see, so the page can say so.
         "sections": {"academic": academic, "pastoral": pastoral},
         "boarding": _boarding(student),
@@ -202,6 +203,18 @@ def _discipline(student):
 
     incidents = student.discipline_incidents.select_related("student__school_class")
     return {"count": incidents.count(), "recent": DisciplineIncidentSerializer(incidents[:10], many=True).data}
+
+
+def _merits(student):
+    """The student's merit points and latest merits (discipline app). Staff only."""
+    from django.db.models import Count, Sum
+
+    from discipline.serializers import MeritSerializer
+
+    merits = student.merits.select_related("student__school_class")
+    totals = merits.aggregate(count=Count("id"), points=Sum("points"))
+    return {"count": totals["count"], "points": totals["points"] or 0,
+            "recent": MeritSerializer(merits[:10], many=True).data}
 
 
 def _boarding(student):
