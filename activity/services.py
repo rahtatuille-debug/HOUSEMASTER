@@ -11,6 +11,8 @@ def display_name(user):
     guardian = getattr(user, "guardian", None)
     if guardian is not None:
         return guardian.name
+    if hasattr(user, "student_account"):
+        return f"{user.get_full_name().strip() or user.username} (student)"
     return user.get_full_name().strip() or "Unknown user"
 
 

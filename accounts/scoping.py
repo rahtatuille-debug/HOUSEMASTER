@@ -214,6 +214,7 @@ def permissions_for(user):
         "approve_requests": leader,
         "manage_admissions": can_manage_admissions(user),
         "manage_parents": can_manage_parents(user),
+        "manage_student_accounts": leader or can_manage_parents(user),
         "send_announcements": can_send_announcements(user),
         "send_alerts": leader,
         "nurse": is_nurse(user),

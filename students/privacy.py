@@ -269,6 +269,7 @@ def family_export_data(student):
             "date": _iso(m.date), "for": m.get_category_display(), "points": m.points, "reason": m.reason,
             "shared_with_parents": m.shared_with_parents, "given_by": m.awarded_by_name,
         } for m in student.merits.order_by("date", "id")],
+        "student_account": _account(student),
         "homework": [{
             "due": _iso(r.assignment.due_date), "subject": r.assignment.subject.name, "homework": r.assignment.title,
             "recorded_as": r.get_status_display() if r.status else "", "mark": r.mark, "comment": r.comment,
@@ -401,6 +402,7 @@ def remove_personal_data(student, actor):
     counts["support_concerns_deleted"] = student.support_concerns.all().delete()[0]
     counts["discipline_records_deleted"] = student.discipline_incidents.all().delete()[0]
     counts["merits_deleted"] = student.merits.all().delete()[0]
+    counts["student_account_deleted"] = 1 if _delete_account(student) else 0
     counts["homework_records_deleted"] = student.homework_records.all().delete()[0]
     counts["club_records_deleted"] = (student.club_memberships.all().delete()[0]
                                       + student.club_attendance.all().delete()[0])
@@ -460,3 +462,19 @@ def _club_fixtures(student):
 
 def _homework(student):
     return student.homework_records.select_related("assignment__subject").order_by("assignment__due_date", "id")
+
+
+def _account(student):
+    from studentaccounts.models import StudentAccount
+
+    account = StudentAccount.objects.filter(student=student).select_related("user").first()
+    if account is None:
+        return None
+    return {"username": account.user.username, "made": _iso(account.created_at), "made_by": account.created_by_name,
+            "last_signed_in": _iso(account.user.last_login), "turned_on": account.user.is_active}
+
+
+def _delete_account(student):
+    from studentaccounts.models import StudentAccount
+
+    return StudentAccount.objects.filter(student=student).delete()[0] > 0
