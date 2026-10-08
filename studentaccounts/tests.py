@@ -223,3 +223,11 @@ class PrivacyTests(Base):
         self.ben.delete()
         self.assertFalse(User.objects.filter(username=made["username"]).exists())
         self.assertFalse(StudentAccount.objects.exists())
+
+
+class PermissionFlagTests(Base):
+    def test_me_says_who_manages_student_accounts(self):
+        self.assertTrue(self.admin.get("/api/me/").data["permissions"]["manage_student_accounts"])
+        self.assertFalse(self.client_a.get("/api/me/").data["permissions"]["manage_student_accounts"])
+        lead = self.staff("lead@alpha.test", "teacher", "leadership")[1]
+        self.assertTrue(lead.get("/api/me/").data["permissions"]["manage_student_accounts"])
