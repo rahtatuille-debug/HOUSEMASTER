@@ -14,6 +14,7 @@ from accounts.tokens import tokens_for
 from activity.services import log_activity, student_name
 from gradebook.levels import school_summary
 
+from discipline.serializers import parent_merit_rows
 from discipline.serializers import parent_rows as discipline_parent_rows
 from support.services import parent_view as support_parent_view
 
@@ -251,6 +252,8 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
             "support": support_parent_view(student),
             # Only the records staff chose to share, without staff notes.
             "discipline": discipline_parent_rows(student),
+            # Merits the school shared (the default).
+            "merits": parent_merit_rows(student),
         })
 
     @action(detail=True, methods=["post", "delete"], url_path="health-notes-request")
