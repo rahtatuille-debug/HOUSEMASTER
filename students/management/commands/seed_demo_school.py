@@ -151,6 +151,19 @@ class Command(BaseCommand):
         self._timetables()
         self._boarding()
         self._admissions()
+        self._clubs()
+
+    def _clubs(self):
+        """Clubs, teams and fixtures for demo schools that don't have them yet."""
+        from clubs.demo import fill_demo
+        from clubs.models import Club
+        from students import demo_systems
+
+        for name in [SCHOOL_NAME, *(spec["name"] for spec in demo_systems.DEMOS)]:
+            school = School.objects.filter(name=name).first()
+            if school and not Club.objects.filter(school=school).exists():
+                with transaction.atomic():
+                    self.stdout.write(f"{name}: {fill_demo(school)} clubs.")
 
     def _admissions(self):
         """Open admissions with applications at every stage, for demo schools that don't have them yet."""

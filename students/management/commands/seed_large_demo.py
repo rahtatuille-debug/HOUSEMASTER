@@ -64,6 +64,12 @@ class Command(BaseCommand):
             if not Application.objects.filter(school=existing).exists():  # built before admissions
                 with transaction.atomic():
                     self.stdout.write(f"Added {fill_admissions(existing, demo_large.DOMAIN)} applications.")
+            from clubs.demo import fill_demo as fill_clubs
+            from clubs.models import Club
+
+            if not Club.objects.filter(school=existing).exists():  # built before clubs
+                with transaction.atomic():
+                    self.stdout.write(f"Added {fill_clubs(existing)} clubs.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()
@@ -77,4 +83,7 @@ class Command(BaseCommand):
                 existing.delete()
                 users.delete()
             summary = demo_large.build(make_password(password))
+            from clubs.demo import fill_demo as fill_clubs
+
+            fill_clubs(School.objects.get(name=demo_large.NAME))
         self.stdout.write(self.style.SUCCESS(f"{summary} ({time.monotonic() - started:.0f} s)"))
