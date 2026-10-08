@@ -18,7 +18,7 @@ from students.models import Student
 
 from .models import Club, ClubAttendance, ClubMember, ClubSession, Fixture
 from .serializers import ClubSerializer, FixtureSerializer
-from .services import attendance_counts, can_manage
+from .services import attendance_counts, can_manage, notify_squad
 
 CLUB_FIELDS = ("name", "kind", "description", "meets", "location", "is_active")
 FIXTURE_FIELDS = ("date", "start_time", "opponent", "venue", "location", "competition", "team", "our_score",
@@ -294,7 +294,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
     the club's staff, leadership and admins add and change them. POST/PATCH
     {club (create only), date, start_time, opponent, venue, location,
     competition, team, our_score, their_score, result_note, report,
-    players: [member ids]}. Filter with ?club=, ?upcoming=1 (today on,
+    players: [member ids]}; parents of students newly picked for a fixture
+    still to come get a short email (`parents_emailed`). Filter with ?club=, ?upcoming=1 (today on,
     soonest first, no result yet), ?results=1 (with a result, latest first),
     ?from=, ?to=.
     """
@@ -333,11 +334,17 @@ class FixtureViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only the club's staff, leadership or an admin can do this.")
 
     def _set_players(self, fixture, ids):
+        """Set the squad; returns how many parents of newly picked students were emailed (fixtures still to come)."""
         ids = _ids(ids, "players")
         members = set(fixture.club.members.filter(student__is_active=True).values_list("student_id", flat=True))
         if not ids <= members:
             raise ValidationError({"players": ["Only the club's members can be picked."]})
+        before = set(fixture.players.values_list("id", flat=True))
         fixture.players.set(ids)
+        getattr(fixture, "_prefetched_objects_cache", {}).pop("players", None)  # answer with the new squad
+        if fixture.date < school_localdate(fixture.club.school) or fixture.has_result:
+            return 0
+        return notify_squad(fixture, ids - before)
 
     def create(self, request, *args, **kwargs):
         try:
@@ -347,13 +354,14 @@ class FixtureViewSet(viewsets.ModelViewSet):
         self._check(club)
         serializer = self.get_serializer(data={k: v for k, v in request.data.items() if k in FIXTURE_FIELDS})
         serializer.is_valid(raise_exception=True)
+        emailed = 0
         with transaction.atomic():
             fixture = serializer.save(club=club)
             if "players" in request.data:
-                self._set_players(fixture, request.data["players"])
+                emailed = self._set_players(fixture, request.data["players"])
         log_activity(school=club.school, actor=request.user, action="clubs.fixture_added", target=club,
                      summary=f"Added {club.name} v {fixture.opponent} on {fixture.date.isoformat()}")
-        return Response(self.get_serializer(fixture).data, status=201)
+        return Response({**self.get_serializer(fixture).data, "parents_emailed": emailed}, status=201)
 
     def partial_update(self, request, *args, **kwargs):
         fixture = self.get_object()
@@ -362,14 +370,15 @@ class FixtureViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(fixture, data={k: v for k, v in request.data.items() if k in FIXTURE_FIELDS},
                                          partial=True)
         serializer.is_valid(raise_exception=True)
+        emailed = 0
         with transaction.atomic():
             fixture = serializer.save()
             if "players" in request.data:
-                self._set_players(fixture, request.data["players"])
+                emailed = self._set_players(fixture, request.data["players"])
         what = "the result of" if fixture.has_result and not had_result else "the fixture"
         log_activity(school=fixture.club.school, actor=request.user, action="clubs.fixture_updated", target=fixture.club,
                      summary=f"Updated {what} {fixture.club.name} v {fixture.opponent} ({fixture.date.isoformat()})")
-        return Response(self.get_serializer(fixture).data)
+        return Response({**self.get_serializer(fixture).data, "parents_emailed": emailed})
 
     def update(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
