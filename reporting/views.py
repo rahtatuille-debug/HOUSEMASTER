@@ -348,6 +348,10 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Only leadership, or this year group's Head of Year, can approve reports.")
         check_term_open(term)
         submitted = self._class_reports(request, school_class, term, "submitted")
+        return Response(self._finalize_all(request, submitted, school_class, school_class.name, term))
+
+    def _finalize_all(self, request, submitted, target, label, term):
+        """Finalize every waiting report with content (blank ones stay waiting), tell parents, log once."""
         blank = submitted.blank().count()
         reports = submitted.with_content()
         ids = list(reports.values_list("id", flat=True))
@@ -360,11 +364,94 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             StudentReport.objects.filter(id__in=ids).select_related("student__school", "term"), request.user)
         if count:
             log_activity(
-                school=school_class.year_group.school, actor=request.user, action="report.class_finalized",
-                target=school_class,
-                summary=f"Finalized {count} {school_class.name} reports for {term.name} and released them to parents",
+                school=request.user.profile.school, actor=request.user, action="report.class_finalized",
+                target=target,
+                summary=f"Finalized {count} {label} reports for {term.name} and released them to parents",
             )
-        return Response({"count": count, "blank": blank})
+        return {"count": count, "blank": blank}
+
+    def _waiting_for_me(self, request):
+        """Submitted reports this person may approve: leaders every class, a Head of Year their year group."""
+        reports = StudentReport.objects.filter(student__school=request.user.profile.school, status="submitted",
+                                               student__is_active=True)
+        if not is_leader(request.user):
+            reports = reports.filter(student__school_class__year_group_id__in=head_of_year_ids(request.user))
+        return reports
+
+    @action(detail=False, methods=["get"], url_path="waiting")
+    def waiting(self, request):
+        """
+        Reports waiting for approval, grouped by term and year group, then class:
+        [{term, term_name, year_group, year_group_name, count, blank, classes:
+        [{id, name, count, blank}]}]. Only what this person may approve.
+        """
+        from collections import defaultdict
+
+        reports = self._waiting_for_me(request)
+        blank_ids = set(reports.blank().values_list("id", flat=True))
+        groups = {}
+        classes = defaultdict(lambda: {"count": 0, "blank": 0})
+        for r in reports.values("id", "term_id", "term__name", "term__start_date", "student__school_class_id",
+                                "student__school_class__name", "student__school_class__year_group_id",
+                                "student__school_class__year_group__name", "student__school_class__year_group__order"):
+            if r["student__school_class_id"] is None:
+                continue  # a student with no class is approved one by one
+            key = (r["term_id"], r["student__school_class__year_group_id"])
+            group = groups.setdefault(key, {
+                "term": r["term_id"], "term_name": r["term__name"], "_start": r["term__start_date"],
+                "_order": r["student__school_class__year_group__order"],
+                "year_group": r["student__school_class__year_group_id"],
+                "year_group_name": r["student__school_class__year_group__name"], "count": 0, "blank": 0})
+            row = classes[key + (r["student__school_class_id"],)]
+            row["name"] = r["student__school_class__name"]
+            is_blank = r["id"] in blank_ids
+            for target in (group, row):
+                target["count"] += 1
+                target["blank"] += int(is_blank)
+        out = []
+        for key, group in groups.items():
+            group["classes"] = sorted(
+                [{"id": k[2], **v} for k, v in classes.items() if k[:2] == key], key=lambda c: c["name"])
+            out.append(group)
+        out.sort(key=lambda g: (-(g["_start"].toordinal() if g["_start"] else 0), g["_order"] or 0, g["year_group_name"]))
+        for group in out:
+            del group["_start"], group["_order"]
+        return Response(out)
+
+    @action(detail=False, methods=["post"], url_path="approve-all")
+    def approve_all(self, request):
+        """
+        {term, school_class} or {term, year_group}: finalize every waiting report
+        there and release them to parents. Reports with a blank comment or
+        summary stay waiting. Leaders for any class; a Head of Year for their own.
+        """
+        from students.models import YearGroup
+
+        school = request.user.profile.school
+        try:
+            term = Term.objects.get(pk=request.data.get("term"), school=school)
+        except (Term.DoesNotExist, ValueError, TypeError):
+            raise NotFound("Term not found.")
+        check_term_open(term)
+        reports = self._waiting_for_me(request).filter(term=term)
+        if request.data.get("school_class"):
+            try:
+                target = SchoolClass.objects.select_related("year_group").get(
+                    pk=request.data.get("school_class"), year_group__school=school)
+            except (SchoolClass.DoesNotExist, ValueError, TypeError):
+                raise NotFound("Class not found.")
+            year_group_id, reports = target.year_group_id, reports.filter(student__school_class=target)
+        elif request.data.get("year_group"):
+            try:
+                target = YearGroup.objects.get(pk=request.data.get("year_group"), school=school)
+            except (YearGroup.DoesNotExist, ValueError, TypeError):
+                raise NotFound("Year group not found.")
+            year_group_id, reports = target.id, reports.filter(student__school_class__year_group=target)
+        else:
+            raise ValidationError("Choose a class or a year group.")
+        if not (is_leader(request.user) or year_group_id in head_of_year_ids(request.user)):
+            raise PermissionDenied("Only leadership, or this year group's Head of Year, can approve reports.")
+        return Response(self._finalize_all(request, reports, target, target.name, term))
 
 
 def _record_classes(report_ids):
