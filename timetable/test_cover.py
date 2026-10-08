@@ -52,6 +52,7 @@ class CoverTests(RoleFixture):
         self.assertNotIn(self.t1.name, free_p1)  # away
         self.assertNotIn(self.t3.name, [f["name"] for f in day["lessons"][1]["free"]])  # teaching Lesson 2
         self.assertEqual(day["absent"][0]["reason"], "Sick")
+        self.assertIn(self.t3.name, [p["name"] for p in day["staff"]])
 
     def test_arranging_cover_and_the_cover_teachers_day(self):
         self.away()

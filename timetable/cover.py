@@ -74,7 +74,8 @@ def _busy(school, day):
 def cover_day(school, day):
     """Every lesson needing cover on `day`, with who's away, the cover arranged and who is free."""
     if day.isoweekday() not in school_days(school):
-        return {"date": day, "day_name": DAY_NAMES[day.isoweekday()], "school_day": False, "absent": [], "lessons": []}
+        return {"date": day, "day_name": DAY_NAMES[day.isoweekday()], "school_day": False, "absent": [], "lessons": [],
+                "covered": 0, "total": 0, "staff": staff_list(school)}
     away = absent_on(school, day)
     busy = _busy(school, day)
     reasons = {}
@@ -107,7 +108,14 @@ def cover_day(school, day):
                "all_day": a.teacher_id in away and away[a.teacher_id] is None} for a in reasons.values()]
     return {"date": day, "day_name": DAY_NAMES[day.isoweekday()], "school_day": True,
             "absent": sorted(absent, key=lambda a: a["name"]), "lessons": rows,
-            "covered": sum(1 for r in rows if r["cover"]), "total": len(rows)}
+            "covered": sum(1 for r in rows if r["cover"]), "total": len(rows), "staff": staff_list(school)}
+
+
+def staff_list(school):
+    """Everyone who could be away or cover (not governors), for the forms on the Cover page."""
+    staff = Profile.objects.filter(school=school, user__is_active=True).exclude(role=Profile.Role.GOVERNOR) \
+        .select_related("user")
+    return sorted(({"id": p.id, "name": p.name} for p in staff), key=lambda r: r["name"])
 
 
 def arrange(lesson, day, cover_teacher, note, actor):
