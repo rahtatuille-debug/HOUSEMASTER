@@ -104,13 +104,6 @@ def family_export(student):
          c.review_date.isoformat() if c.review_date else "", _when(c.closed_at) if c.closed_at else ""]
         for c in student.support_concerns.select_related("term").order_by("created_at")
     ], widths={"Note": 50, "Support plan": 60})
-    _sheet(wb, "Discipline", ["Date", "Category", "Severity", "What happened", "Action", "Action detail",
-                              "Staff notes", "Shared with parents", "Recorded by"], [
-        [i.date.isoformat(), i.get_category_display(), i.get_severity_display(), i.description,
-         i.get_action_display(), i.action_detail, i.staff_notes, "Yes" if i.shared_with_parents else "No",
-         i.recorded_by_name]
-        for i in student.discipline_incidents.order_by("date", "id")
-    ], widths={"What happened": 60, "Staff notes": 50})
     _sheet(wb, "Boarding", ["Kind", "What", "From", "To", "Details", "Status"], [
         ["Leave", l.get_kind_display(), _when(l.leaving_at), _when(l.returning_at),
          "; ".join(x for x in (l.reason, l.collected_by, l.decision_note) if x), l.get_status_display()]
@@ -120,6 +113,13 @@ def family_export(student):
          v.treatment, v.get_outcome_display() if v.outcome else "In sick bay"]
         for v in student.sick_bay_visits.order_by("checked_in_at")
     ], widths={"Details": 60, "What": 40})
+    _sheet(wb, "Discipline", ["Date", "Category", "Severity", "What happened", "Action", "Action detail",
+                              "Staff notes", "Shared with parents", "Recorded by"], [
+        [i.date.isoformat(), i.get_category_display(), i.get_severity_display(), i.description,
+         i.get_action_display(), i.action_detail, i.staff_notes, "Yes" if i.shared_with_parents else "No",
+         i.recorded_by_name]
+        for i in student.discipline_incidents.order_by("date", "id")
+    ], widths={"What happened": 60, "Staff notes": 50})
     from admissions.services import application_row, applications_about
 
     rows = [application_row(a) for a in applications_about(student).order_by("created_at")]
