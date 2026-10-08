@@ -83,7 +83,7 @@ def items(user, start, end):
 # iCalendar ---------------------------------------------------------------
 
 def _text(value):
-    return (str(value).replace("\\", "\\\\").replace(";", "\;").replace(",", "\\,").replace("\r\n", "\\n")
+    return (str(value).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n")
             .replace("\n", "\\n"))
 
 
