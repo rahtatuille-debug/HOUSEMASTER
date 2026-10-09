@@ -361,7 +361,7 @@ Off until you set the keys. Do it once; changing them later turns notifications 
 Schools on HouseMaster before subscriptions began, and the demo schools, are **exempt** (free) until you change it. New schools are billed from the day they register (no trial), but **nothing is invoiced until you set prices**.
 
 1. **Sign in to the owner's admin.** Open `<backend address>/<DJANGO_ADMIN_PATH>` (default `/admin/`). If you have no admin login yet, in the Render shell run `python manage.py createsuperuser` and choose a strong password.
-2. **Set your prices.** Admin → *Billing* → *Plans*: Small (up to 300 students), Medium (up to 1,000), Large (any size). Enter each monthly price and currency (default KES). A plan with no price is never invoiced. You can rename tiers or change limits.
+2. **Prices.** The price is **KES 50 a month for each active student** (the *Per student* plan, set already). Each month's invoice counts the school's active students on the day it's issued; a school with no students yet isn't invoiced. To change the rate: Admin → *Billing* → *Plans* → *Per student* → *Price per student*. The old size tiers (Small, Medium, Large) are kept but switched off; switching one on and giving it a flat monthly price would use tiers again.
 3. **Tell schools how to pay.** In Render → Environment, set:
    - `BILLING_PAYMENT_INSTRUCTIONS`, e.g. `M-Pesa Paybill 123456, account: your invoice number. Or bank transfer to ...` (shown on invoices, emails and each school's Billing page);
    - `BILLING_OWNER_EMAIL`, where "we've paid" notices from schools go.

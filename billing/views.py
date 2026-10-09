@@ -28,6 +28,11 @@ def invoice_row(i):
             "payment_reference": i.payment_reference, "school_reported_at": i.school_reported_at}
 
 
+def plan_row(p):
+    return {"name": p.name, "max_students": p.max_students, "monthly_price": p.monthly_price,
+            "price_per_student": p.price_per_student, "currency": p.currency}
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, HasSchoolProfile])
 def billing(request):
@@ -39,10 +44,8 @@ def billing(request):
     return Response({
         **services.status(school), "exempt": sub.exempt, "grace_days": sub.grace_days,
         "students": count, "paid_until": services.paid_until(school),
-        "plan": {"name": plan.name, "max_students": plan.max_students, "monthly_price": plan.monthly_price,
-                 "currency": plan.currency} if plan else None,
-        "tiers": [{"name": p.name, "max_students": p.max_students, "monthly_price": p.monthly_price, "currency": p.currency}
-                  for p in Plan.objects.filter(is_active=True)],
+        "plan": {**plan_row(plan), "monthly_amount": plan.amount_for(count)} if plan else None,
+        "tiers": [plan_row(p) for p in Plan.objects.filter(is_active=True)],
         "payment_instructions": settings.BILLING_PAYMENT_INSTRUCTIONS,
         "invoices": [invoice_row(i) for i in Invoice.objects.filter(school=school).exclude(status=Invoice.Status.VOID)],
     })

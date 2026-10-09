@@ -9,8 +9,8 @@ from .models import Invoice, Plan, Subscription
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    list_display = ("name", "max_students", "monthly_price", "currency", "is_active")
-    list_editable = ("monthly_price", "currency", "is_active")
+    list_display = ("name", "max_students", "price_per_student", "monthly_price", "currency", "is_active")
+    list_editable = ("price_per_student", "monthly_price", "currency", "is_active")
 
 
 @admin.register(Subscription)
@@ -29,10 +29,12 @@ class SubscriptionAdmin(admin.ModelAdmin):
     def students(self, obj):
         return services.active_students(obj.school)
 
-    @admin.display(description="Tier")
+    @admin.display(description="Plan (a month)")
     def tier(self, obj):
-        plan = services.tier_for(services.active_students(obj.school))
-        return f"{plan.name} ({plan.currency} {plan.monthly_price})" if plan and plan.monthly_price else (plan.name if plan else "")
+        count = services.active_students(obj.school)
+        plan = services.tier_for(count)
+        amount = plan.amount_for(count) if plan else None
+        return f"{plan.name} ({plan.currency} {amount})" if amount is not None else (plan.name if plan else "")
 
     @admin.display(description="Paid up to")
     def paid_up_to(self, obj):
