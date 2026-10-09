@@ -10,6 +10,8 @@ from accounts.permissions import HasSchoolProfile
 from accounts.scoping import is_admin
 from activity.services import log_activity
 
+from mpesa import services as mpesa_services
+
 from . import services
 from .models import Invoice, Plan
 
@@ -48,6 +50,9 @@ def billing(request):
         "tiers": [plan_row(p) for p in Plan.objects.filter(is_active=True)],
         "payment_instructions": settings.BILLING_PAYMENT_INSTRUCTIONS,
         "invoices": [invoice_row(i) for i in Invoice.objects.filter(school=school).exclude(status=Invoice.Status.VOID)],
+        # Paying by M-Pesa: the PIN prompt, or the owner's paybill with this account number.
+        "mpesa": {"paybill": settings.MPESA_SHORTCODE, "account": mpesa_services.school_account(school)}
+        if mpesa_services.owner_ready() else None,
     })
 
 
@@ -89,3 +94,24 @@ def invoice_pdf(request, invoice_id):
     response = HttpResponse(build(invoice), content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="housemaster-invoice-{invoice.number}.pdf"'
     return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def billing_mpesa(request, invoice_id):
+    """POST {phone}: send an M-Pesa PIN prompt for this invoice to the admin's phone."""
+    invoice = _invoice(request, invoice_id)
+    return Response(mpesa_services.stk_row(mpesa_services.start_subscription_payment(invoice, request.user,
+                                                                                     request.data.get("phone"))), status=201)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def billing_mpesa_status(request, request_id):
+    from mpesa.models import StkRequest
+
+    school = _admin(request)
+    stk = StkRequest.objects.filter(pk=request_id, school=school, purpose="subscription").first()
+    if stk is None:
+        raise NotFound("Not found.")
+    return Response(mpesa_services.stk_row(mpesa_services.refresh(stk)))

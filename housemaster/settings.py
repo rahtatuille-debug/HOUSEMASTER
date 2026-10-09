@@ -108,6 +108,7 @@ INSTALLED_APPS = [
     'billing',
     'absences',
     'fees',
+    'mpesa',
     'schoolcalendar',
     'timetable',
     'boarding',
@@ -437,6 +438,22 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 # e.g. "M-Pesa Paybill 123456, account: your invoice number". Where "I've paid" notices go.
 BILLING_PAYMENT_INSTRUCTIONS = os.environ.get('BILLING_PAYMENT_INSTRUCTIONS', '')
 BILLING_OWNER_EMAIL = os.environ.get('BILLING_OWNER_EMAIL', '')
+
+# M-Pesa (Safaricom Daraja; mpesa app). The public https address of this
+# backend, where Safaricom sends payment confirmations, e.g.
+# https://housemaster-api.onrender.com. Each school saves its own paybill's
+# keys in HouseMaster; the variables below are the owner's own paybill, for
+# subscriptions. MPESA_OWNER_CALLBACK_TOKEN is a long random secret that goes
+# in the callback addresses. Nothing is sent to M-Pesa until these are set.
+MPESA_CALLBACK_BASE_URL = os.environ.get('MPESA_CALLBACK_BASE_URL', '')
+MPESA_ENVIRONMENT = os.environ.get('MPESA_ENVIRONMENT', 'sandbox')
+MPESA_SHORTCODE = os.environ.get('MPESA_SHORTCODE', '')
+MPESA_CONSUMER_KEY = os.environ.get('MPESA_CONSUMER_KEY', '')
+MPESA_CONSUMER_SECRET = os.environ.get('MPESA_CONSUMER_SECRET', '')
+MPESA_PASSKEY = os.environ.get('MPESA_PASSKEY', '')
+MPESA_OWNER_CALLBACK_TOKEN = os.environ.get('MPESA_OWNER_CALLBACK_TOKEN', '')
+# Encrypts the schools' saved M-Pesa keys; defaults to one derived from SECRET_KEY.
+MPESA_ENCRYPTION_KEY = os.environ.get('MPESA_ENCRYPTION_KEY', '')
 
 # How long the link that confirms an admissions application's email address works (hours).
 ADMISSIONS_CONFIRM_HOURS = int(os.environ.get('ADMISSIONS_CONFIRM_HOURS', '48'))

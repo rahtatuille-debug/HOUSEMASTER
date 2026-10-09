@@ -273,6 +273,21 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(guardian_claim(request, self.get_object()), status=201)
 
+    @action(detail=True, methods=["post"], url_path="fees/mpesa")
+    def fee_mpesa(self, request, pk=None):
+        """Parents: {phone, amount} sends the M-Pesa PIN prompt to their phone."""
+        self._parents_only()
+        from mpesa.views import guardian_pay
+
+        return Response(guardian_pay(request, self.get_object()), status=201)
+
+    @action(detail=True, methods=["get"], url_path=r"fees/mpesa/(?P<request_id>\d+)")
+    def fee_mpesa_status(self, request, pk=None, request_id=None):
+        self._parents_only()
+        from mpesa.views import guardian_pay_status
+
+        return Response(guardian_pay_status(request, self.get_object(), request_id))
+
     @action(detail=True, methods=["get"], url_path=r"fees/receipts/(?P<payment_id>\d+)")
     def fee_receipt(self, request, pk=None, payment_id=None):
         self._parents_only()

@@ -370,3 +370,27 @@ Schools on HouseMaster before subscriptions began, and the demo schools, are **e
 6. **Free or partner schools:** Admin → *Billing* → *Subscriptions* → tick *Exempt*. Also change *Grace days* (default 14) per school there.
 
 What a lock means: 14 days (the grace period) after an unpaid invoice was due, nobody at that school can use HouseMaster except its admins, who can only see Billing and pay. No data is deleted; everything comes back the moment the payment is recorded.
+
+## H-21 · M-Pesa (after the M-Pesa PR is deployed)
+
+Two separate set-ups: **your own paybill** (schools pay their subscription) and **each school's paybill or till** (parents pay fees). Nothing is sent to M-Pesa until they are done. Test on the **sandbox** first.
+
+**A. Your paybill, for subscriptions**
+
+1. Sign in at <https://developer.safaricom.co.ke> (Daraja) with the account linked to your paybill. Create an app with **M-Pesa Express (STK Push)** and **C2B**. Note its *Consumer Key* and *Consumer Secret*. For the passkey: on the sandbox it is shown under *M-Pesa Express* test credentials; for your live paybill, Safaricom emails it when you **Go Live** (Daraja → Go Live, using the paybill's business administrator login).
+2. Render → housemaster backend → Environment, add:
+   - `MPESA_CALLBACK_BASE_URL` = the backend's public address, e.g. `https://housemaster-api.onrender.com` (https only);
+   - `MPESA_ENVIRONMENT` = `sandbox` while testing, then `production`;
+   - `MPESA_SHORTCODE` = your paybill number (sandbox: `174379`);
+   - `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY` from step 1;
+   - `MPESA_OWNER_CALLBACK_TOKEN` = a long random secret (run `python -c "import secrets; print(secrets.token_urlsafe(32))"`). It goes in the addresses Safaricom calls, so keep it private; never paste it in a ticket or chat.
+   Save (Render redeploys).
+3. Render shell: `python manage.py mpesa_register_owner`. It tells Safaricom where to confirm payments made straight to your paybill. Run it again whenever you change `MPESA_CALLBACK_BASE_URL` or go from sandbox to live.
+4. Update `BILLING_PAYMENT_INSTRUCTIONS` to e.g. `M-Pesa Paybill 123456, account HM followed by your school number (shown on your Billing page)`. Each school's Billing page shows its own account number (`HM0007` and so on) and a **Pay with M-Pesa** button.
+5. Check (sandbox): as a school admin with an open invoice, Billing → Pay with M-Pesa → the sandbox test phone. The invoice should turn Paid. Payments that don't match an invoice in full are emailed to `BILLING_OWNER_EMAIL` and listed in Admin → *M-Pesa payments* to record by hand.
+
+**B. Each school's paybill or till, for fees**
+
+The school does this itself (the bursar or an admin), in HouseMaster → Fees → **M-Pesa**: they create their own Daraja app for their paybill or till, go live with Safaricom, and enter the paybill (or store and till) number, consumer key, consumer secret and passkey, then press **Connect**. Their keys are stored encrypted and never shown again. You only need step A.2's `MPESA_CALLBACK_BASE_URL` set for their connection to work.
+
+Optional: `MPESA_ENCRYPTION_KEY` (any long random value) encrypts the schools' saved keys; if unset, a key derived from `SECRET_KEY` is used. Changing either later means schools must enter their keys again.
