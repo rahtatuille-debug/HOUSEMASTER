@@ -78,12 +78,12 @@ def _receipt_number(school, paid_on):
     return number
 
 
-def record_payment(student, user, amount, paid_on, method, reference="", payer_name="", claim=None, notify=True):
+def record_payment(student, user, amount, paid_on, method, reference="", payer_name="", claim=None, notify=True, by_name=None):
     with transaction.atomic():
         payment = Payment.objects.create(
             school=student.school, student=student, amount=amount, paid_on=paid_on, method=method,
             reference=reference[:100], payer_name=payer_name[:150], receipt_number=_receipt_number(student.school, paid_on),
-            recorded_by=user, recorded_by_name=display_name(user))
+            recorded_by=user, recorded_by_name=by_name or display_name(user))
         if claim is not None:
             claim.status = PaymentClaim.Status.CONFIRMED
             claim.payment = payment

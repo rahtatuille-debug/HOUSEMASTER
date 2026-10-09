@@ -36,12 +36,13 @@ from timetable import views as timetable_views
 from timetable.views import LessonViewSet, PeriodViewSet, RoomViewSet, school_week as timetable_school_week, week_view as timetable_week
 from timetable.views import unstaffed as timetable_unstaffed
 from support.views import SupportConcernViewSet
-from billing.views import billing as billing_view, invoice_pdf, report_payment
+from billing.views import billing as billing_view, billing_mpesa, billing_mpesa_status, invoice_pdf, report_payment
 from clubs.views import ClubViewSet, FixtureViewSet
 from homework.views import AssignmentViewSet
 from absences.views import AbsenceReportViewSet, absence_settings
 from fees import views as fees_views
 from fees.views import FeeItemViewSet
+from mpesa import views as mpesa_views
 from studentaccounts.views import StudentAccountViewSet, student_hand_in, student_me, student_password
 from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
@@ -167,6 +168,16 @@ urlpatterns = [
     path('api/fees/claims/<int:claim_id>/confirm/', fees_views.confirm_claim, name='fee_confirm_claim'),
     path('api/fees/claims/<int:claim_id>/reject/', fees_views.reject_claim, name='fee_reject_claim'),
     path('api/fees/remind/', fees_views.remind, name='fee_remind'),
+    path('api/fees/mpesa/', mpesa_views.fee_mpesa_settings, name='fee_mpesa_settings'),
+    path('api/fees/mpesa/connect/', mpesa_views.fee_mpesa_connect, name='fee_mpesa_connect'),
+    path('api/fees/mpesa/payments/', mpesa_views.fee_mpesa_payments, name='fee_mpesa_payments'),
+    path('api/fees/mpesa/payments/<int:payment_id>/assign/', mpesa_views.fee_mpesa_assign, name='fee_mpesa_assign'),
+    path('api/fees/mpesa/payments/<int:payment_id>/ignore/', mpesa_views.fee_mpesa_ignore, name='fee_mpesa_ignore'),
+    path('api/mpesa/hooks/<str:token>/stk/', mpesa_views.stk_hook, name='mpesa_stk_hook'),
+    path('api/mpesa/hooks/<str:token>/c2b/confirm/', mpesa_views.c2b_confirm, name='mpesa_c2b_confirm'),
+    path('api/mpesa/hooks/<str:token>/c2b/validate/', mpesa_views.c2b_validate, name='mpesa_c2b_validate'),
+    path('api/billing/invoices/<int:invoice_id>/mpesa/', billing_mpesa, name='billing_mpesa'),
+    path('api/billing/mpesa/<int:request_id>/', billing_mpesa_status, name='billing_mpesa_status'),
     path('api/billing/invoices/<int:invoice_id>/paid/', report_payment, name='billing_report_payment'),
     path('api/billing/invoices/<int:invoice_id>/pdf/', invoice_pdf, name='billing_invoice_pdf'),
     path('api/student/me/', student_me, name='student_me'),

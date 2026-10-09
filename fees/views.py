@@ -351,7 +351,10 @@ def remind(request):
 
 def guardian_fees(student):
     fee = services.settings_for(student.school)
-    return {**statement(student, staff=False), "payment_instructions": fee.payment_instructions}
+    from mpesa.views import guardian_mpesa_info
+
+    return {**statement(student, staff=False), "payment_instructions": fee.payment_instructions,
+            "mpesa": guardian_mpesa_info(student) if fee.currency == "KES" else None}
 
 
 def guardian_claim(request, student):
