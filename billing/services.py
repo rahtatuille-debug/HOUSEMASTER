@@ -1,4 +1,4 @@
-"""Tiers, invoices, reminders and locking (see billing.models)."""
+"""Pricing, invoices, reminders and locking (see billing.models)."""
 import calendar
 from datetime import timedelta
 
@@ -100,7 +100,8 @@ def next_period_start(school):
 def issue_due(school, today=None):
     """
     Issue the next month's invoice when it starts within a week (a new school: straight away), at the
-    school's tier price. Nothing for exempt schools or a tier without a price. Returns the invoice or None.
+    school's price (per student, or its tier's flat price). Nothing for exempt schools, a plan without a
+    price or a school with no students yet. Returns the invoice or None.
     """
     sub = subscription_for(school)
     today = today or school_localdate(school)
@@ -111,12 +112,13 @@ def issue_due(school, today=None):
         return None
     count = active_students(school)
     plan = tier_for(count)
-    if plan is None or plan.monthly_price is None:
+    amount = plan.amount_for(count) if plan else None
+    if not amount:
         return None
     with transaction.atomic():
         invoice = Invoice.objects.create(
             school=school, number=_number(school, start), plan_name=plan.name, students=count,
-            amount=plan.monthly_price, currency=plan.currency, period_start=start,
+            amount=amount, currency=plan.currency, period_start=start,
             period_end=add_month(start) - timedelta(days=1), issued_on=today, due_on=max(start, today))
         refresh(school)
     email_school(invoice, "issued")

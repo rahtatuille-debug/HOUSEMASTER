@@ -3,6 +3,7 @@ Monthly subscriptions (owner's request, 2026-10-08): tiers by school size,
 payments recorded by hand, invoices and reminders, a grace period, then the
 school is locked (admins can still see and pay). Existing and demo schools
 are exempt. A tier with no price is never invoiced.
+Then (2026-10-09): KES 50 a month for each active student, instead of tiers.
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -68,6 +69,28 @@ class TierAndInvoiceTests(Base):
 
     def test_no_price_no_invoice(self):
         Plan.objects.update(monthly_price=None)
+        self.assertIsNone(self.issue())
+        self.assertEqual(services.status(self.school_a)["status"], "active")
+
+    def test_per_student_price(self):
+        Plan.objects.update(is_active=False)
+        Plan.objects.create(name="Per student", price_per_student=Decimal("50"))
+        invoice = self.issue()
+        self.assertEqual((invoice.plan_name, invoice.students, invoice.amount), ("Per student", 2, Decimal("100")))
+        self.assertIn("KES 100.00", mail.outbox[0].subject)
+        # Next month's invoice follows the number of students then.
+        for n in range(3):
+            Student.objects.create(school=self.school_a, first_name=f"T{n}", last_name="K")
+        Student.objects.filter(school=self.school_a, first_name="S0").update(is_active=False)
+        second = self.issue(invoice.period_end - timedelta(days=6))
+        self.assertEqual((second.students, second.amount), (4, Decimal("200")))
+        data = self.admin.get("/api/billing/").data
+        self.assertEqual((data["plan"]["price_per_student"], data["plan"]["monthly_amount"]), (Decimal("50"), Decimal("200")))
+
+    def test_a_school_with_no_students_yet_is_not_invoiced(self):
+        Plan.objects.update(is_active=False)
+        Plan.objects.create(name="Per student", price_per_student=Decimal("50"))
+        Student.objects.filter(school=self.school_a).delete()
         self.assertIsNone(self.issue())
         self.assertEqual(services.status(self.school_a)["status"], "active")
 
@@ -198,3 +221,22 @@ class MigrationTests(Base):
                          [("Small", None), ("Medium", None), ("Large", None)])
         migration.backwards(apps, None)
         self.assertFalse(Subscription.objects.exists() or Plan.objects.exists())
+
+    def test_the_owners_price_kes_50_a_student_and_back(self):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module("billing.migrations.0003_per_student_price")
+        Plan.objects.all().delete()
+        for name, limit in [("Small", 300), ("Medium", 1000), ("Large", None)]:
+            Plan.objects.create(name=name, max_students=limit)
+        migration.forwards(apps, None)
+        (plan,) = Plan.objects.filter(is_active=True)
+        self.assertEqual((plan.name, plan.price_per_student, plan.currency, plan.max_students),
+                         ("Per student", Decimal("50.00"), "KES", None))
+        self.assertEqual(services.tier_for(1200), plan)
+        self.assertEqual(plan.amount_for(240), Decimal("12000"))
+        migration.backwards(apps, None)
+        self.assertEqual(sorted(Plan.objects.filter(is_active=True).values_list("name", flat=True)), ["Large", "Medium", "Small"])
+        self.assertFalse(Plan.objects.filter(name="Per student").exists())

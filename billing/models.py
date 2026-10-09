@@ -1,10 +1,10 @@
 """
-Monthly subscriptions. Each school pays by the month at the price of its size
-tier (by active students). Payments are recorded by hand by the HouseMaster
+Monthly subscriptions. Each school pays by the month: a price per active
+student (the owner's choice, KES 50), or a flat price for a size tier. Payments are recorded by hand by the HouseMaster
 owner in the Django admin; HouseMaster issues invoices, sends reminders, and
 locks a school whose invoice is still unpaid when the grace period ends.
 
-A plan without a price is never invoiced. An exempt school (demo, partner,
+A plan without a price, or a school with no students yet, is never invoiced. An exempt school (demo, partner,
 or a school that was here before subscriptions) is never invoiced or locked.
 """
 from django.conf import settings
@@ -17,12 +17,22 @@ class Plan(models.Model):
     name = models.CharField(max_length=60)
     max_students = models.PositiveIntegerField(null=True, blank=True, help_text="Blank for no limit (the biggest tier).")
     monthly_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
-                                        help_text="Blank until you set it: nobody on this tier is invoiced.")
+                                        help_text="A flat price a month. Blank: charged per student instead (below), or not at all.")
+    price_per_student = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
+                                            help_text="A month, for each active student. Used when there's no flat price.")
     currency = models.CharField(max_length=3, default="KES")
     is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = [models.F("max_students").asc(nulls_last=True)]
+
+    def amount_for(self, students):
+        """The month's price for this many students, or None when the plan has no price."""
+        if self.monthly_price is not None:
+            return self.monthly_price
+        if self.price_per_student is not None:
+            return self.price_per_student * students
+        return None
 
     def __str__(self):
         limit = f"up to {self.max_students}" if self.max_students else "any size"
