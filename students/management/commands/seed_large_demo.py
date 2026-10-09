@@ -89,6 +89,12 @@ class Command(BaseCommand):
                 added = fill_absences(existing)  # nothing when it already has some
             if added:
                 self.stdout.write(f"Added {added} absences reported by parents.")
+            from fees.demo import fill_demo as fill_fees
+
+            with transaction.atomic():
+                added = fill_fees(existing)  # nothing when it already has fee items
+            if added:
+                self.stdout.write(f"Fees billed, {added} payments.")
             self.stdout.write(f"{demo_large.NAME} already exists; nothing to do (use --reset to rebuild it).")
             return
         started = time.monotonic()
@@ -114,4 +120,7 @@ class Command(BaseCommand):
             from absences.demo import fill_demo as fill_absences
 
             fill_absences(School.objects.get(name=demo_large.NAME))
+            from fees.demo import fill_demo as fill_fees
+
+            fill_fees(School.objects.get(name=demo_large.NAME))
         self.stdout.write(self.style.SUCCESS(f"{summary} ({time.monotonic() - started:.0f} s)"))
