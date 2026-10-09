@@ -72,6 +72,11 @@ def can_manage_admissions(user):
     return is_admin(user) or has_role(user, StaffRole.Role.ADMISSIONS)
 
 
+def can_manage_fees(user):
+    """Fee structures, charges, payments and receipts (fees)."""
+    return is_admin(user) or has_role(user, StaffRole.Role.BURSAR)
+
+
 def can_manage_parents(user):
     """Inviting and linking parents."""
     return is_admin(user) or has_role(user, StaffRole.Role.SECRETARY)
@@ -214,6 +219,7 @@ def permissions_for(user):
         "approve_requests": leader,
         "manage_admissions": can_manage_admissions(user),
         "manage_parents": can_manage_parents(user),
+        "manage_fees": can_manage_fees(user),
         "manage_student_accounts": leader or can_manage_parents(user),
         "send_announcements": can_send_announcements(user),
         "send_alerts": leader,

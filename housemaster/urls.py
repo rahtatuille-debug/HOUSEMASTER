@@ -40,6 +40,8 @@ from billing.views import billing as billing_view, invoice_pdf, report_payment
 from clubs.views import ClubViewSet, FixtureViewSet
 from homework.views import AssignmentViewSet
 from absences.views import AbsenceReportViewSet, absence_settings
+from fees import views as fees_views
+from fees.views import FeeItemViewSet
 from studentaccounts.views import StudentAccountViewSet, student_hand_in, student_me, student_password
 from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
@@ -77,6 +79,7 @@ router.register(r"grades", GradeViewSet)
 router.register(r"assessment-types", AssessmentTypeViewSet)
 router.register(r"attendance", AttendanceRecordViewSet)
 router.register(r"absence-reports", AbsenceReportViewSet, basename="absence-report")
+router.register(r"fee-items", FeeItemViewSet, basename="fee-item")
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"alerts", UrgentAlertViewSet, basename="alert")
@@ -151,6 +154,19 @@ urlpatterns = [
     path('api/calendar/', calendar, name='calendar'),
     path('api/billing/', billing_view, name='billing'),
     path('api/absences/settings/', absence_settings, name='absence_settings'),
+    path('api/fees/settings/', fees_views.fee_settings, name='fee_settings'),
+    path('api/fees/bill-term/', fees_views.bill_term, name='fee_bill_term'),
+    path('api/fees/students/', fees_views.student_balances, name='fee_balances'),
+    path('api/fees/students/<int:student_id>/', fees_views.student_statement, name='fee_statement'),
+    path('api/fees/students/<int:student_id>/charges/', fees_views.add_charge, name='fee_add_charge'),
+    path('api/fees/students/<int:student_id>/payments/', fees_views.add_payment, name='fee_add_payment'),
+    path('api/fees/charges/<int:charge_id>/', fees_views.remove_charge, name='fee_remove_charge'),
+    path('api/fees/payments/<int:payment_id>/void/', fees_views.void_payment, name='fee_void_payment'),
+    path('api/fees/payments/<int:payment_id>/receipt/', fees_views.staff_receipt, name='fee_receipt'),
+    path('api/fees/claims/', fees_views.claims, name='fee_claims'),
+    path('api/fees/claims/<int:claim_id>/confirm/', fees_views.confirm_claim, name='fee_confirm_claim'),
+    path('api/fees/claims/<int:claim_id>/reject/', fees_views.reject_claim, name='fee_reject_claim'),
+    path('api/fees/remind/', fees_views.remind, name='fee_remind'),
     path('api/billing/invoices/<int:invoice_id>/paid/', report_payment, name='billing_report_payment'),
     path('api/billing/invoices/<int:invoice_id>/pdf/', invoice_pdf, name='billing_invoice_pdf'),
     path('api/student/me/', student_me, name='student_me'),

@@ -119,6 +119,7 @@ class StaffRole(models.Model):
         NURSE = "nurse", "Nurse"
         ADMISSIONS = "admissions", "Admissions Officer"
         SECRETARY = "secretary", "Secretary"
+        BURSAR = "bursar", "Bursar"
 
     # Which roles need what scope.
     SCOPE = {

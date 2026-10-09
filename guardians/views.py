@@ -258,6 +258,29 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(guardian_cancel(request, self.get_object(), report_id))
 
     @action(detail=True, methods=["get"])
+    def fees(self, request, pk=None):
+        """Parents: the child's fees balance, charges, receipts and payments they've reported."""
+        self._parents_only()
+        from fees.views import guardian_fees
+
+        return Response(guardian_fees(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="fees/claims")
+    def fee_claim(self, request, pk=None):
+        """Parents: {amount, paid_on, method, reference, note} for a payment they've made."""
+        self._parents_only()
+        from fees.views import guardian_claim
+
+        return Response(guardian_claim(request, self.get_object()), status=201)
+
+    @action(detail=True, methods=["get"], url_path=r"fees/receipts/(?P<payment_id>\d+)")
+    def fee_receipt(self, request, pk=None, payment_id=None):
+        self._parents_only()
+        from fees.views import guardian_receipt
+
+        return guardian_receipt(self.get_object(), payment_id)
+
+    @action(detail=True, methods=["get"])
     def timetable(self, request, pk=None):
         """The child's week: their class's lessons in the subjects they take."""
         from timetable.views import guardian_week

@@ -107,6 +107,7 @@ INSTALLED_APPS = [
     'studentaccounts',
     'billing',
     'absences',
+    'fees',
     'schoolcalendar',
     'timetable',
     'boarding',

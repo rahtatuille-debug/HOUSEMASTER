@@ -31,6 +31,18 @@ REMOVED_NAME = f"{REMOVED_FIRST} {REMOVED_LAST}"
 
 
 
+def _fee_charges(student):
+    from fees.models import Charge
+
+    return Charge.objects.filter(student=student).order_by("created_at", "id")
+
+
+def _fee_payments(student):
+    from fees.models import Payment
+
+    return Payment.objects.filter(student=student).order_by("paid_on", "id")
+
+
 def _absence_reports(student):
     from absences.models import AbsenceReport
 
@@ -91,6 +103,11 @@ def family_export(student):
         [a.start_date, a.end_date, a.get_reason_display(), a.details, a.reported_by_name, _when(a.created_at),
          _when(a.cancelled_at)] for a in _absence_reports(student)
     ], widths={"Details": 60})
+    _sheet(wb, "Fees", ["Date", "What", "Charged", "Paid", "Receipt"], [
+        *[[_when(c.created_at), c.description, float(c.amount), None, ""] for c in _fee_charges(student)],
+        *[[p.paid_on, f"Payment ({p.get_method_display()})" + (" (cancelled)" if p.voided_at else ""), None,
+           float(p.amount), p.receipt_number] for p in _fee_payments(student)],
+    ])
     _sheet(wb, "Reports", ["Term", "Status", "Report comment", "Progress summary (staff)", "Finalized"], [
         [r.term.name, r.get_status_display(), r.report_comment, r.progress_summary, _when(r.finalized_at)]
         for r in StudentReport.objects.filter(student=student).select_related("term").order_by("term_id")
@@ -259,6 +276,13 @@ def family_export_data(student):
             "from": _iso(a.start_date), "to": _iso(a.end_date), "reason": a.get_reason_display(), "details": a.details,
             "reported_by": a.reported_by_name, "reported": _iso(a.created_at), "cancelled": _iso(a.cancelled_at),
         } for a in _absence_reports(student)],
+        "fees": {
+            "charges": [{"date": _iso(c.created_at), "description": c.description, "amount": float(c.amount)}
+                        for c in _fee_charges(student)],
+            "payments": [{"paid_on": _iso(p.paid_on), "amount": float(p.amount), "method": p.get_method_display(),
+                          "reference": p.reference, "receipt": p.receipt_number, "cancelled": p.voided_at is not None}
+                         for p in _fee_payments(student)],
+        },
         "reports": [{
             "term": r.term.name, "status": r.status, "report_comment": r.report_comment,
             "progress_summary": r.progress_summary, "finalized": _iso(r.finalized_at),
@@ -392,6 +416,11 @@ def remove_personal_data(student, actor):
     # What parents wrote about absences (can be about health), and the alerts sent.
     counts["absence_reports_deleted"] = _absence_reports(student).delete()[0]
     student.absence_alerts.all().delete()
+    # Fee charges and payments stay (the school's accounts), without the names of who paid.
+    from fees.models import Payment, PaymentClaim
+
+    Payment.objects.filter(student=student).exclude(payer_name="").update(payer_name="")
+    PaymentClaim.objects.filter(student=student).update(claimed_by_name="Removed", note="")
 
     # Free text written about this child: their per-subject comments and the
     # messages of conversations about them (the conversations stay, for the
