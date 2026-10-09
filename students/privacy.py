@@ -99,15 +99,6 @@ def family_export(student):
         [r.date, r.get_status_display(), r.notes]
         for r in AttendanceRecord.objects.filter(student=student).order_by("date")
     ])
-    _sheet(wb, "Absences reported", ["From", "To", "Reason", "Details", "Reported by", "Reported", "Cancelled"], [
-        [a.start_date, a.end_date, a.get_reason_display(), a.details, a.reported_by_name, _when(a.created_at),
-         _when(a.cancelled_at)] for a in _absence_reports(student)
-    ], widths={"Details": 60})
-    _sheet(wb, "Fees", ["Date", "What", "Charged", "Paid", "Receipt"], [
-        *[[_when(c.created_at), c.description, float(c.amount), None, ""] for c in _fee_charges(student)],
-        *[[p.paid_on, f"Payment ({p.get_method_display()})" + (" (cancelled)" if p.voided_at else ""), None,
-           float(p.amount), p.receipt_number] for p in _fee_payments(student)],
-    ])
     _sheet(wb, "Reports", ["Term", "Status", "Report comment", "Progress summary (staff)", "Finalized"], [
         [r.term.name, r.get_status_display(), r.report_comment, r.progress_summary, _when(r.finalized_at)]
         for r in StudentReport.objects.filter(student=student).select_related("term").order_by("term_id")
@@ -187,6 +178,15 @@ def family_export(student):
     ] + [
         ["Sign-up request", r.name, r.email, _when(r.created_at), r.get_status_display()]
         for r in _sign_up_requests(student)
+    ])
+    _sheet(wb, "Absences reported", ["From", "To", "Reason", "Details", "Reported by", "Reported", "Cancelled"], [
+        [a.start_date, a.end_date, a.get_reason_display(), a.details, a.reported_by_name, _when(a.created_at),
+         _when(a.cancelled_at)] for a in _absence_reports(student)
+    ], widths={"Details": 60})
+    _sheet(wb, "Fees", ["Date", "What", "Charged", "Paid", "Receipt"], [
+        *[[_when(c.created_at), c.description, float(c.amount), None, ""] for c in _fee_charges(student)],
+        *[[p.paid_on, f"Payment ({p.get_method_display()})" + (" (cancelled)" if p.voided_at else ""), None,
+           float(p.amount), p.receipt_number] for p in _fee_payments(student)],
     ])
     _sheet(wb, "Change log", ["When", "By", "What"], [
         [_when(e.created_at), e.actor_name, e.summary] for e in _change_log(student)
