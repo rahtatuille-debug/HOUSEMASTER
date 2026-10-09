@@ -239,6 +239,24 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(guardian_cancel_leave(request, self.get_object(), leave_id))
 
+    @action(detail=True, methods=["get", "post"])
+    def absences(self, request, pk=None):
+        """GET the absences reported for this child; POST {start_date, end_date, reason, details} (parents)."""
+        from absences.views import guardian_list, guardian_report
+
+        student = self.get_object()
+        if request.method == "GET":
+            return Response(guardian_list(student))
+        self._parents_only()
+        return Response(guardian_report(request, student), status=201)
+
+    @action(detail=True, methods=["post"], url_path=r"absences/(?P<report_id>\d+)/cancel")
+    def cancel_absence(self, request, pk=None, report_id=None):
+        self._parents_only()
+        from absences.views import guardian_cancel
+
+        return Response(guardian_cancel(request, self.get_object(), report_id))
+
     @action(detail=True, methods=["get"])
     def timetable(self, request, pk=None):
         """The child's week: their class's lessons in the subjects they take."""

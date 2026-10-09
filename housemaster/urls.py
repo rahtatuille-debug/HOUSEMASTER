@@ -39,6 +39,7 @@ from support.views import SupportConcernViewSet
 from billing.views import billing as billing_view, invoice_pdf, report_payment
 from clubs.views import ClubViewSet, FixtureViewSet
 from homework.views import AssignmentViewSet
+from absences.views import AbsenceReportViewSet, absence_settings
 from studentaccounts.views import StudentAccountViewSet, student_hand_in, student_me, student_password
 from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
@@ -75,6 +76,7 @@ router.register(r"terms", TermViewSet)
 router.register(r"grades", GradeViewSet)
 router.register(r"assessment-types", AssessmentTypeViewSet)
 router.register(r"attendance", AttendanceRecordViewSet)
+router.register(r"absence-reports", AbsenceReportViewSet, basename="absence-report")
 router.register(r"reports", StudentReportViewSet)
 router.register(r"announcements", AnnouncementViewSet)
 router.register(r"alerts", UrgentAlertViewSet, basename="alert")
@@ -148,6 +150,7 @@ urlpatterns = [
     path('api/guardian-me/', guardian_me, name='guardian_me'),
     path('api/calendar/', calendar, name='calendar'),
     path('api/billing/', billing_view, name='billing'),
+    path('api/absences/settings/', absence_settings, name='absence_settings'),
     path('api/billing/invoices/<int:invoice_id>/paid/', report_payment, name='billing_report_payment'),
     path('api/billing/invoices/<int:invoice_id>/pdf/', invoice_pdf, name='billing_invoice_pdf'),
     path('api/student/me/', student_me, name='student_me'),

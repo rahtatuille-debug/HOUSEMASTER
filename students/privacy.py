@@ -30,6 +30,12 @@ REMOVED_FIRST, REMOVED_LAST = "Removed", "student"
 REMOVED_NAME = f"{REMOVED_FIRST} {REMOVED_LAST}"
 
 
+
+def _absence_reports(student):
+    from absences.models import AbsenceReport
+
+    return AbsenceReport.objects.filter(student=student).order_by("start_date", "id")
+
 def _when(value):
     return value.replace(tzinfo=None) if value is not None and getattr(value, "tzinfo", None) else value
 
@@ -81,6 +87,10 @@ def family_export(student):
         [r.date, r.get_status_display(), r.notes]
         for r in AttendanceRecord.objects.filter(student=student).order_by("date")
     ])
+    _sheet(wb, "Absences reported", ["From", "To", "Reason", "Details", "Reported by", "Reported", "Cancelled"], [
+        [a.start_date, a.end_date, a.get_reason_display(), a.details, a.reported_by_name, _when(a.created_at),
+         _when(a.cancelled_at)] for a in _absence_reports(student)
+    ], widths={"Details": 60})
     _sheet(wb, "Reports", ["Term", "Status", "Report comment", "Progress summary (staff)", "Finalized"], [
         [r.term.name, r.get_status_display(), r.report_comment, r.progress_summary, _when(r.finalized_at)]
         for r in StudentReport.objects.filter(student=student).select_related("term").order_by("term_id")
@@ -245,6 +255,10 @@ def family_export_data(student):
         } for g in Grade.objects.filter(student=student).select_related("term", "subject").order_by("term_id", "id")],
         "attendance": [{"date": _iso(r.date), "status": r.status, "note": r.notes}
                        for r in AttendanceRecord.objects.filter(student=student).order_by("date")],
+        "absences_reported": [{
+            "from": _iso(a.start_date), "to": _iso(a.end_date), "reason": a.get_reason_display(), "details": a.details,
+            "reported_by": a.reported_by_name, "reported": _iso(a.created_at), "cancelled": _iso(a.cancelled_at),
+        } for a in _absence_reports(student)],
         "reports": [{
             "term": r.term.name, "status": r.status, "report_comment": r.report_comment,
             "progress_summary": r.progress_summary, "finalized": _iso(r.finalized_at),
@@ -375,6 +389,9 @@ def remove_personal_data(student, actor):
 
     counts["reports_deleted"] = StudentReport.objects.filter(student=student).delete()[0]
     AttendanceRecord.objects.filter(student=student).exclude(notes="").update(notes="")
+    # What parents wrote about absences (can be about health), and the alerts sent.
+    counts["absence_reports_deleted"] = _absence_reports(student).delete()[0]
+    student.absence_alerts.all().delete()
 
     # Free text written about this child: their per-subject comments and the
     # messages of conversations about them (the conversations stay, for the

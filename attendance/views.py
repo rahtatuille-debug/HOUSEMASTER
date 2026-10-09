@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from absences.services import after_mark
 from accounts.mixins import SchoolScopedViewSetMixin
 from accounts.scoping import ATTENDANCE, check_can_see_student, limit_to_visible_students, scope_class_ids
 from activity.services import log_activity, student_name
@@ -32,6 +33,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         check_can_see_student(self.request.user, serializer.validated_data["student"], ATTENDANCE)
         check_date_open(self.get_school(), serializer.validated_data["date"])
         record = serializer.save()
+        after_mark(record, None)
         log_activity(
             school=self.get_school(), actor=self.request.user, action="attendance.created", target=record,
             summary=f"Marked {student_name(record.student)} {record.status} on {record.date}",
@@ -46,6 +48,7 @@ class AttendanceRecordViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
         check_date_open(self.get_school(), serializer.validated_data.get("date", serializer.instance.date))
         old = serializer.instance.status
         record = serializer.save()
+        after_mark(record, old)
         if old != record.status:
             log_activity(
                 school=self.get_school(), actor=self.request.user, action="attendance.updated",
