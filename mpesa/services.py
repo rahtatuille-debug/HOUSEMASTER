@@ -197,7 +197,9 @@ def complete(stk, code, description, meta=None):
     meta = meta or {}
     with transaction.atomic():
         stk = StkRequest.objects.select_for_update().get(pk=stk.pk)
-        if stk.status != StkRequest.Status.PENDING:
+        # A paid confirmation from M-Pesa (with its receipt) still counts after we'd stopped waiting.
+        late_payment = stk.status == StkRequest.Status.FAILED and code == 0 and meta.get("MpesaReceiptNumber")
+        if stk.status != StkRequest.Status.PENDING and not late_payment:
             return stk
         stk.result_description = str(description or "")[:255]
         stk.completed_at = timezone.now()

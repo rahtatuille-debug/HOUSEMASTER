@@ -118,6 +118,27 @@ class FeesStkTests(Base):
         self.callback(self.account.callback_token, stk_callback("ws_CO_15000", amount=15000))
         self.assertEqual(Payment.objects.get().reference, "SKD81QWERT")
 
+    def test_still_processing_keeps_waiting(self):
+        """M-Pesa's 4999 "still under processing" means waiting, not failed (found testing on the sandbox)."""
+        response, _ = self.pay()
+        StkRequest.objects.update(created_at=timezone.now() - timedelta(seconds=30))
+        url = f"/api/guardian-students/{self.amina.id}/fees/mpesa/{response.data['id']}/"
+        token = mock.Mock(status_code=200, json=lambda: {"access_token": "T"})
+        answer = mock.Mock(status_code=200, json=lambda: {"ResultCode": "4999", "ResultDesc": "The transaction is still under processing"})
+        with mock.patch("requests.get", return_value=token), mock.patch("requests.post", return_value=answer):
+            self.assertEqual(self.parent_client.get(url).data["status"], "pending")
+        self.assertFalse(Payment.objects.exists())
+
+    def test_a_late_confirmation_still_counts(self):
+        """We gave up waiting, then M-Pesa confirms the payment: it's recorded."""
+        self.pay()
+        StkRequest.objects.update(status="failed", result_description="No answer from the phone.")
+        self.callback(self.account.callback_token, stk_callback("ws_CO_15000", amount=15000))
+        self.assertEqual(StkRequest.objects.get().status, "paid")
+        self.assertEqual(Payment.objects.get().reference, "SKD81QWERT")
+        self.callback(self.account.callback_token, stk_callback("ws_CO_15000", amount=15000))  # and only once
+        self.assertEqual(Payment.objects.count(), 1)
+
     def test_bad_phone_amount_and_too_many(self):
         self.assertEqual(self.pay(phone="12345")[0].status_code, 400)
         self.assertEqual(self.pay(amount="10.5")[0].status_code, 400)
@@ -248,7 +269,26 @@ class SubscriptionTests(Base):
                                          format="json").status_code, 400)
 
 
+def daraja_result(body):
+    """What stk_query returns for this raw M-Pesa answer (the network replaced)."""
+    token = mock.Mock(status_code=200, json=lambda: {"access_token": "T"})
+    answer = mock.Mock(status_code=200, json=lambda: body)
+    creds = daraja.Credentials(environment="sandbox", shortcode="174379", consumer_key="k", consumer_secret="s", passkey="p")
+    with mock.patch("requests.get", return_value=token), mock.patch("requests.post", return_value=answer):
+        return daraja.stk_query(creds, "ws_CO_1")
+
+
 class DarajaTests(SimpleTestCase):
+    def test_query_answers(self):
+        self.assertEqual(daraja_result({"ResultCode": "4999", "ResultDesc": "The transaction is still under processing"})[0], None)
+        self.assertEqual(daraja_result({"ResultCode": "0", "ResultDesc": "processed successfully"})[0], 0)
+        self.assertEqual(daraja_result({"ResultCode": "1032", "ResultDesc": "Request cancelled by user"})[0], 1032)
+        busy = mock.Mock(status_code=500, json=lambda: {"errorCode": "500.001.1001", "errorMessage": "The transaction is being processed"})
+        with mock.patch("requests.get", return_value=mock.Mock(status_code=200, json=lambda: {"access_token": "T"})), \
+                mock.patch("requests.post", return_value=busy):
+            self.assertIsNone(daraja.stk_query(daraja.Credentials(environment="sandbox", shortcode="1", consumer_key="k",
+                                                                  consumer_secret="s", passkey="p"), "x")[0])
+
     """What's sent to Safaricom (with the network replaced)."""
 
     def creds(self, **extra):
