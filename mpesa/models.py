@@ -23,7 +23,8 @@ from students.models import School, Student
 
 
 def new_token():
-    return secrets.token_urlsafe(24)
+    # Letters a-f and digits only: Safaricom never calls an address containing words like "exe" or "sql".
+    return secrets.token_hex(20)
 
 
 class MpesaAccount(models.Model):

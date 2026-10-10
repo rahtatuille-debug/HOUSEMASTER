@@ -86,8 +86,17 @@ def callback_base():
 
 def hook_urls(token):
     base = callback_base()
-    return {"stk": f"{base}/api/mpesa/hooks/{token}/stk/", "confirmation": f"{base}/api/mpesa/hooks/{token}/c2b/confirm/",
-            "validation": f"{base}/api/mpesa/hooks/{token}/c2b/validate/"}
+    urls = {"stk": f"{base}/api/payments/hooks/{token}/stk/", "confirmation": f"{base}/api/payments/hooks/{token}/c2b/confirm/",
+            "validation": f"{base}/api/payments/hooks/{token}/c2b/validate/"}
+    # Safaricom quietly never calls an address containing these words (any case), so refuse them up front.
+    banned = next((w for w in BANNED_URL_WORDS if w in urls["stk"].lower()), None)
+    if banned:
+        raise ValidationError({"detail": [f"M-Pesa won't call an address containing \"{banned}\". Change "
+                                          "MPESA_CALLBACK_BASE_URL or the callback token so it doesn't."]})
+    return urls
+
+
+BANNED_URL_WORDS = ("m-pesa", "mpesa", "safaricom", "exec", "exe", "cmd", "sql", "query")
 
 
 def school_credentials(account):

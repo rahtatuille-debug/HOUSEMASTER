@@ -26,7 +26,7 @@ from .models import C2BPayment, MpesaAccount, StkRequest
 from .secrets_box import seal, unseal
 
 OWNER = dict(MPESA_CALLBACK_BASE_URL="https://api.housemaster.test", MPESA_SHORTCODE="600999",
-             MPESA_CONSUMER_KEY="ck", MPESA_CONSUMER_SECRET="cs", MPESA_PASSKEY="pk", MPESA_OWNER_CALLBACK_TOKEN="owner-secret-token",
+             MPESA_CONSUMER_KEY="ck", MPESA_CONSUMER_SECRET="cs", MPESA_PASSKEY="pk", MPESA_OWNER_CALLBACK_TOKEN="0wner5ecrettoken",
              EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", NOTIFICATIONS_IN_BACKGROUND=False,
              BILLING_OWNER_EMAIL="owner@housemaster.test")
 
@@ -71,7 +71,7 @@ class Base(SchoolScopedAPITestCase):
 
     def callback(self, token, body):
         with self.captureOnCommitCallbacks(execute=True):
-            return self.hooks.post(f"/api/mpesa/hooks/{token}/stk/", body, format="json")
+            return self.hooks.post(f"/api/payments/hooks/{token}/stk/", body, format="json")
 
 
 class FeesStkTests(Base):
@@ -81,7 +81,7 @@ class FeesStkTests(Base):
         self.assertEqual(response.data["status"], "pending")
         kwargs = push.call_args.kwargs
         self.assertEqual((kwargs["phone"], kwargs["amount"], kwargs["account_reference"]), ("254712345678", 15000, "ADM20237"))
-        self.assertEqual(kwargs["callback_url"], f"https://api.housemaster.test/api/mpesa/hooks/{self.account.callback_token}/stk/")
+        self.assertEqual(kwargs["callback_url"], f"https://api.housemaster.test/api/payments/hooks/{self.account.callback_token}/stk/")
         self.assertEqual(StkRequest.objects.get().phone_masked, "2547•••678")  # never the whole number
         self.assertEqual(self.callback(self.account.callback_token, stk_callback("ws_CO_15000", amount=15000)).data["ResultCode"], 0)
         payment = Payment.objects.get()
@@ -168,7 +168,7 @@ class FeesStkTests(Base):
 class FeesC2BTests(Base):
     def confirm(self, body, token=None):
         with self.captureOnCommitCallbacks(execute=True):
-            return self.hooks.post(f"/api/mpesa/hooks/{token or self.account.callback_token}/c2b/confirm/", body, format="json")
+            return self.hooks.post(f"/api/payments/hooks/{token or self.account.callback_token}/c2b/confirm/", body, format="json")
 
     def test_paid_to_the_paybill_with_the_admission_number(self):
         self.assertEqual(self.confirm(c2b_body("SKA1", 5000, "adm 2023 7")).data["ResultCode"], 0)
@@ -199,6 +199,16 @@ class FeesC2BTests(Base):
                                             format="json").status_code, 404)
 
 
+class CallbackAddressTests(Base):
+    def test_no_word_safaricom_refuses(self):
+        """Safaricom never calls an address containing "mpesa", "query" and the like (found testing on the sandbox)."""
+        urls = services.hook_urls(self.account.callback_token)
+        for url in urls.values():
+            self.assertFalse(any(w in url.lower() for w in services.BANNED_URL_WORDS), url)
+        self.assertRegex(MpesaAccount(school=self.school_b).callback_token, r"^[0-9a-f]{40}$")
+        with self.assertRaises(Exception):
+            services.hook_urls("abcEXEcute")
+
 class FeesSettingsTests(Base):
     def test_keys_are_encrypted_and_never_sent_back(self):
         MpesaAccount.objects.all().delete()
@@ -220,7 +230,7 @@ class FeesSettingsTests(Base):
             data = self.admin.post("/api/fees/mpesa/connect/").data
         self.assertIsNotNone(data["c2b_registered_at"])
         self.assertEqual(register.call_args.kwargs["confirmation_url"],
-                         f"https://api.housemaster.test/api/mpesa/hooks/{self.account.callback_token}/c2b/confirm/")
+                         f"https://api.housemaster.test/api/payments/hooks/{self.account.callback_token}/c2b/confirm/")
         with mock.patch.object(daraja, "register_c2b", side_effect=daraja.DarajaError("M-Pesa didn't accept the keys.")):
             self.assertEqual(self.admin.post("/api/fees/mpesa/connect/").status_code, 400)
 
@@ -238,10 +248,10 @@ class SubscriptionTests(Base):
         with mock.patch.object(daraja, "stk_push", return_value=("m", "ws_CO_sub")) as push:
             response = self.admin.post(f"/api/billing/invoices/{self.invoice.id}/mpesa/", {"phone": "0712345678"}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(push.call_args.kwargs["callback_url"], "https://api.housemaster.test/api/mpesa/hooks/owner-secret-token/stk/")
+        self.assertEqual(push.call_args.kwargs["callback_url"], "https://api.housemaster.test/api/payments/hooks/0wner5ecrettoken/stk/")
         self.callback(self.account.callback_token, stk_callback("ws_CO_sub", amount=15000))  # a school's token: ignored
         self.assertEqual(Invoice.objects.get().status, "open")
-        self.callback("owner-secret-token", stk_callback("ws_CO_sub", amount=15000))
+        self.callback("0wner5ecrettoken", stk_callback("ws_CO_sub", amount=15000))
         invoice = Invoice.objects.get()
         self.assertEqual((invoice.status, invoice.payment_method, invoice.payment_reference), ("paid", "mpesa", "SKD81QWERT"))
         self.assertEqual(self.admin.get(f"/api/billing/mpesa/{response.data['id']}/").data["status"], "paid")
@@ -250,14 +260,14 @@ class SubscriptionTests(Base):
 
     def test_paid_to_the_owners_paybill(self):
         with self.captureOnCommitCallbacks(execute=True):
-            self.hooks.post("/api/mpesa/hooks/owner-secret-token/c2b/confirm/",
+            self.hooks.post("/api/payments/hooks/0wner5ecrettoken/c2b/confirm/",
                             c2b_body("SKB1", 15000, f"hm{self.school_a.id:04d}"), format="json")
         self.assertEqual(Invoice.objects.get().status, "paid")
 
     def test_short_or_unknown_payments_go_to_the_owner(self):
         with self.captureOnCommitCallbacks(execute=True):
-            self.hooks.post("/api/mpesa/hooks/owner-secret-token/c2b/confirm/", c2b_body("SKB2", 500, f"HM{self.school_a.id:04d}"), format="json")
-            self.hooks.post("/api/mpesa/hooks/owner-secret-token/c2b/confirm/", c2b_body("SKB3", 15000, "rent"), format="json")
+            self.hooks.post("/api/payments/hooks/0wner5ecrettoken/c2b/confirm/", c2b_body("SKB2", 500, f"HM{self.school_a.id:04d}"), format="json")
+            self.hooks.post("/api/payments/hooks/0wner5ecrettoken/c2b/confirm/", c2b_body("SKB3", 15000, "rent"), format="json")
         self.assertEqual(Invoice.objects.get().status, "open")
         self.assertEqual(C2BPayment.objects.filter(status="unmatched").count(), 2)
         self.assertEqual([m.to for m in mail.outbox[-2:]], [["owner@housemaster.test"]] * 2)
