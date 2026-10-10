@@ -104,12 +104,24 @@ def stk_query(creds, checkout_request_id):
             "CheckoutRequestID": checkout_request_id,
         }, token)
     except DarajaError as err:
-        # Asked too soon, M-Pesa says the transaction is still being processed.
-        if "processed" in str(err).lower():
+        # Asked too soon, M-Pesa answers with an error saying it's still being processed.
+        if _still_waiting(str(err)):
             return None, str(err)
         raise
     code = data.get("ResultCode")
-    return (None if code in (None, "") else int(code)), data.get("ResultDesc", "")
+    description = data.get("ResultDesc", "")
+    # 4999 ("The transaction is still under processing") also means the payer hasn't answered yet.
+    if code in (None, "") or str(code) in STILL_WAITING_CODES or _still_waiting(description):
+        return None, description
+    return int(code), description
+
+
+STILL_WAITING_CODES = {"4999", "500.001.1001"}
+
+
+def _still_waiting(text):
+    text = (text or "").lower()
+    return "under processing" in text or "being processed" in text
 
 
 def register_c2b(creds, *, confirmation_url, validation_url):
