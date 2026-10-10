@@ -173,9 +173,12 @@ urlpatterns = [
     path('api/fees/mpesa/payments/', mpesa_views.fee_mpesa_payments, name='fee_mpesa_payments'),
     path('api/fees/mpesa/payments/<int:payment_id>/assign/', mpesa_views.fee_mpesa_assign, name='fee_mpesa_assign'),
     path('api/fees/mpesa/payments/<int:payment_id>/ignore/', mpesa_views.fee_mpesa_ignore, name='fee_mpesa_ignore'),
-    path('api/mpesa/hooks/<str:token>/stk/', mpesa_views.stk_hook, name='mpesa_stk_hook'),
-    path('api/mpesa/hooks/<str:token>/c2b/confirm/', mpesa_views.c2b_confirm, name='mpesa_c2b_confirm'),
-    path('api/mpesa/hooks/<str:token>/c2b/validate/', mpesa_views.c2b_validate, name='mpesa_c2b_validate'),
+    path('api/payments/hooks/<str:token>/stk/', mpesa_views.stk_hook, name='mpesa_stk_hook'),
+    path('api/mpesa/hooks/<str:token>/stk/', mpesa_views.stk_hook),  # the first address; Safaricom refuses it
+    path('api/payments/hooks/<str:token>/c2b/confirm/', mpesa_views.c2b_confirm, name='mpesa_c2b_confirm'),
+    path('api/mpesa/hooks/<str:token>/c2b/confirm/', mpesa_views.c2b_confirm),  # the first address; Safaricom refuses it
+    path('api/payments/hooks/<str:token>/c2b/validate/', mpesa_views.c2b_validate, name='mpesa_c2b_validate'),
+    path('api/mpesa/hooks/<str:token>/c2b/validate/', mpesa_views.c2b_validate),  # the first address; Safaricom refuses it
     path('api/billing/invoices/<int:invoice_id>/mpesa/', billing_mpesa, name='billing_mpesa'),
     path('api/billing/mpesa/<int:request_id>/', billing_mpesa_status, name='billing_mpesa_status'),
     path('api/billing/invoices/<int:invoice_id>/paid/', report_payment, name='billing_report_payment'),

@@ -383,7 +383,7 @@ Two separate set-ups: **your own paybill** (schools pay their subscription) and 
    - `MPESA_ENVIRONMENT` = `sandbox` while testing, then `production`;
    - `MPESA_SHORTCODE` = your paybill number (sandbox: `174379`);
    - `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY` from step 1;
-   - `MPESA_OWNER_CALLBACK_TOKEN` = a long random secret (run `python -c "import secrets; print(secrets.token_urlsafe(32))"`). It goes in the addresses Safaricom calls, so keep it private; never paste it in a ticket or chat.
+   - `MPESA_OWNER_CALLBACK_TOKEN` = a long random secret of letters a–f and digits (run `python -c "import secrets; print(secrets.token_hex(20))"`). It goes in the addresses Safaricom calls, so keep it private; never paste it in a ticket or chat. Safaricom never calls an address containing words like *mpesa*, *safaricom*, *exe*, *cmd*, *sql* or *query*, so don't use those in it or in `MPESA_CALLBACK_BASE_URL`.
    Save (Render redeploys).
 3. Render shell: `python manage.py mpesa_register_owner`. It tells Safaricom where to confirm payments made straight to your paybill. Run it again whenever you change `MPESA_CALLBACK_BASE_URL` or go from sandbox to live.
 4. Update `BILLING_PAYMENT_INSTRUCTIONS` to e.g. `M-Pesa Paybill 123456, account HM followed by your school number (shown on your Billing page)`. Each school's Billing page shows its own account number (`HM0007` and so on) and a **Pay with M-Pesa** button.
