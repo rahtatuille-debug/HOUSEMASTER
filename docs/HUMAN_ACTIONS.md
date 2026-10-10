@@ -365,6 +365,7 @@ Schools on HouseMaster before subscriptions began, and the demo schools, are **e
 3. **Tell schools how to pay.** In Render → Environment, set:
    - `BILLING_PAYMENT_INSTRUCTIONS`, e.g. `M-Pesa Paybill 123456, account: your invoice number. Or bank transfer to ...` (shown on invoices, emails and each school's Billing page);
    - `BILLING_OWNER_EMAIL`, where "we've paid" notices from schools go.
+   - Who the invoices are from (top left of the invoice PDF; leave any blank to leave it off): `BILLING_COMPANY_NAME` (default HouseMaster), `BILLING_COMPANY_ADDRESS` (use `\n` or new lines for more than one line), `BILLING_COMPANY_PHONE`, `BILLING_COMPANY_EMAIL` (default `BILLING_OWNER_EMAIL`) and `BILLING_COMPANY_WEBSITE` (default the app's address).
 4. **Run billing every day.** Add a Render cron job (daily, e.g. 06:00) running `python manage.py billing_run`. It issues each month's invoice a week before it starts, sends reminders (3 days before due, the day after, 3 days before locking, on locking), and keeps lock dates up to date. Without it no invoices go out.
 5. **When a school pays:** Admin → *Billing* → *Invoices* → open the invoice, set *Status* to Paid, the date, method and reference, and save (or tick it and use *Mark paid today*). The school is emailed a thank-you and unlocked straight away. Schools can press "We've paid" on their Billing page; you get an email to check it.
 6. **Free or partner schools:** Admin → *Billing* → *Subscriptions* → tick *Exempt*. Also change *Grace days* (default 14) per school there.

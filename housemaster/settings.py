@@ -438,6 +438,12 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 # e.g. "M-Pesa Paybill 123456, account: your invoice number". Where "I've paid" notices go.
 BILLING_PAYMENT_INSTRUCTIONS = os.environ.get('BILLING_PAYMENT_INSTRUCTIONS', '')
 BILLING_OWNER_EMAIL = os.environ.get('BILLING_OWNER_EMAIL', '')
+# Who the subscription invoices are from (the top left of the invoice PDF). Blank lines are left out.
+BILLING_COMPANY_NAME = os.environ.get('BILLING_COMPANY_NAME', 'HouseMaster')
+BILLING_COMPANY_ADDRESS = os.environ.get('BILLING_COMPANY_ADDRESS', '')
+BILLING_COMPANY_PHONE = os.environ.get('BILLING_COMPANY_PHONE', '')
+BILLING_COMPANY_EMAIL = os.environ.get('BILLING_COMPANY_EMAIL', '') or BILLING_OWNER_EMAIL
+BILLING_COMPANY_WEBSITE = os.environ.get('BILLING_COMPANY_WEBSITE', '')
 
 # M-Pesa (Safaricom Daraja; mpesa app). The public https address of this
 # backend, where Safaricom sends payment confirmations, e.g.
