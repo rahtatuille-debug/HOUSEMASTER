@@ -24,13 +24,18 @@ from students.models import SchoolClass, Student, YearGroup
 
 from . import rankings
 
+# The fewest students with marks behind any average shown as a comparison: another class, the year group, the
+# school. Below it the comparison is left out, so it never stands for one or two identifiable children. A group's
+# own figures (the class you are looking at) are always shown. See docs/CHARTS.md.
+MIN_COMPARE_STUDENTS = 5
+
 BANDS = [(0, 40, "Below 40%"), (40, 50, "40–49%"), (50, 60, "50–59%"), (60, 70, "60–69%"),
          (70, 80, "70–79%"), (80, 101, "80% and above")]
 
 
-def _mean(values):
+def _mean(values, minimum=0):
     values = [v for v in values if v is not None]
-    return round(sum(values) / len(values), 1) if values else None
+    return round(sum(values) / len(values), 1) if values and len(values) >= minimum else None
 
 
 class SchoolGrades:
@@ -137,15 +142,23 @@ class SchoolGrades:
         out = {subject: subject_percent(m, self.weights) for subject, m in marks.items()}
         return {subject: p for subject, p in out.items() if p is not None}
 
-    def group_average(self, student_ids, term_id):
-        return _mean([self.student_average(s, term_id) for s in student_ids])
+    def group_average(self, student_ids, term_id, minimum=0):
+        """The mean of the students' averages; None when fewer than `minimum` have one (comparisons)."""
+        return _mean([self.student_average(s, term_id) for s in student_ids], minimum)
 
-    def group_subjects(self, student_ids, term_id):
+    def group_subjects(self, student_ids, term_id, minimum=0):
         per_subject = defaultdict(list)
         for s in student_ids:
             for subject in self.marks.get((s, term_id), {}):
                 per_subject[subject].append(self.student_subject(s, term_id, subject))
-        return {subject: _mean(values) for subject, values in per_subject.items()}
+        return {subject: _mean(values, minimum) for subject, values in per_subject.items()}
+
+    def compare_average(self, student_ids, term_id):
+        """A group's average shown as a comparison: only with MIN_COMPARE_STUDENTS students behind it."""
+        return self.group_average(student_ids, term_id, MIN_COMPARE_STUDENTS)
+
+    def compare_subjects(self, student_ids, term_id):
+        return self.group_subjects(student_ids, term_id, MIN_COMPARE_STUDENTS)
 
     def distribution(self, student_ids, term_id, scale=None):
         averages = [a for a in (self.student_average(s, term_id) for s in student_ids) if a is not None]
@@ -320,14 +333,14 @@ def student_analytics(data, student, term):
         "terms": _terms(data), "term": term.id if term else None,
         "trend": [
             {"term": t.name, "student": data.student_average(sid, t.id),
-             "class": data.group_average(classmates, t.id) if klass else None,
-             "year_group": data.group_average(year_mates, t.id) if klass else None}
+             "class": data.compare_average(classmates, t.id) if klass else None,
+             "year_group": data.compare_average(year_mates, t.id) if klass else None}
             for t in data.graded_terms
         ],
         "subjects": _subject_rows(
             {subj: data.student_subject(sid, term.id, subj) for subj in data.marks.get((sid, term.id), {})}
             if term else {},
-            data.group_subjects(classmates, term.id) if term and klass else {},
+            data.compare_subjects(classmates, term.id) if term and klass else {},
             "student", "class",
         ),
         "grading": _grading(system, scale),
@@ -349,11 +362,11 @@ def class_analytics(data, school_class, term, visible_ids):
         "students_count": len(ids), "terms": _terms(data), "term": term.id if term else None,
         "trend": [
             {"term": t.name, "class": data.group_average(ids, t.id),
-             "year_group": data.group_average(year_ids, t.id), "school": data.group_average(everyone, t.id)}
+             "year_group": data.compare_average(year_ids, t.id), "school": data.compare_average(everyone, t.id)}
             for t in data.graded_terms
         ],
         "subjects": _subject_rows(data.group_subjects(ids, term.id) if term else {},
-                                  data.group_subjects(year_ids, term.id) if term else {},
+                                  data.compare_subjects(year_ids, term.id) if term else {},
                                   "class", "year_group"),
         "distribution": data.distribution(ids, term.id, scale) if term else [],
         "students": _student_rows(data, ids, term, visible_ids),
@@ -371,17 +384,17 @@ def year_group_analytics(data, year_group, term, visible_ids):
         "terms": _terms(data), "term": term.id if term else None,
         "series": [{"key": f"class_{c.id}", "label": c.name} for c in classes],
         "trend": [
-            {"term": t.name, "year_group": data.group_average(ids, t.id), "school": data.group_average(everyone, t.id),
-             **{f"class_{c.id}": data.group_average(data.in_class(c.id), t.id) for c in classes}}
+            {"term": t.name, "year_group": data.group_average(ids, t.id), "school": data.compare_average(everyone, t.id),
+             **{f"class_{c.id}": data.compare_average(data.in_class(c.id), t.id) for c in classes}}
             for t in data.graded_terms
         ],
         "groups": [
             {"id": c.id, "name": c.name, "students": len(data.in_class(c.id)),
-             "average": data.group_average(data.in_class(c.id), term.id) if term else None}
+             "average": data.compare_average(data.in_class(c.id), term.id) if term else None}
             for c in classes
         ],
         "subjects": _subject_rows(data.group_subjects(ids, term.id) if term else {},
-                                  data.group_subjects(everyone, term.id) if term else {},
+                                  data.compare_subjects(everyone, term.id) if term else {},
                                   "year_group", "school"),
         "distribution": data.distribution(ids, term.id, scale) if term else [],
         "students": _student_rows(data, ids, term, visible_ids),
@@ -398,12 +411,12 @@ def school_analytics(data, school, term):
         "series": [{"key": f"year_{y.id}", "label": y.name} for y in years],
         "trend": [
             {"term": t.name, "school": data.group_average(everyone, t.id),
-             **{f"year_{y.id}": data.group_average(data.in_year(y.id), t.id) for y in years}}
+             **{f"year_{y.id}": data.compare_average(data.in_year(y.id), t.id) for y in years}}
             for t in data.graded_terms
         ],
         "groups": [
             {"id": y.id, "name": y.name, "students": len(data.in_year(y.id)),
-             "average": data.group_average(data.in_year(y.id), term.id) if term else None}
+             "average": data.compare_average(data.in_year(y.id), term.id) if term else None}
             for y in years
         ],
         "subjects": _subject_rows(data.group_subjects(everyone, term.id) if term else {}, {}, "school", "unused"),

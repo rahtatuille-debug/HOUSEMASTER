@@ -24,11 +24,7 @@ from students.localtime import school_zone
 from students.presets import student_section
 
 from . import rankings
-from .analytics import _grading, _mean, overall_positions
-
-# The fewest students with marks behind any class or group comparison (a class average, a class line). Below it
-# the comparison is left out. See docs/CHARTS.md. The owner may want to change it.
-MIN_COMPARE_STUDENTS = 5
+from .analytics import MIN_COMPARE_STUDENTS, _grading, _mean, overall_positions
 
 CHARTS = ("subject_trends", "assessment_types", "marks", "ranks")
 UNTYPED = "No assessment type"
@@ -41,7 +37,7 @@ def _terms(data):
 def _compare(values):
     """The mean of other students' values, or None when too few have one."""
     values = [v for v in values if v is not None]
-    return _mean(values) if len(values) >= MIN_COMPARE_STUDENTS else None
+    return _mean(values, MIN_COMPARE_STUDENTS)
 
 
 # P-1 -------------------------------------------------------------------------------------------------------------

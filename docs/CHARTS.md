@@ -14,12 +14,15 @@ A missing term, subject or mark is always shown as a gap or "no marks", never as
 
 ## Comparisons and small classes
 
-A comparison with the class (a class average or a class line) is shown only when **at least 5 students** in the
-class have marks for that subject, assessment type or term. Below that, a class average would be close to naming
-one or two children's results, so it is left out.
+On **every** performance chart (these five, the existing Performance page, the staff student profile and the
+teacher's class dashboard), an average of another group (a class, the year group, the school) is shown only when
+**at least 5 students** in it have marks for that subject, assessment type or term. Below that, a group average
+would be close to naming one or two children's results, so it is left out ("—" in tables).
 
-This is one setting in the code: `MIN_COMPARE_STUDENTS = 5` in `reporting/charts.py`. It is the owner's decision
-whether 5 is right.
+The group you are looking at always shows its own figures (a teacher looking at their class of 3 still sees its
+average); only comparisons follow the rule.
+
+This is one setting in the code: `MIN_COMPARE_STUDENTS = 5` in `reporting/analytics.py`.
 
 Comparisons are always averages. No chart ever shows another student's name or marks.
 

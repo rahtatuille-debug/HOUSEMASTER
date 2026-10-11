@@ -26,9 +26,13 @@ def _average(values):
 
 
 def _group_average(students, term, weights):
-    """Average of each student's average for the term, so one heavily graded student doesn't dominate."""
+    """Average of each student's average for the term, so one heavily graded student doesn't dominate. Shown as a
+    comparison, so left out when fewer than MIN_COMPARE_STUDENTS students have marks (reporting.analytics)."""
+    from reporting.analytics import MIN_COMPARE_STUDENTS
+
     per = subject_percents(Grade.objects.filter(student__in=students, term=term), weights, key=lambda g: g.subject_id)
-    return _average([student_average(subjects) for subjects in per.values()])
+    averages = [a for a in (student_average(subjects) for subjects in per.values()) if a is not None]
+    return _average(averages) if len(averages) >= MIN_COMPARE_STUDENTS else None
 
 
 def _age(dob, school):

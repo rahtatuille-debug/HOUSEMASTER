@@ -1,4 +1,5 @@
 """Performance analytics: the numbers, and who can see which level."""
+from unittest import mock
 from datetime import date
 
 from accounts.tests import SchoolScopedAPITestCase
@@ -9,6 +10,11 @@ from students.models import SchoolClass, Student, YearGroup
 class PerformanceAnalyticsTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        # These check the arithmetic on small groups; the 5-student minimum for comparisons has its own tests
+        # (reporting/test_compare_minimum.py).
+        patcher = mock.patch("reporting.analytics.MIN_COMPARE_STUDENTS", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.admin_client_a = self.authed_client(self.admin_a)
         y7 = YearGroup.objects.create(school=self.school_a, name="Year 7")
         y8 = YearGroup.objects.create(school=self.school_a, name="Year 8")

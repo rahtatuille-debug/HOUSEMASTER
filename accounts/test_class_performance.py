@@ -3,6 +3,7 @@ Teacher dashboard (owner's request, 2026-10-08): each of the teacher's
 classes with its average and position in its year group, overall and in each
 subject. Other classes are counted, never named.
 """
+from unittest import mock
 from gradebook.models import Grade
 
 from .models import StaffRole
@@ -14,6 +15,11 @@ URL = "/api/teacher-home/performance/"
 class ClassPerformanceTests(RoleFixture):
     def setUp(self):
         super().setUp()
+        # These check the arithmetic on small groups; the 5-student minimum for comparisons has its own tests
+        # (reporting/test_compare_minimum.py).
+        patcher = mock.patch("reporting.analytics.MIN_COMPARE_STUDENTS", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # Every pupil already has 60 in maths (RoleFixture). Ben's class (2 West) does better in English.
         for student, score in ((self.amina, 50), (self.ben, 80)):
             Grade.objects.create(student=student, subject=self.english, term=self.term, score=score)
