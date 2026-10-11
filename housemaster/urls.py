@@ -48,7 +48,7 @@ from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
-from reporting.analytics_views import performance
+from reporting.analytics_views import charts as performance_charts, performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
@@ -131,6 +131,7 @@ urlpatterns = [
     path('api/import/', import_school_workbook, name='import_workbook'),
     path('api/promotion/', promote_students, name='promote_students'),
     path('api/analytics/performance/', performance, name='performance'),
+    path('api/analytics/charts/', performance_charts, name='performance_charts'),
     path('api/import/template/', import_template, name='import_template'),
     path('api/import/staff-template/', staff_import_template, name='staff_import_template'),
     path('api/import/staff/', import_staff, name='import_staff'),

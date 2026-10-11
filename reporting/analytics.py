@@ -53,6 +53,8 @@ class SchoolGrades:
         self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
         self.mark_counts = defaultdict(int)
+        # How many marks each (student, term, subject, assessment type) mean rests on (the charts' P-2).
+        self.type_counts = defaultdict(int)
         self._averages, self._subjects, self._years = {}, {}, None
         grades = Grade.objects.filter(student_id__in=self.students)
         graded = None
@@ -90,6 +92,7 @@ class SchoolGrades:
                 mean = int(total) * 100 / (int(out_of) * n)
                 self.marks[(student_id, term_id)][names[subject_id]].append((mean, type_id))
                 self.mark_counts[(student_id, term_id)] += n
+                self.type_counts[(student_id, term_id, names[subject_id], type_id)] += n
             else:
                 mixed.append((student_id, term_id, subject_id, type_id))
         if mixed:  # rare: marks of one type out of different totals; averaged exactly from the marks themselves
@@ -104,6 +107,7 @@ class SchoolGrades:
             for (student_id, term_id, subject_id, type_id), values in percents.items():
                 self.marks[(student_id, term_id)][names[subject_id]].append((float(sum(values) / len(values)), type_id))
                 self.mark_counts[(student_id, term_id)] += len(values)
+                self.type_counts[(student_id, term_id, names[subject_id], type_id)] += len(values)
         loaded = {k[1] for k in self.marks}
         self.graded_terms = graded if graded is not None else [t for t in self.terms if t.id in loaded]
 
@@ -193,6 +197,33 @@ def _subject_rows(primary, compare, primary_key, compare_key):
     return [{"subject": s, primary_key: primary.get(s), compare_key: compare.get(s)} for s in subjects]
 
 
+def overall_positions(data, student_ids, term, system=None, raw=None):
+    """
+    Overall positions in a group for one term, exactly as the ranked tables show them: each curriculum ranked
+    on its own (reporting.rankings), students with incomplete marks left out. Returns (students by curriculum,
+    subject counts, usual subject count, complete?, position, number ranked), each keyed by student id.
+    """
+    if system is None:
+        system = {sid: rankings.effective_system(*data.section_of(sid)) for sid in student_ids}
+    if raw is None:
+        raw = {sid: data.subject_percents(sid, term.id) for sid in student_ids}
+    by_section = defaultdict(list)
+    for sid in student_ids:
+        by_section[system[sid]].append(sid)
+    share = data.school.ranking_min_share
+    counts = {sid: len(raw[sid]) for sid in student_ids}
+    usual, complete, overall, overall_of = {}, {}, {}, {}
+    for section, ids in by_section.items():
+        group_usual = rankings.usual_subjects({sid: counts[sid] for sid in ids})
+        usual.update({sid: group_usual for sid in ids})
+        complete.update(rankings.complete_enough({sid: counts[sid] for sid in ids}, share))
+        ranked = rankings.positions(rankings.ranking_scores(section, {sid: list(raw[sid].values()) for sid in ids},
+                                                            share))
+        overall.update(ranked)
+        overall_of.update({sid: len(ranked) for sid in ranked})
+    return by_section, counts, usual, complete, overall, overall_of
+
+
 def _student_rows(data, student_ids, term, visible_ids):
     """
     Each visible student's average this term, change since the previous graded
@@ -212,25 +243,14 @@ def _student_rows(data, student_ids, term, visible_ids):
     change = {sid: round(average[sid] - before[sid], 1) if average[sid] is not None and before[sid] is not None
               else None for sid in student_ids}
 
-    by_section = defaultdict(list)
-    for sid in student_ids:
-        by_section[system[sid]].append(sid)
     share = data.school.ranking_min_share
-    counts = {sid: len(raw[sid]) for sid in student_ids}
+    by_section, counts, usual, complete, overall, overall_of = overall_positions(data, student_ids, term, system, raw)
     marks = {sid: data.mark_count(sid, term.id) for sid in student_ids}
     before_counts = {sid: len(data.subject_percents(sid, previous.id)) if previous else 0 for sid in student_ids}
-    overall, overall_of, improved = {}, {}, {}
-    usual, complete, complete_before, notes = {}, {}, {}, {}
+    improved, complete_before, notes = {}, {}, {}
     subject_pos, subject_of = defaultdict(dict), defaultdict(dict)
     for section, ids in by_section.items():
-        group_usual = rankings.usual_subjects({sid: counts[sid] for sid in ids})
-        usual.update({sid: group_usual for sid in ids})
-        complete.update(rankings.complete_enough({sid: counts[sid] for sid in ids}, share))
         complete_before.update(rankings.complete_enough({sid: before_counts[sid] for sid in ids}, share))
-        ranked = rankings.positions(rankings.ranking_scores(section, {sid: list(raw[sid].values()) for sid in ids},
-                                                            share))
-        overall.update(ranked)
-        overall_of.update({sid: len(ranked) for sid in ranked})
         if section not in rankings.UNRANKED:
             eligible = {sid for sid in ids if change[sid] is not None and complete[sid] and complete_before[sid]}
             improved.update(rankings.positions({sid: (change[sid],) if sid in eligible else None for sid in ids}))

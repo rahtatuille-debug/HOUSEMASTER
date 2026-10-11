@@ -369,6 +369,17 @@ class GuardianStudentViewSet(viewsets.ReadOnlyModelViewSet):
         reports = student.reports.filter(status="finalized").with_content().select_related("term").order_by("-generated_at")
         return Response(GuardianReportSerializer(reports, many=True).data)
 
+    @action(detail=True, methods=["get"])
+    def charts(self, request, pk=None):
+        """?chart=subject_trends|marks|ranks&term=<id, marks only>: the extra performance graphs, never showing
+        more than the child's other pages do (reporting.charts.guardian_charts)."""
+        from reporting.charts import guardian_charts
+
+        result = guardian_charts(self.get_object(), request.query_params.get("chart"), request.query_params.get("term"))
+        if result is None:
+            raise NotFound("This chart isn't available.")
+        return Response(result)
+
     @action(detail=True, methods=["get"], url_path="term-summary")
     def term_summary(self, request, pk=None):
         """A child's results for a term, once the school has finalized that term's report."""
