@@ -209,14 +209,17 @@ def class_performance(user, term_id=None):
     def stats(class_id):
         if class_id not in cache:
             ids = data.in_class(class_id)
-            cache[class_id] = (data.group_average(ids, term.id), data.group_subjects(ids, term.id), len(ids))
+            # Own figures, and the same as a comparison for the other classes in the year (5+ students).
+            cache[class_id] = (data.group_average(ids, term.id), data.group_subjects(ids, term.id), len(ids),
+                               data.compare_average(ids, term.id), data.compare_subjects(ids, term.id))
         return cache[class_id]
 
     for klass in classes:
-        average, subjects, size = stats(klass.id)
-        others = [stats(c) for c in by_year[klass.year_group_id]]
+        average, subjects, size, _a, _s = stats(klass.id)
+        # This class's own figures, and the other classes' only where they have enough students to compare.
+        others = [(average, subjects) if c == klass.id else stats(c)[3:] for c in by_year[klass.year_group_id]]
         year_ids = data.in_year(klass.year_group_id)
-        year_subjects = data.group_subjects(year_ids, term.id)
+        year_subjects = data.compare_subjects(year_ids, term.id)
         subject_rows = []
         for name in sorted(subjects):
             value = subjects[name]
@@ -230,7 +233,7 @@ def class_performance(user, term_id=None):
         ranked = [o[0] for o in others if o[0] is not None]
         rows.append({
             "id": klass.id, "name": klass.name, "year_group": klass.year_group.name, "students": size,
-            "average": average, "year_average": data.group_average(year_ids, term.id),
+            "average": average, "year_average": data.compare_average(year_ids, term.id),
             "rank": _rank(ranked, average), "of": len(ranked), "subjects": subject_rows,
         })
     return {"term": term.id, "term_name": term.name,

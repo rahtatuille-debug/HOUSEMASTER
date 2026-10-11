@@ -6,6 +6,7 @@ force-scoped to the caller's school regardless of what's in the request
 body, and cross-school FK spoofing (e.g. attaching a Student to another
 school's SchoolClass) is rejected with 403.
 """
+from unittest import mock
 from accounts.tests import SchoolScopedAPITestCase
 
 from .models import YearGroup, SchoolClass, Student
@@ -137,6 +138,11 @@ class StudentProfileTests(SchoolScopedAPITestCase):
 
     def setUp(self):
         super().setUp()
+        # These check the arithmetic on small groups; the 5-student minimum for comparisons has its own tests
+        # (reporting/test_compare_minimum.py).
+        patcher = mock.patch("reporting.analytics.MIN_COMPARE_STUDENTS", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         from django.contrib.auth.models import User
 
         from attendance.models import AttendanceRecord
