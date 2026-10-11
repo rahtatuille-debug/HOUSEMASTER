@@ -98,7 +98,10 @@ class StaffMemberSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login", "roles"]
+        fields = ["id", "user_id", "name", "email", "role", "is_active", "date_joined", "last_login", "roles",
+                  # Their own details from Settings, for the school to reach them (and someone for them).
+                  "title", "phone", "emergency_contact_name", "emergency_contact_phone"]
+        read_only_fields = ["title", "phone", "emergency_contact_name", "emergency_contact_phone"]
 
     def get_roles(self, obj):
         return [{"id": r.id, "role": r.role, "role_label": r.get_role_display(), "scope_name": r.scope_name}
@@ -189,6 +192,30 @@ class ProfileNameSerializer(serializers.Serializer):
         if not name:
             raise serializers.ValidationError("Your name cannot be blank.")
         return name
+
+
+# A staff member's own details, changed in Settings.
+PROFILE_DETAIL_FIELDS = ["title", "phone", "emergency_contact_name", "emergency_contact_phone", "email_notifications"]
+
+
+class ProfileDetailsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Profile
+        fields = PROFILE_DETAIL_FIELDS
+
+    def _phone(self, value):
+        from guardians.serializers import _clean_phone
+
+        return _clean_phone(value)
+
+    def validate_phone(self, value):
+        return self._phone(value)
+
+    def validate_emergency_contact_phone(self, value):
+        return self._phone(value)
+
+    def validate_emergency_contact_name(self, value):
+        return " ".join(value.split())
 
 
 class InvitePreviewSerializer(serializers.ModelSerializer):

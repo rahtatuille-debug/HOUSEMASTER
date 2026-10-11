@@ -184,7 +184,7 @@ def tell_bursars(claim):
     staff = Profile.objects.filter(school=school, user__is_active=True).exclude(user__email="")
     bursars = staff.filter(staff_roles__role=StaffRole.Role.BURSAR)
     emails = set((bursars if bursars.exists() else staff.filter(role=Profile.Role.ADMIN))
-                 .values_list("user__email", flat=True))
+                 .filter(email_notifications=True).values_list("user__email", flat=True))
     currency = settings_for(school).currency
     messages = [(
         f"Fees: {claim.claimed_by_name} says they've paid {money(claim.amount, currency)}",

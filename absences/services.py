@@ -126,7 +126,7 @@ def class_teacher_emails(student):
         return []
     return sorted(set(StaffRole.objects.filter(
         role=StaffRole.Role.CLASS_TEACHER, school_class_id=student.school_class_id,
-        profile__school=student.school, profile__user__is_active=True,
+        profile__school=student.school, profile__user__is_active=True, profile__email_notifications=True,
     ).exclude(profile__user__email="").values_list("profile__user__email", flat=True)))
 
 

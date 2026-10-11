@@ -102,6 +102,17 @@ class TokenRefreshIPThrottle(IPThrottle):
     scope = "token_refresh_ip"
 
 
+class PasswordChangeUserThrottle(SimpleRateThrottle):
+    """Guesses at the current password from a signed-in account (Settings: change password)."""
+
+    scope = "password_change_user"
+
+    def get_cache_key(self, request, view):
+        if request.method != "POST" or not request.user.is_authenticated:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
 class InviteSendUserThrottle(SimpleRateThrottle):
     """Invite emails (new or renewed) one admin can send. Reading and cancelling aren't limited."""
 
