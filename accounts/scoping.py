@@ -183,17 +183,22 @@ def check_can_use_class(user, school_class):
         raise PermissionDenied("You can only put students in a class you teach.")
 
 
-def check_can_grade(user, student, subject):
+def can_grade_class(user, school_class_id, subject):
+    """Whether this person may enter marks in `subject` for students in the class."""
     if is_leader(user):
-        return
+        return True
     # A Head of Department may grade their subject in any class.
     if subject is not None and subject.id in department_subject_ids(user):
-        return
+        return True
     # An assignment with no subject covers every subject in that class.
-    if student.school_class_id is None or not TeachingAssignment.objects.filter(
+    return school_class_id is not None and TeachingAssignment.objects.filter(
         Q(subject=subject) | Q(subject__isnull=True),
-        teacher=user.profile, school_class_id=student.school_class_id,
-    ).exists():
+        teacher=user.profile, school_class_id=school_class_id,
+    ).exists()
+
+
+def check_can_grade(user, student, subject):
+    if not can_grade_class(user, student.school_class_id, subject):
         raise PermissionDenied(f"You don't teach {subject.name} to this student's class.")
 
 

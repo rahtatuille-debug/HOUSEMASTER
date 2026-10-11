@@ -1,9 +1,12 @@
 from rest_framework import viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.mixins import SchoolScopedViewSetMixin
+from accounts.permissions import HasSchoolProfile
 from approvals.mixins import ApprovalRequiredMixin
 from accounts.scoping import ACADEMIC, check_can_grade, limit_to_visible_students
 from activity.services import log_activity, student_name
@@ -157,3 +160,82 @@ class GradeViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
             score=str(instance.score), max_score=str(instance.max_score),
         )
         instance.delete()
+
+
+def _marksheet_params(request, data):
+    """The class, subject, term, assessment type and "out of" a mark sheet is for, checked like typed marks."""
+    from decimal import Decimal, InvalidOperation
+
+    from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+
+    from accounts.scoping import can_grade_class
+    from students.models import SchoolClass
+
+    from .models import AssessmentType, Subject, Term
+
+    school = request.user.profile.school
+
+    def find(model, key, **scope):
+        value = data.get(key)
+        if not str(value or "").isdigit():
+            raise ValidationError({key: "Choose one."})
+        found = model.objects.filter(pk=value, **scope).first()
+        if found is None:
+            raise NotFound(f"{key.replace('_', ' ').capitalize()} not found.")
+        return found
+
+    school_class = find(SchoolClass, "school_class", year_group__school=school)
+    subject = find(Subject, "subject", school=school)
+    term = find(Term, "term", school=school)
+    kind = find(AssessmentType, "assessment_type", school=school) if data.get("assessment_type") else None
+    try:
+        max_score = Decimal(str(data.get("max_score") or "100"))
+    except InvalidOperation:
+        raise ValidationError({"max_score": "Out of must be a number."})
+    if not max_score.is_finite() or max_score <= 0 or max_score > Decimal("999.99"):
+        raise ValidationError({"max_score": "Out of must be more than 0 and at most 999.99."})
+    if not can_grade_class(request.user, school_class.id, subject):
+        raise PermissionDenied(f"You don't teach {subject.name} to {school_class.name}.")
+    return school_class, subject, term, kind, max_score
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+def marksheet_template(request):
+    """?school_class=&subject=&term=&assessment_type=&max_score=: the class's mark sheet to fill in (Excel)."""
+    from django.http import HttpResponse
+
+    from .marksheet import template
+
+    school_class, subject, term, kind, max_score = _marksheet_params(request, request.query_params)
+    response = HttpResponse(template(school_class, subject, term, kind, max_score),
+                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    name = "".join(c if c.isalnum() else "-" for c in f"marks-{school_class.name}-{subject.name}-{term.name}").lower()
+    response["Content-Disposition"] = f'attachment; filename="{name}.xlsx"'
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, HasSchoolProfile])
+@parser_classes([MultiPartParser])
+def marksheet_import(request):
+    """
+    A filled-in mark sheet as `file`, with school_class, subject, term, assessment_type (optional) and max_score.
+    Without commit=true it's a preview: every row is checked and nothing is saved. With commit=true the rows that
+    passed are saved as marks.
+    """
+    from rest_framework.exceptions import ValidationError
+
+    from .marksheet import MarkSheetError, import_marks
+
+    school_class, subject, term, kind, max_score = _marksheet_params(request, request.data)
+    upload = request.FILES.get("file")
+    if upload is None:
+        raise ValidationError({"file": "Choose the filled-in mark sheet."})
+    commit = str(request.data.get("commit", "")).lower() == "true"
+    check_term_open(term)  # nothing can change in a locked term, so say so before checking the file
+    try:
+        result = import_marks(upload, request.user, school_class, subject, term, kind, max_score, commit)
+    except MarkSheetError as exc:
+        raise ValidationError({"file": str(exc)})
+    return Response(result)
