@@ -16,7 +16,11 @@ guardian_charts, which gives them only what their child's pages already show.
 """
 from collections import defaultdict
 
+from django.utils import timezone
+
 from gradebook.models import AssessmentType, Grade
+from gradebook.weighting import percent
+from students.localtime import school_zone
 from students.presets import student_section
 
 from .analytics import _grading, _mean
@@ -25,7 +29,7 @@ from .analytics import _grading, _mean
 # the comparison is left out. See docs/CHARTS.md. The owner may want to change it.
 MIN_COMPARE_STUDENTS = 5
 
-CHARTS = ("subject_trends", "assessment_types",)
+CHARTS = ("subject_trends", "assessment_types", "marks",)
 UNTYPED = "No assessment type"
 
 
@@ -120,6 +124,36 @@ def student_assessment_types(data, student, term, subject=None):
             "grading": _grading(system, scale)}
 
 
+# P-3 -------------------------------------------------------------------------------------------------------------
+
+def marks_in_term(student, term, with_types=True):
+    """Every mark the student has in the term, by the day it was recorded where the school is."""
+    zone = school_zone(student.school)
+    points, outside = [], 0
+    if term is not None:
+        grades = Grade.objects.filter(student=student, term=term, max_score__gt=0) \
+            .select_related("subject", "assessment_type").order_by("recorded_at", "id")
+        for g in grades:
+            local = timezone.localtime(g.recorded_at, zone)
+            day = local.date()
+            if (term.start_date and day < term.start_date) or (term.end_date and day > term.end_date):
+                outside += 1
+                continue
+            point = {"subject": g.subject.name, "percent": round(percent(g.score, g.max_score), 1),
+                     "date": day.isoformat(), "recorded_at": local.isoformat()}
+            if with_types:
+                point["assessment_type"] = g.assessment_type.name if g.assessment_type else UNTYPED
+            points.append(point)
+    system, scale = student_section(student)
+    return {"chart": "marks", "scope": "student", "name": f"{student.first_name} {student.last_name}",
+            "term": {"id": term.id, "name": term.name,
+                     "start": term.start_date.isoformat() if term.start_date else None,
+                     "end": term.end_date.isoformat() if term.end_date else None} if term else None,
+            # Marks have no assessment date, so the axis is the day each was recorded.
+            "date_basis": "recorded", "time_zone": str(zone), "points": points, "outside_term": outside,
+            "subjects": sorted({p["subject"] for p in points}), "grading": _grading(system, scale)}
+
+
 # Parents ---------------------------------------------------------------------------------------------------------
 
 def guardian_charts(student, chart, term_id=None):
@@ -129,6 +163,7 @@ def guardian_charts(student, chart, term_id=None):
     everywhere), marks without assessment types (the marks list has none), and positions only where the finalized
     8-4-4 report card already shows them. None for a chart parents don't get.
     """
+    from gradebook.models import Term
     from gradebook.weighting import school_weights, subject_percents
     from reporting.models import StudentReport
 
@@ -148,4 +183,7 @@ def guardian_charts(student, chart, term_id=None):
                                            for t in terms]} for s in subjects]
         return {"chart": chart, "scope": "student", "name": name, "terms": [{"id": t.id, "name": t.name} for t in terms],
                 "subjects": lines, "grading": _grading(system, scale)}
+    if chart == "marks":
+        term = Term.objects.filter(school=student.school, pk=term_id).first() if str(term_id or "").isdigit() else None
+        return marks_in_term(student, term, with_types=False)
     return None

@@ -205,6 +205,53 @@ class AssessmentTypeTests(ChartsTestCase):
         self.assertEqual(count(), before)
 
 
+class MarksInTermTests(ChartsTestCase):
+    """P-3."""
+
+    def stamp(self, grade, when):
+        Grade.objects.filter(pk=grade.pk).update(recorded_at=when)
+
+    def test_points_dates_and_time_zone(self):
+        grades = list(Grade.objects.filter(student=self.ann, term=self.t1).order_by("id"))
+        # Africa/Nairobi is UTC+3: 23:30 UTC on 31 Jan is 02:30 on 1 Feb there; 21:30 UTC is 00:30 on 1 Feb.
+        self.stamp(grades[0], utc(2026, 1, 31, 23, 30))
+        self.stamp(grades[1], utc(2026, 1, 31, 21, 30))
+        self.stamp(grades[2], utc(2026, 1, 31, 20, 59))  # 23:59 on 31 Jan
+        data = self.chart(chart="marks", scope="student", id=self.ann.id, term=self.t1.id).data
+        self.assertEqual(data["date_basis"], "recorded")
+        self.assertEqual(data["time_zone"], "Africa/Nairobi")
+        self.assertEqual((data["term"]["start"], data["term"]["end"]), ("2026-01-05", "2026-03-31"))
+        self.assertEqual([(p["date"], p["subject"], p["assessment_type"], p["percent"]) for p in data["points"]], [
+            ("2026-01-31", "English", "CAT", 50.0),
+            ("2026-02-01", "Maths", "Exam", 80.0),
+            ("2026-02-01", "Maths", "CAT", 60.0),
+        ])
+
+    def test_marks_recorded_outside_the_term_are_left_out_and_counted(self):
+        grades = list(Grade.objects.filter(student=self.ann, term=self.t1).order_by("id"))
+        for g in grades:
+            self.stamp(g, utc(2026, 2, 10, 9, 0))
+        self.stamp(grades[2], utc(2026, 4, 10, 9, 0))
+        data = self.chart(chart="marks", scope="student", id=self.ann.id, term=self.t1.id).data
+        self.assertEqual(len(data["points"]), 2)
+        self.assertEqual(data["outside_term"], 1)
+
+    def test_no_marks(self):
+        data = self.chart(chart="marks", scope="student", id=self.cy.id, term=self.t2.id).data
+        self.assertEqual((data["points"], data["outside_term"]), ([], 0))
+
+    def test_query_count_is_flat_as_marks_grow(self):
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.chart(chart="marks", scope="student", id=self.ann.id, term=self.t1.id)
+            return len(ctx.captured_queries)
+
+        before = count()
+        for n in range(30):
+            Grade.objects.create(student=self.ann, subject=self.maths, term=self.t1, score=n, assessment_type=self.cat)
+        self.assertEqual(count(), before)
+
+
 class ChartPermissionTests(ChartsTestCase):
     """Who may ask: the same answers as the existing performance endpoint."""
 
@@ -278,6 +325,12 @@ class GuardianChartTests(ChartsTestCase):
         self.assertEqual(lines, {"English": [50.0], "Maths": [74.0]})
         self.assertNotIn("class", str(data["subjects"]))
         self.assertNotIn("compare", data)
+
+    def test_marks_without_assessment_types(self):
+        Grade.objects.filter(student=self.ann, term=self.t2).update(recorded_at=utc(2026, 6, 1, 9, 0))
+        data = self.get(self.ann, chart="marks", term=self.t2.id).data
+        self.assertEqual(sorted(p["percent"] for p in data["points"]), [70.0, 80.0, 90.0])
+        self.assertTrue(all("assessment_type" not in p for p in data["points"]))
 
     def test_no_assessment_type_chart_for_parents(self):
         self.assertEqual(self.get(self.ann, chart="assessment_types", term=self.t1.id).status_code, 404)
