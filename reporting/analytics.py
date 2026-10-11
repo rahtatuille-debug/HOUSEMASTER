@@ -197,6 +197,33 @@ def _subject_rows(primary, compare, primary_key, compare_key):
     return [{"subject": s, primary_key: primary.get(s), compare_key: compare.get(s)} for s in subjects]
 
 
+def overall_positions(data, student_ids, term, system=None, raw=None):
+    """
+    Overall positions in a group for one term, exactly as the ranked tables show them: each curriculum ranked
+    on its own (reporting.rankings), students with incomplete marks left out. Returns (students by curriculum,
+    subject counts, usual subject count, complete?, position, number ranked), each keyed by student id.
+    """
+    if system is None:
+        system = {sid: rankings.effective_system(*data.section_of(sid)) for sid in student_ids}
+    if raw is None:
+        raw = {sid: data.subject_percents(sid, term.id) for sid in student_ids}
+    by_section = defaultdict(list)
+    for sid in student_ids:
+        by_section[system[sid]].append(sid)
+    share = data.school.ranking_min_share
+    counts = {sid: len(raw[sid]) for sid in student_ids}
+    usual, complete, overall, overall_of = {}, {}, {}, {}
+    for section, ids in by_section.items():
+        group_usual = rankings.usual_subjects({sid: counts[sid] for sid in ids})
+        usual.update({sid: group_usual for sid in ids})
+        complete.update(rankings.complete_enough({sid: counts[sid] for sid in ids}, share))
+        ranked = rankings.positions(rankings.ranking_scores(section, {sid: list(raw[sid].values()) for sid in ids},
+                                                            share))
+        overall.update(ranked)
+        overall_of.update({sid: len(ranked) for sid in ranked})
+    return by_section, counts, usual, complete, overall, overall_of
+
+
 def _student_rows(data, student_ids, term, visible_ids):
     """
     Each visible student's average this term, change since the previous graded
@@ -216,25 +243,14 @@ def _student_rows(data, student_ids, term, visible_ids):
     change = {sid: round(average[sid] - before[sid], 1) if average[sid] is not None and before[sid] is not None
               else None for sid in student_ids}
 
-    by_section = defaultdict(list)
-    for sid in student_ids:
-        by_section[system[sid]].append(sid)
     share = data.school.ranking_min_share
-    counts = {sid: len(raw[sid]) for sid in student_ids}
+    by_section, counts, usual, complete, overall, overall_of = overall_positions(data, student_ids, term, system, raw)
     marks = {sid: data.mark_count(sid, term.id) for sid in student_ids}
     before_counts = {sid: len(data.subject_percents(sid, previous.id)) if previous else 0 for sid in student_ids}
-    overall, overall_of, improved = {}, {}, {}
-    usual, complete, complete_before, notes = {}, {}, {}, {}
+    improved, complete_before, notes = {}, {}, {}
     subject_pos, subject_of = defaultdict(dict), defaultdict(dict)
     for section, ids in by_section.items():
-        group_usual = rankings.usual_subjects({sid: counts[sid] for sid in ids})
-        usual.update({sid: group_usual for sid in ids})
-        complete.update(rankings.complete_enough({sid: counts[sid] for sid in ids}, share))
         complete_before.update(rankings.complete_enough({sid: before_counts[sid] for sid in ids}, share))
-        ranked = rankings.positions(rankings.ranking_scores(section, {sid: list(raw[sid].values()) for sid in ids},
-                                                            share))
-        overall.update(ranked)
-        overall_of.update({sid: len(ranked) for sid in ranked})
         if section not in rankings.UNRANKED:
             eligible = {sid for sid in ids if change[sid] is not None and complete[sid] and complete_before[sid]}
             improved.update(rankings.positions({sid: (change[sid],) if sid in eligible else None for sid in ids}))

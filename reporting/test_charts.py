@@ -4,7 +4,9 @@ The five extra performance graphs (P-1 … P-5): their numbers, what they hide, 
 Every expected number below is worked out by hand in the comments, with the school's assessment types
 CAT (weight 30) and Exam (weight 70): a subject's result is the weighted mean of the types that have marks.
 """
+import os
 from datetime import date, datetime, timezone as dt_timezone
+from unittest import skipUnless
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -252,6 +254,87 @@ class MarksInTermTests(ChartsTestCase):
         self.assertEqual(count(), before)
 
 
+class RankTests(ChartsTestCase):
+    """P-4."""
+
+    def test_positions_equal_the_rankings_table_every_term(self):
+        data = self.chart(chart="ranks", scope="student", id=self.ann.id).data
+        self.assertTrue(data["ranked"])
+        for point in data["points"]:
+            table = self.admin.get("/api/analytics/performance/",
+                                   {"scope": "class", "id": self.c7a.id, "term": point["term_id"]}).data
+            row = next(r for r in table["students"] if r["id"] == self.ann.id)
+            if row["position"] is None:
+                self.assertIsNone(point["class"]["position"])
+            else:
+                self.assertEqual((point["class"]["position"], point["class"]["of"]), (row["position"], row["of"]))
+            year = self.admin.get("/api/analytics/performance/",
+                                  {"scope": "year_group", "id": self.y7.id, "term": point["term_id"]}).data
+            yrow = next(r for r in year["students"] if r["id"] == self.ann.id)
+            self.assertEqual(point["year_group"]["position"], yrow["position"])
+        # T1: Ann 62.0 is top of 7A (mates 50) -> 1st of 6; Year 7 also has Cy 40 and Di 60 -> 1st of 8.
+        t1 = data["points"][0]
+        self.assertEqual((t1["class"], t1["year_group"]), ({"position": 1, "of": 6}, {"position": 1, "of": 8}))
+        # The admin may also see the whole school.
+        self.assertEqual(t1["school"], {"position": 1, "of": 8})
+
+    def test_ties_share_a_position(self):
+        t1 = self.chart(chart="ranks", scope="student", id=self.mates[0].id).data["points"][0]
+        # Five mates on 50.0 behind Ann's 62.0 -> all 2nd of 6.
+        self.assertEqual(t1["class"], {"position": 2, "of": 6})
+
+    def test_unranked_term_is_a_gap_with_the_reason(self):
+        self.school_a.ranking_min_share = 100
+        self.school_a.save()
+        # T1 usual subjects in 7A is 1 (mates take only Maths), so Ann is complete; in T3 Ann alone has 2.
+        # Give a mate a T1 English mark so the usual becomes... still 1. Instead check a T2 term with no marks:
+        data = self.chart(chart="ranks", scope="student", id=self.mates[0].id).data
+        t2 = data["points"][1]
+        self.assertEqual(t2["class"], {"position": None, "reason": "No marks this term"})
+        table_t1 = self.admin.get("/api/analytics/performance/",
+                                  {"scope": "class", "id": self.c7a.id, "term": self.t1.id}).data
+        # Ann has 2 subjects, the mates 1 -> usual 1 -> everyone complete.
+        self.assertTrue(all(r["not_ranked"] is None for r in table_t1["students"]))
+        # Make the usual 2 subjects: four mates get an English mark; mate 0 keeps only Maths.
+        for mate in self.mates[1:]:
+            Grade.objects.create(student=mate, subject=self.english, term=self.t1, score=50, assessment_type=self.cat)
+        table_t1 = self.admin.get("/api/analytics/performance/",
+                                  {"scope": "class", "id": self.c7a.id, "term": self.t1.id}).data
+        row = next(r for r in table_t1["students"] if r["id"] == self.mates[0].id)
+        point = self.chart(chart="ranks", scope="student", id=self.mates[0].id).data["points"][0]
+        self.assertIsNone(point["class"]["position"])
+        self.assertEqual(point["class"]["reason"], row["not_ranked_label"])
+        self.assertEqual(row["not_ranked_label"], "Not ranked: incomplete marks (1 of 2 subjects)")
+
+    def test_cbc_learners_are_not_ranked(self):
+        self.school_a.education_system, self.school_a.grading_scale = "cbc", "cbc4"
+        self.school_a.save()
+        data = self.chart(chart="ranks", scope="student", id=self.ann.id).data
+        self.assertFalse(data["ranked"])
+        self.assertEqual(data["points"], [])
+        self.assertIn("CBC", data["reason"])
+
+    def test_teachers_do_not_see_the_school_position(self):
+        self.assign(self.user_a, self.c7a, self.maths)
+        teacher = self.authed_client(self.user_a)
+        t1 = self.chart(teacher, chart="ranks", scope="student", id=self.ann.id).data["points"][0]
+        self.assertNotIn("school", t1)
+        self.assertEqual(t1["class"], {"position": 1, "of": 6})
+
+    def test_query_count_is_flat_as_terms_grow(self):
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.chart(chart="ranks", scope="student", id=self.ann.id)
+            return len(ctx.captured_queries)
+
+        before = count()
+        for n in range(4):
+            term = Term.objects.create(school=self.school_a, name=f"Extra {n}", start_date=date(2027, 1, n + 1))
+            for s in [self.ann, *self.mates]:
+                Grade.objects.create(student=s, subject=self.maths, term=term, score=40 + n, assessment_type=self.cat)
+        self.assertEqual(count(), before)
+
+
 class ChartPermissionTests(ChartsTestCase):
     """Who may ask: the same answers as the existing performance endpoint."""
 
@@ -335,8 +418,50 @@ class GuardianChartTests(ChartsTestCase):
     def test_no_assessment_type_chart_for_parents(self):
         self.assertEqual(self.get(self.ann, chart="assessment_types", term=self.t1.id).status_code, 404)
 
+    def test_ranks_only_where_parents_already_see_them(self):
+        # A British school's report card shows no positions, so parents get none here either.
+        data = self.get(self.ann, chart="ranks").data
+        self.assertEqual((data["ranked"], data["points"]), (False, []))
+        # 8-4-4 report cards show stream and form positions on finalized reports: those, and only those.
+        self.school_a.education_system, self.school_a.grading_scale = "844", "kcse"
+        self.school_a.save()
+        data = self.get(self.ann, chart="ranks").data
+        self.assertTrue(data["ranked"])
+        self.assertEqual([p["term"] for p in data["points"]], ["T1"])
+        self.assertEqual(set(data["points"][0]), {"term", "term_id", "class", "year_group"})
+
     def test_someone_elses_child_is_not_found(self):
         for chart in [c for c in CHARTS if c != "assessment_types"]:
             self.assertEqual(self.get(self.cy, chart=chart, term=self.t1.id).status_code, 404)
             self.assertEqual(self.get(self.other, chart=chart, term=self.t1.id).status_code, 404)
 
+
+@skipUnless(os.environ.get("HOUSEMASTER_SLOW_TESTS"), "slow: set HOUSEMASTER_SLOW_TESTS=1 (not run in CI)")
+class SlowChartTests(ChartsTestCase):
+    """The charts on a school the size of the demo (233,000 marks): queries stay the same and it stays quick."""
+
+    def test_large_school(self):
+        import time
+
+        term_ids = [self.t1.id, self.t2.id, self.t3.id]
+        subjects = [Subject.objects.create(school=self.school_a, name=f"Bulk {i}") for i in range(10)]
+        students = Student.objects.bulk_create([Student(school=self.school_a, first_name=f"S{i}", last_name="Bulk",
+                                                         school_class=self.c7a if i % 2 else self.c7b)
+                                                for i in range(2600)])
+        rows, kinds = [], [self.cat, self.exam]
+        for s in students:
+            for t in term_ids:
+                for subject in subjects[:3]:
+                    for k in range(10):
+                        rows.append(Grade(student=s, subject=subject, term_id=t, assessment_type=kinds[k % 2],
+                                          score=(s.id + k) % 100))
+        Grade.objects.bulk_create(rows, batch_size=5000)
+        self.assertGreaterEqual(Grade.objects.count(), 233000)
+        for chart in CHARTS:
+            with CaptureQueriesContext(connection) as ctx:
+                started = time.monotonic()
+                answer = self.chart(chart=chart, scope="student", id=students[0].id, term=self.t1.id)
+                took = time.monotonic() - started
+            self.assertEqual(answer.status_code, 200)
+            self.assertLess(len(ctx.captured_queries), 25, chart)
+            print(f"{chart}: {len(ctx.captured_queries)} queries, {took:.2f}s")

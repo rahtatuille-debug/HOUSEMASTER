@@ -23,13 +23,14 @@ from gradebook.weighting import percent
 from students.localtime import school_zone
 from students.presets import student_section
 
-from .analytics import _grading, _mean
+from . import rankings
+from .analytics import _grading, _mean, overall_positions
 
 # The fewest students with marks behind any class or group comparison (a class average, a class line). Below it
 # the comparison is left out. See docs/CHARTS.md. The owner may want to change it.
 MIN_COMPARE_STUDENTS = 5
 
-CHARTS = ("subject_trends", "assessment_types", "marks",)
+CHARTS = ("subject_trends", "assessment_types", "marks", "ranks")
 UNTYPED = "No assessment type"
 
 
@@ -154,6 +155,50 @@ def marks_in_term(student, term, with_types=True):
             "subjects": sorted({p["subject"] for p in points}), "grading": _grading(system, scale)}
 
 
+# P-4 -------------------------------------------------------------------------------------------------------------
+
+def _place(data, sid, ids, term, system, raw):
+    _by, counts, usual, complete, overall, overall_of = overall_positions(data, ids, term, system, raw)
+    if sid in overall:
+        return {"position": overall[sid], "of": overall_of[sid]}
+    if not raw[sid]:
+        return {"position": None, "reason": "No marks this term"}
+    if not complete.get(sid, True):
+        return {"position": None, "reason": f"{rankings.INCOMPLETE} ({counts[sid]} of {usual[sid]} subjects)"}
+    return {"position": None, "reason": "Not ranked"}
+
+
+def student_ranks(data, student, with_school):
+    sid = student.id
+    section = rankings.effective_system(*data.section_of(sid))
+    base = {"chart": "ranks", "scope": "student", "name": f"{student.first_name} {student.last_name}",
+            "terms": _terms(data)}
+    if section in rankings.UNRANKED:
+        return {**base, "ranked": False, "points": [],
+                "reason": "CBC learners aren't ranked, so there are no positions to show."}
+    klass = student.school_class
+    groups = {"class": data.in_class(klass.id) if klass else [], "year_group": data.in_year(klass.year_group_id)
+              if klass else []}
+    if with_school:
+        groups["school"] = data.everyone()
+    everyone = set().union(*groups.values()) | {sid}
+    points = []
+    for t in data.graded_terms:
+        system = {s: rankings.effective_system(*data.section_of(s)) for s in everyone}
+        raw = {s: data.subject_percents(s, t.id) for s in everyone}
+        point = {"term": t.name, "term_id": t.id}
+        for key, ids in groups.items():
+            point[key] = _place(data, sid, ids, t, system, raw) if ids else None
+        points.append(point)
+    share = data.school.ranking_min_share
+    note = "Positions compare students in the same curriculum only."
+    if share:
+        note += f" A student needs marks in at least {share}% of the usual number of subjects to be ranked."
+    if section == "844":
+        note += " 8-4-4 students are ranked by mean points, then average mark."
+    return {**base, "ranked": True, "reason": "", "points": points, "basis_note": note}
+
+
 # Parents ---------------------------------------------------------------------------------------------------------
 
 def guardian_charts(student, chart, term_id=None):
@@ -164,6 +209,7 @@ def guardian_charts(student, chart, term_id=None):
     8-4-4 report card already shows them. None for a chart parents don't get.
     """
     from gradebook.models import Term
+    from gradebook.systems import _positions
     from gradebook.weighting import school_weights, subject_percents
     from reporting.models import StudentReport
 
@@ -186,4 +232,16 @@ def guardian_charts(student, chart, term_id=None):
     if chart == "marks":
         term = Term.objects.filter(school=student.school, pk=term_id).first() if str(term_id or "").isdigit() else None
         return marks_in_term(student, term, with_types=False)
+    if chart == "ranks":
+        base = {"chart": chart, "scope": "student", "name": name, "terms": [{"id": t.id, "name": t.name} for t in terms]}
+        if system != "844":
+            return {**base, "ranked": False, "points": [],
+                    "reason": "The school's report cards don't show positions, so there are none to chart."}
+        points = []
+        for t in terms:
+            places = _positions(student, t, system, finalized[t.id]) or {}
+            points.append({"term": t.name, "term_id": t.id, "class": places.get("stream"),
+                           "year_group": places.get("form")})
+        return {**base, "ranked": True, "reason": "", "points": points,
+                "basis_note": "Positions as printed on each finalized report card: stream and form, by mean points."}
     return None
