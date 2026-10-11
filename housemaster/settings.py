@@ -205,6 +205,8 @@ REST_FRAMEWORK = {
         # logins count. Schools and mobile networks put many people behind
         # one address, so the per-IP limits are deliberately generous.
         'login_ip': os.environ.get('LOGIN_IP_RATE', '30/hour'),
+        # Changing the password from Settings, per signed-in account.
+        'password_change_user': os.environ.get('PASSWORD_CHANGE_USER_RATE', '10/hour'),
         'login_email': os.environ.get('LOGIN_EMAIL_RATE', '10/hour'),
         'password_reset_ip': os.environ.get('PASSWORD_RESET_IP_RATE', '20/hour'),
         'password_reset_email': os.environ.get('PASSWORD_RESET_EMAIL_RATE', '5/hour'),

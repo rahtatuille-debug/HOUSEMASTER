@@ -63,6 +63,24 @@ class Profile(models.Model):
     tour_seen_at = models.DateTimeField(null=True, blank=True)
     checklist_hidden = models.BooleanField(default=False)
 
+    # Their own details, kept up to date in Settings. The school's admins can see them.
+    class Title(models.TextChoices):
+        NONE = "", "None"
+        MR = "Mr", "Mr"
+        MRS = "Mrs", "Mrs"
+        MS = "Ms", "Ms"
+        MISS = "Miss", "Miss"
+        DR = "Dr", "Dr"
+        PROF = "Prof", "Prof"
+        REV = "Rev", "Rev"
+
+    title = models.CharField(max_length=10, choices=Title.choices, blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    emergency_contact_name = models.CharField(max_length=120, blank=True, default="")
+    emergency_contact_phone = models.CharField(max_length=40, blank=True, default="")
+    # Routine emails (a parent reports an absence in their class, says they've paid fees). Urgent ones always go.
+    email_notifications = models.BooleanField(default=True)
+
     @property
     def is_admin(self):
         return self.role == self.Role.ADMIN

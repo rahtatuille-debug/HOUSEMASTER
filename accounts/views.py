@@ -1,5 +1,6 @@
+from django.conf import settings
 from rest_framework import viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -24,6 +25,7 @@ from .throttles import (
     InviteSendUserThrottle,
     LoginEmailThrottle,
     LoginIPThrottle,
+    PasswordChangeUserThrottle,
     PasswordResetConfirmIPThrottle,
     PasswordResetEmailThrottle,
     PasswordResetIPThrottle,
@@ -31,11 +33,13 @@ from .throttles import (
 )
 from .tokens import tokens_for
 from .serializers import (
+    PROFILE_DETAIL_FIELDS,
     AcceptInviteSerializer,
     ConfirmPasswordResetSerializer,
     EmailTokenObtainPairSerializer,
     InvitePreviewSerializer,
     InviteSerializer,
+    ProfileDetailsSerializer,
     ProfileNameSerializer,
     RequestPasswordResetSerializer,
     StaffMemberSerializer,
@@ -77,14 +81,31 @@ def me(request):
 
     profile = request.user.profile
     if request.method == "PATCH":
-        serializer = ProfileNameSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        profile.display_name = serializer.validated_data["name"]
-        profile.save(update_fields=["display_name"])
+        changed = []
+        if "name" in request.data:
+            serializer = ProfileNameSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            if profile.display_name != serializer.validated_data["name"]:
+                changed.append("name")
+            profile.display_name = serializer.validated_data["name"]
+        details = ProfileDetailsSerializer(
+            profile, data={k: request.data[k] for k in PROFILE_DETAIL_FIELDS if k in request.data}, partial=True,
+        )
+        details.is_valid(raise_exception=True)
+        changed += [k for k, v in details.validated_data.items() if getattr(profile, k) != v]
+        for key, value in details.validated_data.items():
+            setattr(profile, key, value)
+        profile.save()
+        if changed:
+            # Which details changed, never what they are.
+            log_activity(school=profile.school, actor=request.user, action="staff.details_changed", target=profile,
+                         summary=f"{profile.name} updated their own details", fields=changed)
     return Response(
         {
             "id": request.user.id,
             "name": profile.name,
+            # Never the email: it's for signing in only, not something the app shows.
+            **{k: getattr(profile, k) for k in PROFILE_DETAIL_FIELDS},
             "role": profile.role,
             "tour_seen": profile.tour_seen_at is not None,
             "is_boarding_staff": is_boarding_staff(request.user),
@@ -101,6 +122,69 @@ def me(request):
             "billing": _billing(profile),
         }
     )
+
+
+def _own_account(user):
+    """The school and name of a signed-in staff member or parent (students have their own password page)."""
+    profile = getattr(user, "profile", None)
+    if profile is not None:
+        return profile.school, profile.name
+    guardian = getattr(user, "guardian", None)
+    if guardian is not None:
+        return guardian.school, guardian.name
+    raise PermissionDenied("Change your password on your own page.")
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([PasswordChangeUserThrottle])
+def change_password(request):
+    """
+    POST {current_password, new_password}: a staff member or parent changes their password. Every other
+    device is signed out (accounts/tokens.py); this one gets new sign-in tokens.
+    """
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from guardians.notifications import send_after_commit
+
+    user = request.user
+    school, name = _own_account(user)
+    current = str(request.data.get("current_password", ""))
+    new = str(request.data.get("new_password", ""))
+    if not user.check_password(current):
+        raise ValidationError({"current_password": ["That isn't your current password."]})
+    if new == current:
+        raise ValidationError({"new_password": ["Choose a password that is different from your current one."]})
+    try:
+        validate_password(new, user)
+    except DjangoValidationError as err:
+        raise ValidationError({"new_password": list(err.messages)})
+    user.set_password(new)
+    user.save()
+    log_activity(school=school, actor=user, action="account.password_changed", target=user,
+                 summary=f"{name} changed their password")
+    if user.email:
+        send_after_commit([(
+            "Your HouseMaster password was changed",
+            f"Hello {name},\n\nThe password for your HouseMaster account at {school.name} was just changed, and any "
+            f"other phones or computers you were signed in on have been signed out.\n\nIf this wasn't you, reset your "
+            f"password now ({settings.FRONTEND_URL}) and tell your school.",
+            user.email,
+        )])
+    return Response(tokens_for(user))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sign_out_other_devices(request):
+    """Sign out every other phone or computer; this one gets new sign-in tokens."""
+    from .tokens import bump_token_version
+
+    school, name = _own_account(request.user)
+    bump_token_version(request.user.pk)
+    log_activity(school=school, actor=request.user, action="account.signed_out_elsewhere", target=request.user,
+                 summary=f"{name} signed out of their other devices")
+    return Response(tokens_for(request.user))
 
 
 def _billing(profile):
