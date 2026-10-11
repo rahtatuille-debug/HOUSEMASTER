@@ -53,6 +53,8 @@ class SchoolGrades:
         self.weights = school_weights(school)
         self.marks = defaultdict(lambda: defaultdict(list))
         self.mark_counts = defaultdict(int)
+        # How many marks each (student, term, subject, assessment type) mean rests on (the charts' P-2).
+        self.type_counts = defaultdict(int)
         self._averages, self._subjects, self._years = {}, {}, None
         grades = Grade.objects.filter(student_id__in=self.students)
         graded = None
@@ -90,6 +92,7 @@ class SchoolGrades:
                 mean = int(total) * 100 / (int(out_of) * n)
                 self.marks[(student_id, term_id)][names[subject_id]].append((mean, type_id))
                 self.mark_counts[(student_id, term_id)] += n
+                self.type_counts[(student_id, term_id, names[subject_id], type_id)] += n
             else:
                 mixed.append((student_id, term_id, subject_id, type_id))
         if mixed:  # rare: marks of one type out of different totals; averaged exactly from the marks themselves
@@ -104,6 +107,7 @@ class SchoolGrades:
             for (student_id, term_id, subject_id, type_id), values in percents.items():
                 self.marks[(student_id, term_id)][names[subject_id]].append((float(sum(values) / len(values)), type_id))
                 self.mark_counts[(student_id, term_id)] += len(values)
+                self.type_counts[(student_id, term_id, names[subject_id], type_id)] += len(values)
         loaded = {k[1] for k in self.marks}
         self.graded_terms = graded if graded is not None else [t for t in self.terms if t.id in loaded]
 

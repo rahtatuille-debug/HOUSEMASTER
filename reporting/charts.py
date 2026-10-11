@@ -16,7 +16,7 @@ guardian_charts, which gives them only what their child's pages already show.
 """
 from collections import defaultdict
 
-from gradebook.models import Grade
+from gradebook.models import AssessmentType, Grade
 from students.presets import student_section
 
 from .analytics import _grading, _mean
@@ -25,7 +25,8 @@ from .analytics import _grading, _mean
 # the comparison is left out. See docs/CHARTS.md. The owner may want to change it.
 MIN_COMPARE_STUDENTS = 5
 
-CHARTS = ("subject_trends",)
+CHARTS = ("subject_trends", "assessment_types",)
+UNTYPED = "No assessment type"
 
 
 def _terms(data):
@@ -67,6 +68,56 @@ def group_subject_trends(data, scope, name, student_ids, grading):
                                             for t in data.graded_terms]} for subject in subjects]
     return {"chart": "subject_trends", "scope": scope, "name": name, "terms": _terms(data), "subjects": lines,
             "grading": grading}
+
+
+# P-2 -------------------------------------------------------------------------------------------------------------
+
+def _type_means(data, sid, term_id, subject=None):
+    """{type id or None: (mean percent over subjects, marks)}: each subject's mean for the type counts once."""
+    per_type, counts = defaultdict(list), defaultdict(int)
+    for name, entries in data.marks.get((sid, term_id), {}).items():
+        if subject and name != subject:
+            continue
+        for mean, type_id in entries:
+            per_type[type_id].append(mean)
+            counts[type_id] += data.type_counts.get((sid, term_id, name, type_id), 0)
+    return {t: (sum(v) / len(v), counts[t]) for t, v in per_type.items()}
+
+
+def student_assessment_types(data, student, term, subject=None):
+    sid = student.id
+    klass = student.school_class
+    classmates = data.in_class(klass.id) if klass else []
+    need = data.school.support_min_marks
+    mine = _type_means(data, sid, term.id, subject) if term else {}
+    others = [_type_means(data, m, term.id, subject) for m in classmates] if term else []
+    # A deleted type's marks have no type (the foreign key is set to null), so every id here is the school's.
+    kinds = list(AssessmentType.objects.filter(school=data.school))
+    rows = []
+    for kind in [*kinds, None]:
+        if kind is None and None not in mine:
+            continue
+        key = kind.id if kind else None
+        value, count = mine.get(key, (None, 0))
+        if kind is not None and count == 0 and not any(key in o for o in others):
+            continue  # a type nobody in the class has marks in this term
+        enough = count >= need
+        rows.append({
+            "id": key, "name": kind.name if kind else UNTYPED,
+            "weight": float(kind.weight) if kind else None,
+            "student": round(value, 1) if value is not None and enough else None,
+            "marks": count,
+            "reason": "" if enough or count == 0 else
+            f"Not enough data ({count} mark{'' if count == 1 else 's'}; needs {need})",
+            "class": _compare([o[key][0] for o in others if key in o]),
+        })
+    subjects = sorted(data.marks.get((sid, term.id), {})) if term else []
+    system, scale = student_section(student)
+    return {"chart": "assessment_types", "scope": "student", "name": f"{student.first_name} {student.last_name}",
+            "terms": _terms(data), "term": {"id": term.id, "name": term.name} if term else None,
+            "subject": subject, "subjects": subjects, "types": rows, "min_marks": need,
+            "weighted": bool(kinds), "compare": {"min_students": MIN_COMPARE_STUDENTS},
+            "grading": _grading(system, scale)}
 
 
 # Parents ---------------------------------------------------------------------------------------------------------

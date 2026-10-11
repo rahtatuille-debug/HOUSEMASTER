@@ -144,6 +144,67 @@ class SubjectTrendsTests(ChartsTestCase):
         self.assertEqual(count(), before)
 
 
+class AssessmentTypeTests(ChartsTestCase):
+    """P-2."""
+
+    def test_averages_and_counts_per_type(self):
+        data = self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t1.id).data
+        types = {t["name"]: t for t in data["types"]}
+        # CAT: Maths 60, English 50 -> 55.0 over 2 marks. Exam: Maths 80 -> 80.0 over 1 mark.
+        self.assertEqual((types["CAT"]["student"], types["CAT"]["marks"]), (55.0, 2))
+        self.assertEqual((types["Exam"]["student"], types["Exam"]["marks"]), (80.0, 1))
+        # Weights are information only.
+        self.assertEqual((types["CAT"]["weight"], types["Exam"]["weight"]), (30.0, 70.0))
+        # Class (6 students with CAT marks): Ann 55, mates 50 -> 305 / 6 = 50.8; Exam: 80 + 250 = 330 / 6 = 55.0
+        self.assertEqual((types["CAT"]["class"], types["Exam"]["class"]), (50.8, 55.0))
+
+    def test_one_subject(self):
+        data = self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t2.id,
+                          subject="Maths").data
+        types = {t["name"]: t for t in data["types"]}
+        # T2 Maths: CAT 70 and 90 -> 80.0 over 2 marks; Exam 40/50 -> 80.0 over 1 mark. Weights not applied again.
+        self.assertEqual((types["CAT"]["student"], types["CAT"]["marks"]), (80.0, 2))
+        self.assertEqual((types["Exam"]["student"], types["Exam"]["marks"]), (80.0, 1))
+        self.assertIsNone(types["CAT"]["class"])  # only Ann has T2 marks
+        self.assertEqual(data["subjects"], ["Maths"])  # the subjects with marks this term
+
+    def test_too_few_marks_is_hidden_with_the_reason(self):
+        self.school_a.support_min_marks = 2
+        self.school_a.save()
+        data = self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t1.id).data
+        exam = next(t for t in data["types"] if t["name"] == "Exam")
+        self.assertIsNone(exam["student"])
+        self.assertEqual(exam["marks"], 1)
+        self.assertEqual(exam["reason"], "Not enough data (1 mark; needs 2)")
+        self.assertEqual(next(t for t in data["types"] if t["name"] == "CAT")["student"], 55.0)
+
+    def test_school_defined_type_names(self):
+        self.cat.name, self.exam.name = "Continuous assessment", "End-term"
+        self.cat.save()
+        self.exam.save()
+        data = self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t1.id).data
+        self.assertEqual([t["name"] for t in data["types"]], ["Continuous assessment", "End-term"])
+
+    def test_marks_without_a_type(self):
+        Grade.objects.create(student=self.ann, subject=self.english, term=self.t1, score=70)
+        data = self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t1.id).data
+        untyped = next(t for t in data["types"] if t["id"] is None)
+        self.assertEqual((untyped["name"], untyped["student"], untyped["marks"], untyped["weight"]),
+                         ("No assessment type", 70.0, 1, None))
+
+    def test_query_count_is_flat(self):
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.chart(chart="assessment_types", scope="student", id=self.ann.id, term=self.t1.id)
+            return len(ctx.captured_queries)
+
+        before = count()
+        for n in range(5):
+            kind = AssessmentType.objects.create(school=self.school_a, name=f"Quiz {n}", weight=5)
+            Grade.objects.create(student=self.ann, subject=self.maths, term=self.t1, score=50, assessment_type=kind)
+        self.assertEqual(count(), before)
+
+
 class ChartPermissionTests(ChartsTestCase):
     """Who may ask: the same answers as the existing performance endpoint."""
 
@@ -217,6 +278,9 @@ class GuardianChartTests(ChartsTestCase):
         self.assertEqual(lines, {"English": [50.0], "Maths": [74.0]})
         self.assertNotIn("class", str(data["subjects"]))
         self.assertNotIn("compare", data)
+
+    def test_no_assessment_type_chart_for_parents(self):
+        self.assertEqual(self.get(self.ann, chart="assessment_types", term=self.t1.id).status_code, 404)
 
     def test_someone_elses_child_is_not_found(self):
         for chart in [c for c in CHARTS if c != "assessment_types"]:
