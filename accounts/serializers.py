@@ -291,6 +291,7 @@ class AcceptInviteSerializer(serializers.Serializer):
             school=invite.school,
             role=invite.role,
             display_name=display_name,
+            phone=invite.phone,
             privacy_accepted_at=timezone.now(),
         )
         # Classes chosen when the invite was made (e.g. from the staff import),
