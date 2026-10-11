@@ -101,6 +101,7 @@ def build_dashboard(school):
         },
         "requests_waiting": change_requests.count(),
         "parent_signups_waiting": school.signup_requests.filter(status="pending").count(),
+        "staff_signups_waiting": school.staff_signup_requests.filter(status="pending").count(),
         "invites": {
             "pending": sum(1 for i in invites if i["status"] == "pending"),
             "expired": sum(1 for i in invites if i["status"] == "expired"),

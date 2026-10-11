@@ -52,6 +52,7 @@ from reporting.analytics_views import performance
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
+from accounts import staff_signup
 from accounts.views import (
     dashboard,
     governor_summary,
@@ -193,6 +194,9 @@ urlpatterns = [
     path('api/calendar/feed/', calendar_feed, name='calendar_feed'),
     path('api/calendar/ical/<str:token>.ics', calendar_ical, name='calendar_ical'),
     path('api/join/<str:token>/', join, name='parent_join'),
+    path('api/staff-join/<str:token>/', staff_signup.staff_join, name='staff_join'),
+    path('api/staff-join-link/', staff_signup.staff_join_link, name='staff_join_link'),
+    path('api/staff-signup-requests/', staff_signup.staff_signup_requests, name='staff_signup_requests'),
     path('api/signup-links/', signup_links, name='signup_links'),
     path('api/teacher-home/', teacher_home, name='teacher_home'),
     path('api/teacher-home/performance/', class_performance_view, name='teacher_class_performance'),

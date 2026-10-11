@@ -190,6 +190,8 @@ class Invite(models.Model):
         max_length=255, blank=True, help_text="Full name of the invitee — for the admin's own reference."
     )
     email = models.EmailField(help_text="The email this staff member will use to sign in.")
+    # From the staff sign-up link: copied to their profile when they accept.
+    phone = models.CharField(max_length=40, blank=True, default="")
     token = models.CharField(max_length=64, unique=True, default=_generate_token, editable=False)
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="invites_sent"
@@ -275,3 +277,48 @@ class UserSecurity(models.Model):
 
     def __str__(self):
         return f"Session state for user {self.user_id}"
+
+
+class StaffJoinLink(models.Model):
+    """
+    The school's one link for new staff (e.g. shared in the staff WhatsApp group). Whoever opens it gives their
+    name and email; that makes a request, not an account. An admin approves each one, which emails that person
+    the usual staff invite, so they choose their password from their own inbox (proving the email is theirs).
+    """
+
+    school = models.OneToOneField(School, on_delete=models.CASCADE, related_name="staff_join_link")
+    token = models.CharField(max_length=64, unique=True, default=_generate_token, editable=False)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   related_name="staff_join_links_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def renew(self):
+        """A new link; the old one stops working."""
+        self.token = _generate_token()
+        self.is_active = True
+        self.save(update_fields=["token", "is_active"])
+
+
+class StaffSignupRequest(models.Model):
+    """Someone asking to join as staff through the school's staff link, waiting for an admin."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Turned down"
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="staff_signup_requests")
+    name = models.CharField(max_length=255)
+    email = models.EmailField()
+    phone = models.CharField(max_length=40, blank=True)
+    # What they'd like the admin to know, e.g. "I teach Year 8 Maths".
+    note = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="staff_signup_requests_decided")
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
