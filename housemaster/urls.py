@@ -49,6 +49,7 @@ from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
 from students.import_views import import_school_workbook, import_staff, import_template, staff_import_template
 from reporting.analytics_views import charts as performance_charts, performance
+from gradebook.views import marksheet_import, marksheet_template
 from reporting.export_views import export_attendance, export_class_list, export_grades, export_reports
 from activity.views import ActivityLogViewSet
 from approvals.views import ChangeRequestViewSet
@@ -149,6 +150,8 @@ urlpatterns = [
     path('api/checklist/', first_week_checklist, name='first_week_checklist'),
     path('api/exports/class-list/', export_class_list, name='export_class_list'),
     path('api/exports/grades/', export_grades, name='export_grades'),
+    path('api/marksheets/template/', marksheet_template, name='marksheet_template'),
+    path('api/marksheets/import/', marksheet_import, name='marksheet_import'),
     path('api/exports/attendance/', export_attendance, name='export_attendance'),
     path('api/exports/reports/', export_reports, name='export_reports'),
     path('api/invites/preview/<str:token>/', InvitePreviewView.as_view(), name='invite_preview'),
