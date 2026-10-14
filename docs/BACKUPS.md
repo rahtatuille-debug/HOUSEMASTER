@@ -124,7 +124,7 @@ them.
 
 Only do this for real data loss. It replaces what the app uses.
 
-You need a computer with PostgreSQL 17 client tools (`pg_restore`,
+You need a computer with PostgreSQL 18 client tools (at least the Neon server's version) (`pg_restore`,
 `psql`) and `gpg`, and this repository checked out.
 
 1. **Download the backup.** GitHub → **Actions** → **Database backup** →
