@@ -25,7 +25,7 @@ jobs:
     services:
       # Throwaway database the backup is restored into, to prove it works.
       restore-test:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: restore-test
           POSTGRES_DB: restore_test
@@ -47,14 +47,14 @@ jobs:
           [ -n "$BACKUP_PASSPHRASE" ] || { echo "::error::The BACKUP_PASSPHRASE secret isn't set. See docs/BACKUPS.md."; missing=1; }
           exit $missing
 
-      - name: Install PostgreSQL 17 client tools
-        # pg_dump must be at least as new as the Neon server; 17 handles 14 to 17.
+      - name: Install PostgreSQL 18 client tools
+        # pg_dump must be at least as new as the Neon server (18.x); 18 handles 14 to 18.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-common >/dev/null
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
-          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
-          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq postgresql-client-18 >/dev/null
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
       - name: Back up the database
         env:
