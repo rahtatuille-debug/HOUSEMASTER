@@ -1,4 +1,5 @@
 """Starting M-Pesa payments, settling them, and matching paybill payments (see mpesa.models)."""
+import hmac
 import logging
 import re
 from datetime import datetime, timedelta
@@ -14,14 +15,21 @@ from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 
 from . import daraja
-from .models import C2BPayment, MpesaAccount, StkRequest
-from .secrets_box import unseal
+from .models import C2BPayment, MpesaAccount, StkRequest, hash_token
+from .secrets_box import UnreadableSecret, unseal
 
 logger = logging.getLogger(__name__)
 
 MAX_AMOUNT = 250_000  # M-Pesa's limit for one payment
 ASK_AGAIN_AFTER = timedelta(seconds=15)  # before asking M-Pesa how a prompt went
 GIVE_UP_AFTER = timedelta(minutes=3)  # a prompt nobody answered
+# M-Pesa can confirm a prompt was paid without its code; a paybill confirmation for the same school, amount
+# and account within this window is then taken to be the same payment, not a second one.
+SAME_PAYMENT_WINDOW = timedelta(minutes=30)
+# Giving up is ours, not M-Pesa's: the sweeper keeps asking about these for a day, and a payment still counts.
+TIMED_OUT = "No answer from the phone. Please try again."
+SWEEP_FOR = timedelta(hours=24)
+SWEEP_GAP = timedelta(minutes=2)  # between two questions to M-Pesa about the same prompt
 STARTS_PER_10_MIN = 5
 
 
@@ -100,10 +108,24 @@ BANNED_URL_WORDS = ("m-pesa", "mpesa", "safaricom", "exec", "exe", "cmd", "sql",
 
 
 def school_credentials(account):
-    return daraja.Credentials(
-        environment=account.environment, shortcode=account.shortcode, kind=account.kind, till_number=account.till_number,
-        consumer_key=unseal(account.consumer_key), consumer_secret=unseal(account.consumer_secret),
-        passkey=unseal(account.passkey))
+    try:
+        return daraja.Credentials(
+            environment=account.environment, shortcode=account.shortcode, kind=account.kind,
+            till_number=account.till_number, consumer_key=unseal(account.consumer_key),
+            consumer_secret=unseal(account.consumer_secret), passkey=unseal(account.passkey))
+    except UnreadableSecret:
+        raise ValidationError({"detail": ["The school's M-Pesa keys can't be read any more (the server's encryption "
+                                          "key changed). An admin needs to enter them again in Fees > M-Pesa."]})
+
+
+def _is_owner_token(token):
+    owner = settings.MPESA_OWNER_CALLBACK_TOKEN
+    return bool(owner) and hmac.compare_digest(str(token or ""), owner)
+
+
+def account_for_token(token):
+    """The school whose callback address this is, by the token's hash (the token itself isn't stored)."""
+    return MpesaAccount.objects.filter(token_hash=hash_token(token)).select_related("school").first()
 
 
 def school_ready(school):
@@ -206,8 +228,10 @@ def complete(stk, code, description, meta=None):
     meta = meta or {}
     with transaction.atomic():
         stk = StkRequest.objects.select_for_update().get(pk=stk.pk)
-        # A paid confirmation from M-Pesa (with its receipt) still counts after we'd stopped waiting.
-        late_payment = stk.status == StkRequest.Status.FAILED and code == 0 and meta.get("MpesaReceiptNumber")
+        # A paid confirmation from M-Pesa (with its receipt) still counts after we'd stopped waiting, and so does
+        # M-Pesa saying "paid" (even without the receipt) about a prompt we only gave up on.
+        late_payment = stk.status == StkRequest.Status.FAILED and code == 0 and (
+            meta.get("MpesaReceiptNumber") or stk.result_description == TIMED_OUT)
         if stk.status != StkRequest.Status.PENDING and not late_payment:
             return stk
         stk.result_description = str(description or "")[:255]
@@ -224,13 +248,19 @@ def complete(stk, code, description, meta=None):
             logger.warning("STK %s: amount %s differs from %s", stk.id, paid, stk.amount)
             return stk
         stk.status = StkRequest.Status.PAID
-        stk.receipt = str(meta.get("MpesaReceiptNumber") or "")[:30]
+        stk.receipt = str(meta.get("MpesaReceiptNumber") or "").strip().upper()[:30]
         today = school_localdate(stk.school)
         if stk.purpose == StkRequest.Purpose.FEES:
-            from fees.services import record_payment
+            from fees.services import _lock_school, record_payment
 
-            stk.fee_payment = record_payment(stk.student, None, Decimal(stk.amount), today, "mpesa", stk.receipt,
-                                             stk.requested_by_name, by_name="M-Pesa")
+            _lock_school(stk.school)  # the paybill confirmation for this payment may be arriving right now
+            same = None if stk.receipt else _c2b_for_unreceipted(stk)
+            if same is not None:
+                stk.receipt, stk.fee_payment = same.trans_id, same.fee_payment
+            else:
+                # duplicates="existing": if the paybill confirmation got here first, that payment is this one.
+                stk.fee_payment = record_payment(stk.student, None, Decimal(stk.amount), today, "mpesa", stk.receipt,
+                                                 stk.requested_by_name, by_name="M-Pesa", duplicates="existing")
         else:
             from billing.services import record_payment
 
@@ -263,11 +293,31 @@ def handle_stk_callback(token, body):
     return complete(stk, code, callback.get("ResultDesc", ""), meta)
 
 
+def _c2b_for_unreceipted(stk):
+    """A recorded paybill payment that is this prompt's payment, reported the other way first."""
+    candidates = (C2BPayment.objects.filter(
+        school=stk.school, purpose=StkRequest.Purpose.FEES, fee_payment__isnull=False, amount=stk.amount,
+        paid_at__gte=stk.created_at - SAME_PAYMENT_WINDOW, paid_at__lte=timezone.now() + SAME_PAYMENT_WINDOW)
+        .exclude(fee_payment__stk_request__isnull=False).select_related("fee_payment"))
+    key = _clean(stk.account_reference)
+    return next((c for c in candidates if _clean(c.bill_ref) == key), None)
+
+
+def _stk_for_c2b(school, row):
+    """A prompt paid without its code (M-Pesa said "paid" but not the code) that this paybill confirmation is."""
+    candidates = StkRequest.objects.filter(
+        school=school, purpose=StkRequest.Purpose.FEES, status=StkRequest.Status.PAID, receipt="", amount=row["amount"],
+        fee_payment__isnull=False, created_at__gte=row["paid_at"] - SAME_PAYMENT_WINDOW,
+        created_at__lte=row["paid_at"] + SAME_PAYMENT_WINDOW).select_related("fee_payment")
+    key = _clean(row["bill_ref"])
+    return next((s for s in candidates if _clean(s.account_reference) == key), None)
+
+
 def _token_matches(stk, token):
     if stk.purpose == StkRequest.Purpose.SUBSCRIPTION:
-        return bool(settings.MPESA_OWNER_CALLBACK_TOKEN) and token == settings.MPESA_OWNER_CALLBACK_TOKEN
+        return _is_owner_token(token)
     account = getattr(stk.school, "mpesa_account", None)
-    return account is not None and token == account.callback_token
+    return account is not None and hmac.compare_digest(account.token_hash, hash_token(token))
 
 
 def refresh(stk):
@@ -280,15 +330,85 @@ def refresh(stk):
     StkRequest.objects.filter(pk=stk.pk).update(checked_at=now)
     try:
         code, description = daraja.stk_query(credentials_for(stk), stk.checkout_request_id)
-    except daraja.DarajaError:
+    except (daraja.DarajaError, ValidationError):  # M-Pesa unreachable, or the school's keys unreadable
         code, description = None, ""
     if code is None:
         if now - stk.created_at > GIVE_UP_AFTER:
-            return complete(stk, 1037, "No answer from the phone. Please try again.")
+            return complete(stk, 1037, TIMED_OUT)
         stk.refresh_from_db()
         return stk
     # A query can say it was paid but not give the receipt: the callback (or the bursar) fills it in.
     return complete(stk, code, description, {})
+
+
+def sweep(school=None, limit=50, now=None):
+    """
+    Ask M-Pesa about prompts whose answer never came (a lost callback, a server asleep, a parent who closed the
+    page), including ones we gave up on, for up to a day. Returns {"asked", "paid", "failed"}.
+    Run by `manage.py mpesa_sweep` (every 10 minutes) and when the bursar opens the M-Pesa page.
+    """
+    from django.db.models import Q
+
+    now = now or timezone.now()
+    open_ = Q(status=StkRequest.Status.PENDING) | Q(status=StkRequest.Status.FAILED, result_description=TIMED_OUT)
+    due = StkRequest.objects.filter(open_, created_at__gte=now - SWEEP_FOR, created_at__lte=now - ASK_AGAIN_AFTER) \
+        .filter(Q(checked_at__isnull=True) | Q(checked_at__lte=now - SWEEP_GAP)).select_related("school")
+    if school is not None:
+        due = due.filter(school=school)
+    counts = {"asked": 0, "paid": 0, "failed": 0}
+    for stk in due.order_by("created_at")[:limit]:
+        StkRequest.objects.filter(pk=stk.pk).update(checked_at=now)
+        counts["asked"] += 1
+        try:
+            code, description = daraja.stk_query(credentials_for(stk), stk.checkout_request_id)
+        except (daraja.DarajaError, ValidationError):
+            continue
+        if code is None:  # still processing, or M-Pesa doesn't know yet
+            if stk.status == StkRequest.Status.PENDING and now - stk.created_at > GIVE_UP_AFTER:
+                complete(stk, 1037, TIMED_OUT)
+            continue
+        was = stk.status
+        stk = complete(stk, code, description, {})
+        if stk.status == StkRequest.Status.PAID and was != StkRequest.Status.PAID:
+            counts["paid"] += 1
+            logger.info("M-Pesa sweep: prompt %s was paid; its callback never came", stk.id)
+        elif code != 0 and was == StkRequest.Status.FAILED:
+            # M-Pesa's own answer replaces "no answer": the sweeper stops asking.
+            StkRequest.objects.filter(pk=stk.pk).update(result_description=str(description or "")[:255])
+            counts["failed"] += 1
+        elif stk.status == StkRequest.Status.FAILED:
+            counts["failed"] += 1
+    # Older than a day and still waiting: M-Pesa won't answer any more.
+    StkRequest.objects.filter(status=StkRequest.Status.PENDING, created_at__lt=now - SWEEP_FOR) \
+        .update(status=StkRequest.Status.FAILED, result_description=TIMED_OUT, completed_at=now)
+    return counts
+
+
+def sweep_soon(school):
+    """Sweep this school in the background, at most every 5 minutes (when the bursar opens the M-Pesa page)."""
+    import threading
+
+    from django.db import connection
+
+    if not cache.add(f"mpesa-sweep:{school.pk}", 1, 300):
+        return
+
+    def run():
+        try:
+            sweep(school=school, limit=20)
+        except Exception:
+            logger.exception("M-Pesa sweep failed")
+
+    def in_background():
+        try:
+            run()
+        finally:
+            connection.close()  # this thread's own connection, never the request's
+
+    if getattr(settings, "NOTIFICATIONS_IN_BACKGROUND", True):
+        threading.Thread(target=in_background, daemon=True).start()
+    else:
+        run()
 
 
 def stk_row(stk):
@@ -316,8 +436,8 @@ def handle_c2b(token, body):
         return None
     if not trans_id or amount <= 0:
         return None
-    owner = bool(settings.MPESA_OWNER_CALLBACK_TOKEN) and token == settings.MPESA_OWNER_CALLBACK_TOKEN
-    account = None if owner else MpesaAccount.objects.filter(callback_token=token).select_related("school").first()
+    owner = _is_owner_token(token)
+    account = None if owner else account_for_token(token)
     if not owner and account is None:
         return None
     payer = " ".join(str(body.get(k) or "").strip() for k in ("FirstName", "MiddleName", "LastName")).strip()
@@ -333,28 +453,51 @@ def handle_c2b(token, body):
 
 
 def _c2b_fees(school, row):
-    from fees.services import record_payment
+    """
+    A paybill payment, once. M-Pesa can report one payment twice (a PIN-prompt payment can also arrive here), so
+    a payment already recorded under this code, or a prompt paid without its code, is linked rather than counted again.
+    """
+    from fees.models import Payment
+    from fees.services import _lock_school, record_payment, recorded_with_code
 
-    student = find_student(school, row["bill_ref"])
+    _lock_school(school)  # one payment for this school at a time, whichever way M-Pesa reports it
+    existing = recorded_with_code(school, row["trans_id"]).first()
+    stk = None if existing else _stk_for_c2b(school, row)
+    if stk is not None:
+        existing = stk.fee_payment
+        StkRequest.objects.filter(pk=stk.pk).update(receipt=row["trans_id"])
+        Payment.objects.filter(pk=existing.pk).update(reference=row["trans_id"])
+    student = existing.student if existing else find_student(school, row["bill_ref"])
     c2b = C2BPayment.objects.create(purpose=StkRequest.Purpose.FEES, school=school, student=student,
                                     status=C2BPayment.Status.RECORDED if student else C2BPayment.Status.UNMATCHED, **row)
-    if student:
+    if existing:
+        c2b.fee_payment = existing
+    elif student:
         c2b.fee_payment = record_payment(student, None, row["amount"], row["paid_at"].astimezone(daraja.NAIROBI).date(),
-                                         "mpesa", row["trans_id"], row["payer_name"], by_name="M-Pesa")
-        c2b.save(update_fields=["fee_payment"])
+                                         "mpesa", row["trans_id"], row["payer_name"], by_name="M-Pesa",
+                                         duplicates="existing")
+    c2b.save(update_fields=["fee_payment"])
     return c2b
 
 
 def assign(c2b, student, user):
-    """The bursar says which student an unmatched paybill payment was for."""
+    """
+    The bursar says which student an unmatched paybill payment was for. Pressing it twice at once records it
+    once; a code someone already recorded by hand (from a parent's claim, say) is refused, not counted again.
+    """
     from fees.services import record_payment
 
-    c2b.student = student
-    c2b.status = C2BPayment.Status.RECORDED
-    c2b.handled_by_name = display_name(user)
-    c2b.fee_payment = record_payment(student, user, c2b.amount, c2b.paid_at.astimezone(daraja.NAIROBI).date(), "mpesa",
-                                     c2b.trans_id, c2b.payer_name)
-    c2b.save()
+    with transaction.atomic():
+        c2b = C2BPayment.objects.select_for_update().get(pk=c2b.pk)
+        if c2b.status != C2BPayment.Status.UNMATCHED or c2b.fee_payment_id:
+            raise ValidationError({"detail": ["This payment has already been dealt with."]})
+        c2b.student = student
+        c2b.status = C2BPayment.Status.RECORDED
+        c2b.handled_by_name = display_name(user)
+        c2b.save()  # no longer "waiting", so recording its code isn't refused as unassigned
+        c2b.fee_payment = record_payment(student, user, c2b.amount, c2b.paid_at.astimezone(daraja.NAIROBI).date(),
+                                         "mpesa", c2b.trans_id, c2b.payer_name)
+        c2b.save(update_fields=["fee_payment"])
     return c2b
 
 

@@ -205,7 +205,11 @@ class CallbackAddressTests(Base):
         urls = services.hook_urls(self.account.callback_token)
         for url in urls.values():
             self.assertFalse(any(w in url.lower() for w in services.BANNED_URL_WORDS), url)
-        self.assertRegex(MpesaAccount(school=self.school_b).callback_token, r"^[0-9a-f]{40}$")
+        fresh = MpesaAccount.objects.create(school=self.school_b, shortcode="654321")
+        self.assertRegex(fresh.callback_token, r"^[0-9a-f]{40}$")
+        # Stored only as a hash and encrypted (PAY-005): the token itself is nowhere in the row.
+        row = MpesaAccount.objects.filter(pk=fresh.pk).values().get()
+        self.assertNotIn(fresh.callback_token, str(row))
         with self.assertRaises(Exception):
             services.hook_urls("abcEXEcute")
 

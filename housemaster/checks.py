@@ -39,4 +39,12 @@ def production_configuration(app_configs, **kwargs):
                  "IP address. Set DRF_NUM_PROXIES (docs/ENVIRONMENT.md explains how to find the value).",
             id="housemaster.W001",
         ))
+    if not (getattr(settings, "MPESA_ENCRYPTION_KEY", "") or "").strip():
+        messages.append(Warning(
+            "MPESA_ENCRYPTION_KEY is not set.",
+            hint="Schools can't save M-Pesa keys in production without it, and keys saved before are encrypted "
+                 "with a key derived from SECRET_KEY. Set it, then run `manage.py mpesa_rekey` "
+                 "(docs/ENVIRONMENT.md).",
+            id="housemaster.W002",
+        ))
     return messages

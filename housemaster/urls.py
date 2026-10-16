@@ -179,6 +179,7 @@ urlpatterns = [
     path('api/fees/remind/', fees_views.remind, name='fee_remind'),
     path('api/fees/mpesa/', mpesa_views.fee_mpesa_settings, name='fee_mpesa_settings'),
     path('api/fees/mpesa/connect/', mpesa_views.fee_mpesa_connect, name='fee_mpesa_connect'),
+    path('api/fees/mpesa/new-address/', mpesa_views.fee_mpesa_new_address, name='fee_mpesa_new_address'),
     path('api/fees/mpesa/payments/', mpesa_views.fee_mpesa_payments, name='fee_mpesa_payments'),
     path('api/fees/mpesa/payments/<int:payment_id>/assign/', mpesa_views.fee_mpesa_assign, name='fee_mpesa_assign'),
     path('api/fees/mpesa/payments/<int:payment_id>/ignore/', mpesa_views.fee_mpesa_ignore, name='fee_mpesa_ignore'),

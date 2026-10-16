@@ -14,6 +14,7 @@ Safaricom calls us back at URLs with a long random token in them, so a
 caller has to know it. The keys are stored encrypted and never sent back.
 Phone numbers are kept masked.
 """
+import hashlib
 import secrets
 
 from django.conf import settings
@@ -25,6 +26,11 @@ from students.models import School, Student
 def new_token():
     # Letters a-f and digits only: Safaricom never calls an address containing words like "exe" or "sql".
     return secrets.token_hex(20)
+
+
+def hash_token(token):
+    """What is stored to recognise a callback: a SHA-256 of the token (160 random bits, so no salt is needed)."""
+    return hashlib.sha256(str(token or "").encode()).hexdigest()
 
 
 class MpesaAccount(models.Model):
@@ -45,10 +51,35 @@ class MpesaAccount(models.Model):
     consumer_key = models.TextField(blank=True)  # encrypted (mpesa.secrets)
     consumer_secret = models.TextField(blank=True)
     passkey = models.TextField(blank=True)
-    callback_token = models.CharField(max_length=64, unique=True, default=new_token)
+    # The secret in the callback addresses Safaricom calls. Stored as a hash, to recognise a callback without
+    # keeping the secret readable, and encrypted, to build the addresses when a prompt is sent.
+    token_hash = models.CharField(max_length=64, unique=True, editable=False)
+    token_sealed = models.TextField(editable=False)
+    token_changed_at = models.DateTimeField(null=True, blank=True)
     enabled = models.BooleanField(default=True)
     c2b_registered_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def callback_token(self):
+        from .secrets_box import unseal
+
+        return unseal(self.token_sealed)
+
+    def set_callback_token(self, token=None):
+        """A new secret (or the one given); the old addresses stop working once this is saved."""
+        from django.utils import timezone
+
+        from .secrets_box import seal
+
+        token = token or new_token()
+        self.token_hash, self.token_sealed, self.token_changed_at = hash_token(token), seal(token), timezone.now()
+        return token
+
+    def save(self, *args, **kwargs):
+        if not self.token_hash:
+            self.set_callback_token()
+        super().save(*args, **kwargs)
 
 
 class StkRequest(models.Model):

@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -45,6 +46,10 @@ def _amount(value, field="amount", allow_negative=False):
     if (amount < 0 and not allow_negative) or amount == 0 or abs(amount) >= Decimal("10000000000"):
         raise ValidationError({field: ["Enter an amount more than 0."]})
     return amount
+
+
+# A parent's claim is checked by a person before it counts, but a claim for millions is a typo or a prank.
+MAX_CLAIM = Decimal("5000000")
 
 
 def _date(school, value, field="paid_on"):
@@ -263,15 +268,22 @@ def remove_charge(request, charge_id):
     return Response(statement(student))
 
 
+def _shared(request):
+    return "shared" if str(request.data.get("shared", "")).lower() in ("true", "1") else "refuse"
+
+
 @api_view(["POST"])
 @permission_classes(STAFF)
 def add_payment(request, student_id):
-    """POST {amount, paid_on, method, reference, payer_name}: records it, numbers the receipt and emails the parents."""
+    """
+    POST {amount, paid_on, method, reference, payer_name, shared?}: records it, numbers the receipt and emails the
+    parents. An M-Pesa code already on a payment is refused unless shared=true (one payment for siblings).
+    """
     student = _student(request, student_id)
     services.record_payment(
         student, request.user, _amount(request.data.get("amount")), _date(student.school, request.data.get("paid_on")),
         _method(request.data.get("method")), str(request.data.get("reference", "")).strip(),
-        str(request.data.get("payer_name", "")).strip())
+        str(request.data.get("payer_name", "")).strip(), duplicates=_shared(request))
     return Response(statement(student), status=201)
 
 
@@ -310,11 +322,18 @@ def _open_claim(request, claim_id):
 @api_view(["POST"])
 @permission_classes(STAFF)
 def confirm_claim(request, claim_id):
-    """POST {amount?}: the money arrived; records the payment (the amount received, if different)."""
+    """
+    POST {amount?, shared?}: the money arrived; records the payment (the amount received, if different). Confirming
+    twice at once records it once; the second is told it's no longer open.
+    """
     claim = _open_claim(request, claim_id)
     amount = _amount(request.data["amount"]) if request.data.get("amount") not in (None, "") else claim.amount
-    services.record_payment(claim.student, request.user, amount, claim.paid_on, claim.method, claim.reference,
-                            claim.claimed_by_name, claim=claim)
+    with transaction.atomic():
+        locked = PaymentClaim.objects.select_for_update().get(pk=claim.pk)
+        if locked.status != PaymentClaim.Status.OPEN:
+            raise ValidationError({"detail": ["This payment has already been dealt with."]})
+        services.record_payment(locked.student, request.user, amount, locked.paid_on, locked.method, locked.reference,
+                                locked.claimed_by_name, claim=locked, duplicates=_shared(request))
     claim.refresh_from_db()
     return Response(claim_row(claim))
 
@@ -357,6 +376,13 @@ def guardian_fees(student):
             "mpesa": guardian_mpesa_info(student) if fee.currency == "KES" else None}
 
 
+def _claim_amount(value):
+    amount = _amount(value)
+    if amount > MAX_CLAIM:
+        raise ValidationError({"amount": [f"That's more than one payment can be ({MAX_CLAIM:,.0f}). Check the amount."]})
+    return amount
+
+
 def guardian_claim(request, student):
     """A parent says they've paid: {amount, paid_on, method, reference, note}."""
     if PaymentClaim.objects.filter(student=student, status=PaymentClaim.Status.OPEN).count() >= 5:
@@ -366,7 +392,7 @@ def guardian_claim(request, student):
         raise ValidationError({"reference": ["Give the payment's reference, e.g. the M-Pesa code."]})
     claim = PaymentClaim.objects.create(
         school=student.school, student=student, claimed_by=request.user, claimed_by_name=request.user.guardian.name,
-        amount=_amount(request.data.get("amount")), paid_on=_date(student.school, request.data.get("paid_on")),
+        amount=_claim_amount(request.data.get("amount")), paid_on=_date(student.school, request.data.get("paid_on")),
         method=_method(request.data.get("method")), reference=reference,
         note=str(request.data.get("note", "")).strip()[:300])
     services.tell_bursars(claim)

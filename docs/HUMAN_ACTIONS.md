@@ -394,4 +394,16 @@ Two separate set-ups: **your own paybill** (schools pay their subscription) and 
 
 The school does this itself (the bursar or an admin), in HouseMaster → Fees → **M-Pesa**: they create their own Daraja app for their paybill or till, go live with Safaricom, and enter the paybill (or store and till) number, consumer key, consumer secret and passkey, then press **Connect**. Their keys are stored encrypted and never shown again. You only need step A.2's `MPESA_CALLBACK_BASE_URL` set for their connection to work.
 
-Optional: `MPESA_ENCRYPTION_KEY` (any long random value) encrypts the schools' saved keys; if unset, a key derived from `SECRET_KEY` is used. Changing either later means schools must enter their keys again.
+**Required before a school connects M-Pesa:** `MPESA_ENCRYPTION_KEY` encrypts the schools' saved keys and callback secrets. Production refuses to save new keys without it. Set it, then run `python manage.py mpesa_rekey` once in the Render shell. See docs/ENVIRONMENT.md, "M-Pesa".
+
+Only admins can change a school's M-Pesa settings; every admin is emailed when they change. An admin can press **New callback address** if the old one may have leaked.
+
+**C. Settling payments whose callback was lost (before collecting real money)**
+
+Safaricom's callback can be lost: the server is asleep, a deploy is running, or the parent closed the page. A Render **Cron Job** settles those by asking M-Pesa directly. Set it up once:
+
+- Render → New → **Cron Job**, same repository and environment variables as the backend.
+- Schedule `*/10 * * * *` (every 10 minutes).
+- Command `python manage.py mpesa_sweep`.
+
+Until it exists, opening Fees → M-Pesa as the bursar sweeps that school, at most every 5 minutes. Render Cron Jobs cost about USD 1 a month at the smallest size (check current pricing).

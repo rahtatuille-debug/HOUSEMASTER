@@ -23,5 +23,5 @@ class StkRequestAdmin(admin.ModelAdmin):
 class MpesaAccountAdmin(admin.ModelAdmin):
     """The schools' own M-Pesa connections. The keys are encrypted and never shown."""
     list_display = ("school", "kind", "shortcode", "environment", "enabled", "c2b_registered_at")
-    exclude = ("consumer_key", "consumer_secret", "passkey", "callback_token")
+    exclude = ("consumer_key", "consumer_secret", "passkey", "token_hash", "token_sealed")
     readonly_fields = ("school", "kind", "shortcode", "till_number", "environment", "c2b_registered_at")

@@ -74,8 +74,20 @@ class CallbackErrorTests(SchoolScopedAPITestCase):
         super().tearDown()
 
     def test_a_failing_callback_sends_no_token(self):
+        from unittest import mock
+
+        from mpesa import services
+
         token = self.account.callback_token
         client = APIClient()
+        # A fault while settling a payment (simulated): reported to Sentry with the request and its frames.
+        with mock.patch.object(services, "complete", side_effect=RuntimeError("database went away")):
+            from mpesa.models import StkRequest
+
+            StkRequest.objects.create(purpose="fees", school=self.school_a, amount=10, phone_masked="2547•••678",
+                                      account_reference="X", checkout_request_id="ws_CO_1")
+            client.post(f"/api/payments/hooks/{token}/stk/",
+                        {"Body": {"stkCallback": {"CheckoutRequestID": "ws_CO_1", "ResultCode": 1}}}, format="json")
         client.post(f"/api/payments/hooks/{token}/stk/", "{not json", content_type="application/json")
         client.post(f"/api/payments/hooks/{token}/c2b/confirm/", {"TransID": "X1", "TransAmount": "abc"}, format="json")
         sentry_sdk.flush()

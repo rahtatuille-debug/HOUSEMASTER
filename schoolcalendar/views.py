@@ -3,7 +3,8 @@ from datetime import date, timedelta
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from rest_framework import serializers, viewsets
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -164,9 +165,14 @@ def calendar_feed(request):
     return Response({"url": url, "webcal": url.replace("https://", "webcal://", 1).replace("http://", "webcal://", 1)})
 
 
+class FeedThrottle(AnonRateThrottle):
+    scope = "calendar_feed"
+
+
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([FeedThrottle])
 def calendar_ical(request, token):
     """The calendar as an .ics file, for calendar apps. The long random link is the key."""
     feed = CalendarFeed.objects.filter(token=token).select_related("user").first()

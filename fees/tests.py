@@ -49,10 +49,12 @@ class Base(SchoolScopedAPITestCase):
         return self.admin.post("/api/fees/bill-term/", {"term": self.term.id}, format="json").data["created"]
 
     def pay(self, student, amount, client=None, **extra):
+        # Each test payment its own M-Pesa code: one code is one payment (see DuplicateCodeTests).
+        self.codes = getattr(self, "codes", 0) + 1
         with self.captureOnCommitCallbacks(execute=True):
             return (client or self.admin).post(f"/api/fees/students/{student.id}/payments/",
-                                               {"amount": amount, "method": "mpesa", "reference": "QWE123", **extra},
-                                               format="json")
+                                               {"amount": amount, "method": "mpesa", "reference": f"QWE{self.codes:03d}",
+                                                **extra}, format="json")
 
 
 class BillingTests(Base):
