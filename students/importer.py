@@ -28,6 +28,8 @@ from reporting.spreadsheets import append_row
 from .models import SchoolClass, Student, YearGroup
 
 MAX_ERRORS = 200
+# Rows looked at per sheet, blank ones included: a sheet can hold a million empty rows.
+MAX_SCANNED_ROWS = 300_000
 TEMPLATE = {
     "Students": ["id", "first_name", "last_name", "class", "year_group", "house", "gender", "date_of_birth"],
     "Grades": ["student_id", "subject", "term", "score", "max_score"],
@@ -74,6 +76,9 @@ def _rows(ws):
     """Yield (row number, dict keyed by lower-case header) for each non-empty row."""
     headers = [_text(c.value).lower() for c in ws[1]]
     for number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if number > MAX_SCANNED_ROWS:
+            raise WorkbookError(f'The "{ws.title}" sheet has more than {MAX_SCANNED_ROWS:,} rows. '
+                                "Delete any empty rows at the bottom, or split it into smaller files.")
         if all(v is None or _text(v) == "" for v in row):
             continue
         yield number, dict(zip(headers, row))
@@ -224,8 +229,15 @@ def import_workbook(file, school, commit):
     Returns a summary: counts, what was/would be created, and row-by-row errors.
     Rows with errors are skipped; the rest are imported.
     """
+    from housemaster.uploads import WORKBOOK_MAX_UNPACKED, UnsafeWorkbook, check_xlsx
+
     try:
-        wb = openpyxl.load_workbook(file, data_only=True, read_only=False)
+        check_xlsx(file, WORKBOOK_MAX_UNPACKED)
+    except UnsafeWorkbook as exc:
+        raise WorkbookError(str(exc))
+    try:
+        # Streamed: a full load of a large school workbook takes about ten times the memory.
+        wb = openpyxl.load_workbook(file, data_only=True, read_only=True)
     except Exception:
         raise WorkbookError("That file isn't an Excel workbook (.xlsx) HouseMaster can read.")
     if "Students" not in wb.sheetnames:

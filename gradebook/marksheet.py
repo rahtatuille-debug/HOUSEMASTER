@@ -22,6 +22,8 @@ from .models import Grade
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2000
+# Rows looked at, blank ones included, before giving up: a sheet can hold a million empty rows.
+MAX_SCANNED_ROWS = 10 * MAX_ROWS
 SKIP_WORDS = {"", "-", "abs", "absent", "x", "n/a", "na"}
 HEADER = ["Admission no.", "Student", "Mark"]
 
@@ -73,8 +75,14 @@ def _cell_text(value):
 
 def read_rows(upload):
     """[(row number, admission number, mark text)] from the sheet under its header row."""
+    from housemaster.uploads import MARK_SHEET_MAX_UNPACKED, UnsafeWorkbook, check_xlsx
+
     if upload.size > MAX_BYTES:
         raise MarkSheetError("The file must be smaller than 2 MB.")
+    try:
+        check_xlsx(upload, MARK_SHEET_MAX_UNPACKED)
+    except UnsafeWorkbook as exc:
+        raise MarkSheetError(str(exc))
     try:
         wb = openpyxl.load_workbook(upload, read_only=True, data_only=True)
     except Exception:
@@ -95,6 +103,9 @@ def read_rows(upload):
                              "that.")
     out = []
     for number, row in enumerate(rows, start=number + 1):
+        if number > MAX_SCANNED_ROWS:
+            raise MarkSheetError(f"The sheet has more than {MAX_SCANNED_ROWS} rows, most of them empty. "
+                                 "Delete the empty rows and try again.")
         row = list(row)
         admission = _cell_text(row[columns[0]]) if columns[0] < len(row) else ""
         mark = _cell_text(row[columns[1]]) if columns[1] < len(row) else ""

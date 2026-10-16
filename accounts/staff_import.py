@@ -184,6 +184,12 @@ class _StaffImport:
 
 
 def import_staff(upload, school, invited_by, commit=False):
+    from housemaster.uploads import WORKBOOK_MAX_UNPACKED, UnsafeWorkbook, check_xlsx
+
+    try:
+        check_xlsx(upload, WORKBOOK_MAX_UNPACKED)
+    except UnsafeWorkbook as exc:
+        raise WorkbookError(str(exc))
     try:
         wb = openpyxl.load_workbook(upload, read_only=True, data_only=True)
     except Exception:
