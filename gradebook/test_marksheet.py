@@ -159,3 +159,20 @@ class MarkSheetTests(SchoolScopedAPITestCase):
         response = self.upload(SimpleUploadedFile("other.xlsx", out.getvalue()))
         self.assertIn("Admission no.", str(response.data["file"]))
         self.assertEqual(self.upload(self.sheet({}), max_score="0").status_code, 400)
+
+    def test_a_zip_bomb_is_refused_before_it_is_unpacked(self):
+        from housemaster.test_uploads import raw_xlsx
+
+        bomb = raw_xlsx(shared_text_mb=30)  # under 2 MB, unpacks to about 30 MB
+        response = self.upload(SimpleUploadedFile("marks.xlsx", bomb), commit=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unpacks to far more data", str(response.data["file"]))
+        self.assertEqual(Grade.objects.count(), 0)
+
+    def test_a_sheet_of_empty_rows_is_refused(self):
+        from housemaster.test_uploads import raw_xlsx
+
+        sheet = raw_xlsx(header=("Admission no.", "Student", "Mark"), empty_rows=25_000)
+        response = self.upload(SimpleUploadedFile("marks.xlsx", sheet))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("most of them empty", str(response.data["file"]))

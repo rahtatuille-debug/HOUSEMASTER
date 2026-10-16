@@ -6,7 +6,7 @@ DRAFT — NOT LEGAL ADVICE — for review and adaptation by a qualified Kenyan d
 [brackets]; delete the parts about features the school doesn't use (for
 example health notes, photos or the writing assistant). It describes only
 what HouseMaster does for the school; the school's own notice may need to
-cover more (admissions, fees, CCTV...). Everything marked [VERIFY] depends
+cover more (CCTV, for example). Everything marked [VERIFY] depends
 on legal points counsel must confirm (QUESTIONS_FOR_COUNSEL.md).*
 
 *The app shows parents and staff a privacy notice when they create their
@@ -43,6 +43,12 @@ only on our instructions, under a data processing agreement (it is our
 | [Boarders] | [boarding house, dormitory and bed; roll-call marks; records of a boarder being missing and how it was resolved; leave requests, including who collects them; sick-bay visits, including what was wrong and the treatment] | [to look after boarders, know where they are, and keep them safe] |
 | [Pupils who need extra support] | [the reasons, the teacher's note, the support plan and when it will be reviewed. HouseMaster may suggest pupils from their marks and attendance, but a member of staff always decides, and nothing is shared with you until they do] | [to help pupils who are struggling, and tell parents what the school will do] |
 | [Pupils] | [positions in class and year group, worked out from marks when needed] | [to report progress, where the school reports positions] |
+| [Pupils] | [homework: what was set, whether it was done, the mark and the teacher's comment, and anything your child hands in through their own account] | [to set and follow up homework] |
+| [Pupils] | [behaviour records: what happened, the action taken, and private notes for staff; merits and the reasons for them] | [to keep good order and recognise good work. We tell you about the records we decide to share with you; staff-only notes are never shown to parents or pupils] |
+| [Pupils] | [clubs and teams your child belongs to, club attendance, and fixtures (dates, venues, results)] | [to run clubs and keep you informed] |
+| [Parents and pupils] | [absences you report (dates and the reason, which may be an illness), and the alerts we send you when your child is marked absent] | [to know where pupils are and keep them safe] |
+| [Families] | [fees charged, payments (amount, date, method, the M-Pesa code or other reference, the payer's name), receipts, statements, and payments you tell us you have made] | [to collect and account for school fees] |
+| [Families who pay by M-Pesa] | [the phone number the PIN prompt is sent to (we keep it only partly visible), and what Safaricom tells us about the payment: the M-Pesa code, amount and the payer's name] | [to record your payment against your child's account automatically] |
 | [Families who apply for a place] | [the child's details, the parent's contact details, anything the family tells us in the form, and our notes and decision] | [to consider the application. Closed applications are deleted after [N] days, VERIFY question 7] |
 
 ## Our legal basis
@@ -72,7 +78,33 @@ need it can see it.]
 - **Other parents** never see your details, except in a **class
   discussion**, where the parents taking part see each other's names.
   [VERIFY: QUESTIONS_FOR_COUNSEL.md question 8.]
+- **Pupils with their own sign-in** see only their own record: the same
+  parts a parent sees, except fees, leave and absence reports.
+- **Behaviour records:** parents and the pupil see only the records we decide
+  to share, and never the staff-only notes. [Staff are asked not to name other
+  pupils in a shared record.]
+- **Bursars** and administrators see fee accounts; teachers don't.
 - **Other schools** using HouseMaster can never see our information.
+
+## Your child's own sign-in [delete if the school doesn't use it]
+
+We may give your child their own HouseMaster sign-in so they can see their
+timetable, homework and marks and hand in homework. It has a username, not
+an email address. We give your child a starting password on a slip, and they
+must choose their own the first time they sign in. We can close the account
+at any time, and it closes automatically when your child leaves.
+[VERIFY: the age and consent rules for a child's own account, question 18.]
+
+## Paying fees [delete if the school doesn't use it]
+
+HouseMaster keeps your child's fee account: what is charged, what has been
+paid, and receipts. If we take payments by **M-Pesa**, a payment goes
+**straight to the school's own paybill or till**; HouseMaster never holds the
+money. To send you a PIN prompt, HouseMaster passes your phone number, the
+amount and your child's admission number to **Safaricom**, which runs M-Pesa
+under its own terms and privacy notice. When you pay, Safaricom tells us the
+M-Pesa code, the amount and the payer's name. [VERIFY: Safaricom's role,
+question 17; how long fee records are kept, question 19.]
 
 ## The writing assistant
 
@@ -99,7 +131,15 @@ We share information outside the school only where the law requires it
 Parents get emails when an announcement is published for them or a report
 card is ready; you can turn these off on your Profile page. **Urgent alerts**
 (emergencies such as a closure) are always sent by email as well as in the
-app, even if you've turned other emails off.
+app, even if you've turned other emails off. [If the school uses absence
+alerts: when your child is marked absent at the register and you haven't
+already told us they'd be away, we let you know the same day, by email
+(unless you've turned emails off) and by notification.]
+
+You can also turn on **notifications on your phone or computer**. They show
+only the school's name and a short notice, never your child's name, and they
+pass through the company that makes your browser (for example Google or
+Apple). You can turn them off at any time.
 
 ## How long we keep it
 

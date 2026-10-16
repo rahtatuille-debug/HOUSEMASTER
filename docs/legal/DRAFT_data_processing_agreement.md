@@ -177,7 +177,14 @@ them: the timetable; boarding (houses and beds, roll calls, missing-boarder
 records, leave and the sick bay); suggestions of pupils who may need support
 and the support plans staff confirm; class and year-group positions; and
 admissions (a public application form and the pipeline to enrolment, added by
-PR #14).
+PR #14). Added since (checked against the code on 2026-10-16): **school fees**
+(charges, payments, receipts, parents' payment claims and fee reminders) and
+**collecting fees by M-Pesa** into the School's own paybill or till; **sign-in
+accounts for pupils**; **homework** (set by teachers, handed in by pupils);
+**behaviour records and merits**; **absence reports from parents and absence
+alerts to them**; **clubs and teams** (members, sessions, attendance, fixtures);
+the **school calendar** with private calendar-feed links; and **phone and browser
+notifications** (web push).
 
 **People the data is about:** pupils (including former pupils), their
 parents and guardians, the School's staff, and people invited to the
@@ -198,6 +205,15 @@ School's account.
 | Boarding (if the School turns it on) | boarding house, dormitory and bed; roll-call marks (present, missing, on leave, in the sick bay) with notes; records of a boarder marked missing and how it was resolved (who, when, a note); corrections to finished roll calls (who, when, reason); leave requests (dates, reason, who collects the child, decision and notes); sick-bay visits (complaint, treatment, outcome, times) |
 | Support | suggestions that a pupil may need support (computed from marks and attendance, never shared until a person confirms), confirmed concerns (reasons, teacher's note, support plan, review date, who and when), and the pupil's average and attendance when a suggestion was dismissed |
 | Positions | class and year-group positions and "most improved", computed on demand from grades (not stored), shown to staff and on 8-4-4 report cards |
+| Pupils' sign-in accounts (if the School creates them) | a username made from the pupil's name and a random number (no email address); the password (salted hash; the School is shown a starting password once, to give the pupil, and the pupil must change it at first sign-in); whether it still has to be changed; who created it. A pupil sees only their own record, and the same parts of it a parent sees (details, teachers, attendance, marks and finalised report cards, timetable, homework, merits, clubs, boarding details, a support concern once staff confirm it, and behaviour records the School shared with parents), but not fees, leave or absence reports |
+| Homework | assignments (class, subject, title, instructions, a link, dates, marked out of); each pupil's record (done, late, not done, the mark, the teacher's comment, when) and, if the pupil hands it in through their account, their typed answer or a link (up to 4,000 characters) |
+| Behaviour and merits | incidents (date, category, severity, what happened, the action taken, **staff-only notes**, whether shared with parents and when they were told, who recorded it); merits (date, category, points, reason, whether shared, who gave it). Parents see only what the School chooses to share, never the staff-only notes |
+| Absences | parents' absence reports (dates, reason, details, who reported it, when staff saw it, cancellations) and absence alerts sent to parents when a pupil is marked absent (date, when sent, to whom, corrections) |
+| Clubs and teams | clubs (name, kind, when and where they meet), members and their roles, sessions and attendance, fixtures (date, time, opponent, venue, results and a short report) |
+| Calendar | events (title, description, dates, place, staff-only or not, who added it); a private feed link per user, whose secret token lets a calendar app read the events that user may see |
+| Fees | the School's fee settings and items; charges per pupil; payments (amount, date, method, reference such as an M-Pesa code, the payer's name, receipt number, who recorded it, cancellations with the reason); parents' claims that they have paid (amount, date, method, reference, note, the decision and reason); receipts and statements as PDFs, which can be emailed to parents |
+| M-Pesa (if the School connects its paybill or till) | the School's Daraja credentials, **encrypted** and never shown again after they are saved; payment prompts sent to a parent's phone (amount, the phone number **stored masked**, account reference, Safaricom's request IDs, result, receipt code, who asked, when); payments made straight to the paybill (Safaricom's transaction code, amount, the account number typed, the payer's name **as Safaricom sends it**, the phone number **masked**, time, which pupil it was matched to) |
+| Notifications | for each device a person turns notifications on for: the browser maker's push address and the device's public encryption keys. A notification carries only the School's name and a short notice, never a child's name |
 | Admissions (PR #14) | applicant's name, date of birth, gender, nationality, current school, day or boarding, health or learning needs, notes from the family; the parent's name, email, phone and relationship; whether the email was confirmed; staff notes, interview date, decision and decision note; the admission number given on enrolment |
 
 **Data that may be sensitive personal data** [VERIFY which, under the
@@ -208,7 +224,11 @@ concerns and plans**, which can reveal special educational needs; records of
 a boarder going missing; and the **health or learning needs** a family types
 into the admissions form (docs/DESIGN_health_notes_public_form.md). The
 School decides whether to record health notes and photos at all, and whether
-to turn boarding and admissions on.
+to turn boarding and admissions on. Also possibly sensitive: **behaviour
+records** (which can describe other pupils, or a pupil's health or family
+circumstances, in free text), parents' **absence reasons** (often illness),
+and **fee balances and payments**, which reveal a family's finances
+[VERIFY: QUESTIONS_FOR_COUNSEL.md questions 4 and 19].
 
 **Retention:** as the School sets it. Former pupils can be anonymised
 automatically after a period the School chooses (off until set;
@@ -250,6 +270,11 @@ References are to the repository.
   reaches a parent. Details: docs/AI_DATA_FLOW.md.
 
 **Encryption and transport**
+- Schools' M-Pesa (Daraja) credentials are encrypted in the database and are
+  never returned by the application once saved. Each School's M-Pesa
+  callbacks reach HouseMaster at an address with a long secret token, and
+  every callback is checked against the School's own records before any
+  payment is credited.
 - All traffic is HTTPS, with HSTS. The database connection string used in
   production requires TLS (`sslmode=require`, docs/ENVIRONMENT.md).
 - Nightly backups are encrypted (AES-256, with GPG) with a passphrase kept
@@ -261,6 +286,11 @@ References are to the repository.
   third-party scripts or fonts; a strict CORS list.
 - The application refuses to start in production with a missing or unsafe
   setting (docs/ENVIRONMENT.md).
+- Uploaded spreadsheets and photos are checked before they are opened, so a
+  file built to exhaust the server is refused (housemaster/uploads.py).
+- Error reports have secrets removed before they leave the server or the
+  browser: the tokens in M-Pesa callback, calendar-feed, sign-up, invite,
+  admissions and password-reset addresses (housemaster/sentry_scrub.py).
 
 **Accountability**
 - An activity log of changes and sensitive actions (who, what, when),
