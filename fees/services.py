@@ -2,9 +2,10 @@
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from activity.services import display_name, log_activity, student_name
 from students.models import Student
@@ -17,7 +18,11 @@ CURRENCY_BY_COUNTRY = {"ke": "KES", "gb": "GBP", "us": "USD"}
 def settings_for(school):
     row = FeeSettings.objects.filter(school=school).first()
     if row is None:
-        row = FeeSettings.objects.create(school=school, currency=CURRENCY_BY_COUNTRY.get(school.country, "KES"))
+        try:
+            with transaction.atomic():
+                row = FeeSettings.objects.create(school=school, currency=CURRENCY_BY_COUNTRY.get(school.country, "KES"))
+        except IntegrityError:  # created by another request at the same moment (two first payments at once)
+            row = FeeSettings.objects.get(school=school)
     return row
 
 
@@ -70,19 +75,89 @@ def bill_term(term, user):
     return created
 
 
-def _receipt_number(school, paid_on):
-    row = FeeSettings.objects.select_for_update().get(pk=settings_for(school).pk)
+def _lock_school(school):
+    """The school's fee settings row, locked until the transaction ends: payments for one school go one at a time."""
+    return FeeSettings.objects.select_for_update().get(pk=settings_for(school).pk)
+
+
+def _receipt_number(row, paid_on):
     number = f"R{paid_on:%Y}-{row.next_receipt:05d}"
     row.next_receipt += 1
     row.save(update_fields=["next_receipt"])
     return number
 
 
-def record_payment(student, user, amount, paid_on, method, reference="", payer_name="", claim=None, notify=True, by_name=None):
+def mpesa_code(reference):
+    return str(reference or "").strip().upper()[:100]
+
+
+def recorded_with_code(school, code):
+    """Payments that still count and carry this M-Pesa code."""
+    return Payment.objects.filter(school=school, method="mpesa", reference__iexact=code, voided_at__isnull=True) \
+        .select_related("student")
+
+
+def _known_mpesa_amount(school, code):
+    """What M-Pesa itself said this transaction was for, when HouseMaster has heard from M-Pesa about it."""
+    from mpesa.models import C2BPayment, StkRequest
+
+    c2b = C2BPayment.objects.filter(school=school, trans_id__iexact=code).first()
+    if c2b:
+        return c2b.amount
+    stk = StkRequest.objects.filter(school=school, receipt__iexact=code, status=StkRequest.Status.PAID).first()
+    return Decimal(stk.amount) if stk else None
+
+
+class MpesaCodeUsed(ValidationError):
+    """The M-Pesa code is already on a payment that counts."""
+
+
+def _check_code(school, code, amount, shared):
+    from mpesa.models import C2BPayment
+
+    if C2BPayment.objects.filter(school=school, trans_id__iexact=code, status=C2BPayment.Status.UNMATCHED).exists():
+        raise MpesaCodeUsed({"reference": [f"M-Pesa payment {code} is waiting on the M-Pesa page for a student. "
+                                           "Assign it there instead, so it's recorded once."],
+                             "mpesa_code_used": [code]})
+    existing = list(recorded_with_code(school, code))
+    if not existing:
+        return
+    currency = settings_for(school).currency
+    already = ", ".join(f"receipt {p.receipt_number} for {student_name(p.student)} ({money(p.amount, currency)})"
+                        for p in existing)
+    if not shared:
+        raise MpesaCodeUsed({"reference": [f"M-Pesa code {code} is already recorded: {already}. If one M-Pesa payment "
+                                           "covered more than one child, record it again as shared."],
+                             "mpesa_code_used": [code]})
+    known = _known_mpesa_amount(school, code)
+    total = sum((p.amount for p in existing), Decimal(0)) + Decimal(amount)
+    if known is not None and total > known:
+        raise MpesaCodeUsed({"amount": [f"M-Pesa says {code} was for {money(known, currency)}, and {already} already "
+                                        "uses part of it. This would record more than was paid."]})
+
+
+def record_payment(student, user, amount, paid_on, method, reference="", payer_name="", claim=None, notify=True,
+                   by_name=None, duplicates="refuse"):
+    """
+    Records a payment and numbers its receipt. For an M-Pesa code that is already on a payment that counts:
+    duplicates="refuse" raises MpesaCodeUsed (a person entered it); "shared" records it as part of the same
+    M-Pesa payment, up to what M-Pesa said was paid (one payment for siblings); "existing" records nothing and
+    returns the payment already there (M-Pesa telling us about the same payment twice).
+    """
+    if method == "mpesa":
+        reference = mpesa_code(reference)
     with transaction.atomic():
+        row = _lock_school(student.school)
+        if method == "mpesa" and reference:
+            if duplicates == "existing":
+                found = recorded_with_code(student.school, reference).first()
+                if found:
+                    return found
+            else:
+                _check_code(student.school, reference, amount, shared=duplicates == "shared")
         payment = Payment.objects.create(
             school=student.school, student=student, amount=amount, paid_on=paid_on, method=method,
-            reference=reference[:100], payer_name=payer_name[:150], receipt_number=_receipt_number(student.school, paid_on),
+            reference=reference[:100], payer_name=payer_name[:150], receipt_number=_receipt_number(row, paid_on),
             recorded_by=user, recorded_by_name=by_name or display_name(user))
         if claim is not None:
             claim.status = PaymentClaim.Status.CONFIRMED
@@ -101,10 +176,15 @@ def record_payment(student, user, amount, paid_on, method, reference="", payer_n
 
 
 def void_payment(payment, user, reason):
-    payment.voided_at = timezone.now()
-    payment.void_reason = reason[:200]
-    payment.voided_by_name = display_name(user)
-    payment.save(update_fields=["voided_at", "void_reason", "voided_by_name"])
+    """Cancels a payment once: two people pressing Void together cancel it once, and the second is told."""
+    with transaction.atomic():
+        locked = Payment.objects.select_for_update().get(pk=payment.pk)
+        if locked.voided_at is not None:
+            raise ValidationError({"detail": [f"Receipt {locked.receipt_number} was already cancelled."]})
+        locked.voided_at = timezone.now()
+        locked.void_reason = reason[:200]
+        locked.voided_by_name = display_name(user)
+        locked.save(update_fields=["voided_at", "void_reason", "voided_by_name"])
     log_activity(school=payment.school, actor=user, action="fees.void", target=payment.student,
                  summary=f"Voided receipt {payment.receipt_number} for {student_name(payment.student)}")
 

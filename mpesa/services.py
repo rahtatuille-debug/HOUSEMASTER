@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 MAX_AMOUNT = 250_000  # M-Pesa's limit for one payment
 ASK_AGAIN_AFTER = timedelta(seconds=15)  # before asking M-Pesa how a prompt went
 GIVE_UP_AFTER = timedelta(minutes=3)  # a prompt nobody answered
+# M-Pesa can confirm a prompt was paid without its code; a paybill confirmation for the same school, amount
+# and account within this window is then taken to be the same payment, not a second one.
+SAME_PAYMENT_WINDOW = timedelta(minutes=30)
 STARTS_PER_10_MIN = 5
 
 
@@ -224,13 +227,19 @@ def complete(stk, code, description, meta=None):
             logger.warning("STK %s: amount %s differs from %s", stk.id, paid, stk.amount)
             return stk
         stk.status = StkRequest.Status.PAID
-        stk.receipt = str(meta.get("MpesaReceiptNumber") or "")[:30]
+        stk.receipt = str(meta.get("MpesaReceiptNumber") or "").strip().upper()[:30]
         today = school_localdate(stk.school)
         if stk.purpose == StkRequest.Purpose.FEES:
-            from fees.services import record_payment
+            from fees.services import _lock_school, record_payment
 
-            stk.fee_payment = record_payment(stk.student, None, Decimal(stk.amount), today, "mpesa", stk.receipt,
-                                             stk.requested_by_name, by_name="M-Pesa")
+            _lock_school(stk.school)  # the paybill confirmation for this payment may be arriving right now
+            same = None if stk.receipt else _c2b_for_unreceipted(stk)
+            if same is not None:
+                stk.receipt, stk.fee_payment = same.trans_id, same.fee_payment
+            else:
+                # duplicates="existing": if the paybill confirmation got here first, that payment is this one.
+                stk.fee_payment = record_payment(stk.student, None, Decimal(stk.amount), today, "mpesa", stk.receipt,
+                                                 stk.requested_by_name, by_name="M-Pesa", duplicates="existing")
         else:
             from billing.services import record_payment
 
@@ -261,6 +270,26 @@ def handle_stk_callback(token, body):
             type(stk.invoice).objects.filter(pk=stk.invoice_id).update(payment_reference=stk.receipt)
         return stk
     return complete(stk, code, callback.get("ResultDesc", ""), meta)
+
+
+def _c2b_for_unreceipted(stk):
+    """A recorded paybill payment that is this prompt's payment, reported the other way first."""
+    candidates = (C2BPayment.objects.filter(
+        school=stk.school, purpose=StkRequest.Purpose.FEES, fee_payment__isnull=False, amount=stk.amount,
+        paid_at__gte=stk.created_at - SAME_PAYMENT_WINDOW, paid_at__lte=timezone.now() + SAME_PAYMENT_WINDOW)
+        .exclude(fee_payment__stk_request__isnull=False).select_related("fee_payment"))
+    key = _clean(stk.account_reference)
+    return next((c for c in candidates if _clean(c.bill_ref) == key), None)
+
+
+def _stk_for_c2b(school, row):
+    """A prompt paid without its code (M-Pesa said "paid" but not the code) that this paybill confirmation is."""
+    candidates = StkRequest.objects.filter(
+        school=school, purpose=StkRequest.Purpose.FEES, status=StkRequest.Status.PAID, receipt="", amount=row["amount"],
+        fee_payment__isnull=False, created_at__gte=row["paid_at"] - SAME_PAYMENT_WINDOW,
+        created_at__lte=row["paid_at"] + SAME_PAYMENT_WINDOW).select_related("fee_payment")
+    key = _clean(row["bill_ref"])
+    return next((s for s in candidates if _clean(s.account_reference) == key), None)
 
 
 def _token_matches(stk, token):
@@ -333,28 +362,51 @@ def handle_c2b(token, body):
 
 
 def _c2b_fees(school, row):
-    from fees.services import record_payment
+    """
+    A paybill payment, once. M-Pesa can report one payment twice (a PIN-prompt payment can also arrive here), so
+    a payment already recorded under this code, or a prompt paid without its code, is linked rather than counted again.
+    """
+    from fees.models import Payment
+    from fees.services import _lock_school, record_payment, recorded_with_code
 
-    student = find_student(school, row["bill_ref"])
+    _lock_school(school)  # one payment for this school at a time, whichever way M-Pesa reports it
+    existing = recorded_with_code(school, row["trans_id"]).first()
+    stk = None if existing else _stk_for_c2b(school, row)
+    if stk is not None:
+        existing = stk.fee_payment
+        StkRequest.objects.filter(pk=stk.pk).update(receipt=row["trans_id"])
+        Payment.objects.filter(pk=existing.pk).update(reference=row["trans_id"])
+    student = existing.student if existing else find_student(school, row["bill_ref"])
     c2b = C2BPayment.objects.create(purpose=StkRequest.Purpose.FEES, school=school, student=student,
                                     status=C2BPayment.Status.RECORDED if student else C2BPayment.Status.UNMATCHED, **row)
-    if student:
+    if existing:
+        c2b.fee_payment = existing
+    elif student:
         c2b.fee_payment = record_payment(student, None, row["amount"], row["paid_at"].astimezone(daraja.NAIROBI).date(),
-                                         "mpesa", row["trans_id"], row["payer_name"], by_name="M-Pesa")
-        c2b.save(update_fields=["fee_payment"])
+                                         "mpesa", row["trans_id"], row["payer_name"], by_name="M-Pesa",
+                                         duplicates="existing")
+    c2b.save(update_fields=["fee_payment"])
     return c2b
 
 
 def assign(c2b, student, user):
-    """The bursar says which student an unmatched paybill payment was for."""
+    """
+    The bursar says which student an unmatched paybill payment was for. Pressing it twice at once records it
+    once; a code someone already recorded by hand (from a parent's claim, say) is refused, not counted again.
+    """
     from fees.services import record_payment
 
-    c2b.student = student
-    c2b.status = C2BPayment.Status.RECORDED
-    c2b.handled_by_name = display_name(user)
-    c2b.fee_payment = record_payment(student, user, c2b.amount, c2b.paid_at.astimezone(daraja.NAIROBI).date(), "mpesa",
-                                     c2b.trans_id, c2b.payer_name)
-    c2b.save()
+    with transaction.atomic():
+        c2b = C2BPayment.objects.select_for_update().get(pk=c2b.pk)
+        if c2b.status != C2BPayment.Status.UNMATCHED or c2b.fee_payment_id:
+            raise ValidationError({"detail": ["This payment has already been dealt with."]})
+        c2b.student = student
+        c2b.status = C2BPayment.Status.RECORDED
+        c2b.handled_by_name = display_name(user)
+        c2b.save()  # no longer "waiting", so recording its code isn't refused as unassigned
+        c2b.fee_payment = record_payment(student, user, c2b.amount, c2b.paid_at.astimezone(daraja.NAIROBI).date(),
+                                         "mpesa", c2b.trans_id, c2b.payer_name)
+        c2b.save(update_fields=["fee_payment"])
     return c2b
 
 
