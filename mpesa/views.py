@@ -1,3 +1,4 @@
+from django.core.exceptions import RequestDataTooBig
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
@@ -25,8 +26,8 @@ class CallbackThrottle(AnonRateThrottle):
 def _settle(handler, what, request, token):
     try:
         handler(token, request.data)
-    except ParseError:  # not JSON: noise, not a fault worth a full error report
-        services.logger.warning("M-Pesa %s: a body that isn't JSON was ignored", what)
+    except (ParseError, RequestDataTooBig):  # not JSON, or far too big: noise, not a fault worth an error report
+        services.logger.warning("M-Pesa %s: a body that isn't JSON, or is too big, was ignored", what)
     except Exception:  # never make M-Pesa retry forever on our mistake; it's logged
         services.logger.exception("M-Pesa %s failed", what)
     return Response(ACCEPTED)
