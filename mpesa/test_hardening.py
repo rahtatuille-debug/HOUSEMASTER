@@ -31,7 +31,8 @@ class WhoChangesWhereTheMoneyGoes(Base):
         self.bursar = self.authed_client(self.user_a)
 
     def test_a_bursar_sees_the_settings_but_cant_change_them(self):
-        self.assertEqual(self.bursar.get("/api/fees/mpesa/").status_code, 200)
+        self.assertFalse(self.bursar.get("/api/fees/mpesa/").data["can_change"])
+        self.assertTrue(self.admin.get("/api/fees/mpesa/").data["can_change"])
         self.assertEqual(self.bursar.put("/api/fees/mpesa/", SETTINGS, format="json").status_code, 403)
         self.assertEqual(self.bursar.post("/api/fees/mpesa/new-address/").status_code, 403)
         self.assertEqual(MpesaAccount.objects.get().shortcode, "123456")

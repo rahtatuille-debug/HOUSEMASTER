@@ -118,7 +118,7 @@ def _check_code(school, code, amount, shared):
     if C2BPayment.objects.filter(school=school, trans_id__iexact=code, status=C2BPayment.Status.UNMATCHED).exists():
         raise MpesaCodeUsed({"reference": [f"M-Pesa payment {code} is waiting on the M-Pesa page for a student. "
                                            "Assign it there instead, so it's recorded once."],
-                             "mpesa_code_used": [code]})
+                             "mpesa_code_waiting": [code]})
     existing = list(recorded_with_code(school, code))
     if not existing:
         return

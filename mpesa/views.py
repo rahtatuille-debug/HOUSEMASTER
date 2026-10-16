@@ -60,7 +60,7 @@ def c2b_validate(request, token):
 
 # The school's own M-Pesa (the bursar and admins) -----------------------------------
 
-def account_row(account, school):
+def account_row(account, school, user=None):
     from fees.services import settings_for
 
     ready = bool(account and account.consumer_key and account.consumer_secret and account.passkey and account.shortcode)
@@ -69,7 +69,9 @@ def account_row(account, school):
            "environment": account.environment if account else "sandbox",
            "keys_saved": bool(account and account.consumer_key), "c2b_registered_at": account.c2b_registered_at if account else None,
            "currency_ok": settings_for(school).currency == "KES", "server_ready": True,
-           "token_changed_at": account.token_changed_at if account else None}
+           "token_changed_at": account.token_changed_at if account else None,
+           # Only admins change where the money goes (PAY-006); bursars see the settings.
+           "can_change": bool(user and is_admin(user))}
     try:
         services.callback_base()
     except ValidationError:
@@ -153,7 +155,7 @@ def fee_mpesa_settings(request):
                              + (f"; new {', '.join(keys_changed)}" if keys_changed else ""))
         if before != after or keys_changed:
             _tell_admins(school, request.user, f"{school.name}: M-Pesa settings changed", lines)
-    return Response(account_row(account, school))
+    return Response(account_row(account, school, request.user))
 
 
 @api_view(["POST"])
@@ -173,7 +175,7 @@ def fee_mpesa_connect(request):
     account.c2b_registered_at = timezone.now()
     account.save(update_fields=["c2b_registered_at"])
     log_activity(school=school, actor=request.user, action="mpesa.connected", summary="Connected M-Pesa to HouseMaster")
-    return Response(account_row(account, school))
+    return Response(account_row(account, school, request.user))
 
 
 @api_view(["POST"])
@@ -211,7 +213,7 @@ def fee_mpesa_new_address(request):
     _tell_admins(school, request.user, f"{school.name}: M-Pesa callback address changed",
                  ["The secret address M-Pesa uses to tell HouseMaster about payments was changed. The old one no "
                   "longer works."])
-    return Response(account_row(account, school))
+    return Response(account_row(account, school, request.user))
 
 
 def c2b_row(c):
