@@ -493,9 +493,16 @@ if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
 
+    from housemaster.sentry_scrub import before_breadcrumb, before_send
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[DjangoIntegration()],
+        # Strips secrets that sit in URLs and stack-frame variables (M-Pesa callback tokens, sign-up
+        # and invite links), which send_default_pii=False doesn't cover. housemaster/sentry_scrub.py.
+        before_send=before_send,
+        before_send_transaction=before_send,
+        before_breadcrumb=before_breadcrumb,
         # Fraction of requests to trace for performance monitoring. Kept
         # low since this is a small app on a free-tier host — raise if
         # request-level timing data becomes useful later.
