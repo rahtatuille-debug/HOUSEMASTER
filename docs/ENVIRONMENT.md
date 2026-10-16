@@ -67,6 +67,23 @@ reports it (CI runs that with `--fail-level ERROR`).
 | `ADMIN_LOGIN_RATE` | `10` | Failed admin sign-ins per client address per hour. |
 | `RETENTION_INACTIVE_STUDENT_YEARS` | unset (off) | Years after a student leaves before `manage.py apply_retention --apply` anonymises them. Counsel decides the period ([DESIGN_data_subject_tooling.md](DESIGN_data_subject_tooling.md)). |
 
+## M-Pesa
+
+Fees go to each school's own paybill or till, and subscriptions to yours. Setup: HUMAN_ACTIONS.md, H-16.
+
+| Variable | Value | If missing |
+|---|---|---|
+| `MPESA_ENCRYPTION_KEY` | A long random value, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Save a copy in your password manager. | **Schools can't save M-Pesa keys in production.** Deploy check warning `housemaster.W002`. |
+| `MPESA_CALLBACK_BASE_URL` | `https://<your API host>` | M-Pesa can't be used: payment prompts are refused. |
+| `MPESA_SHORTCODE`, `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_ENVIRONMENT`, `MPESA_OWNER_CALLBACK_TOKEN` | Your own paybill's Daraja app, for subscriptions (H-16) | Schools can't pay you by M-Pesa. |
+| `MPESA_CALLBACK_RATE` | `300/minute` | Calls per address to the M-Pesa callback addresses. |
+| `CALENDAR_FEED_RATE` | `120/minute` | Calendar apps' requests per address. |
+
+**The encryption key.** It encrypts the schools' Daraja keys and the secret in each school's callback address.
+- Set it **once**, then run `python manage.py mpesa_rekey` in the Render shell. That re-encrypts everything saved before, which used a key derived from `SECRET_KEY`.
+- **To replace it:** put the new key first and keep the old one after a comma (`new,old`), redeploy, and run `mpesa_rekey`. Then drop the old key.
+- **If a key is lost** with nothing else able to read the data, schools must enter their Daraja keys again, and an admin must press **New callback address** in Fees → M-Pesa.
+
 ## Set by Render (nothing to do)
 
 | Variable | Used for |

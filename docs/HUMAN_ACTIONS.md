@@ -394,4 +394,6 @@ Two separate set-ups: **your own paybill** (schools pay their subscription) and 
 
 The school does this itself (the bursar or an admin), in HouseMaster → Fees → **M-Pesa**: they create their own Daraja app for their paybill or till, go live with Safaricom, and enter the paybill (or store and till) number, consumer key, consumer secret and passkey, then press **Connect**. Their keys are stored encrypted and never shown again. You only need step A.2's `MPESA_CALLBACK_BASE_URL` set for their connection to work.
 
-Optional: `MPESA_ENCRYPTION_KEY` (any long random value) encrypts the schools' saved keys; if unset, a key derived from `SECRET_KEY` is used. Changing either later means schools must enter their keys again.
+**Required before a school connects M-Pesa:** `MPESA_ENCRYPTION_KEY` encrypts the schools' saved keys and callback secrets. Production refuses to save new keys without it. Set it, then run `python manage.py mpesa_rekey` once in the Render shell. See docs/ENVIRONMENT.md, "M-Pesa".
+
+Only admins can change a school's M-Pesa settings; every admin is emailed when they change. An admin can press **New callback address** if the old one may have leaked.

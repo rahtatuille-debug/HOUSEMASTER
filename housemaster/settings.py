@@ -205,6 +205,10 @@ REST_FRAMEWORK = {
         # logins count. Schools and mobile networks put many people behind
         # one address, so the per-IP limits are deliberately generous.
         'login_ip': os.environ.get('LOGIN_IP_RATE', '30/hour'),
+        # The addresses Safaricom calls and calendar apps poll: no sign-in, so a limit per address
+        # (generous: M-Pesa sends bursts at busy times, and a school's calendar apps share a network).
+        'mpesa_callback': os.environ.get('MPESA_CALLBACK_RATE', '300/minute'),
+        'calendar_feed': os.environ.get('CALENDAR_FEED_RATE', '120/minute'),
         # Changing the password from Settings, per signed-in account.
         'password_change_user': os.environ.get('PASSWORD_CHANGE_USER_RATE', '10/hour'),
         'login_email': os.environ.get('LOGIN_EMAIL_RATE', '10/hour'),

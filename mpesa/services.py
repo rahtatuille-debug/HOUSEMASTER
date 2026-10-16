@@ -1,4 +1,5 @@
 """Starting M-Pesa payments, settling them, and matching paybill payments (see mpesa.models)."""
+import hmac
 import logging
 import re
 from datetime import datetime, timedelta
@@ -14,8 +15,8 @@ from activity.services import display_name, log_activity, student_name
 from students.localtime import school_localdate
 
 from . import daraja
-from .models import C2BPayment, MpesaAccount, StkRequest
-from .secrets_box import unseal
+from .models import C2BPayment, MpesaAccount, StkRequest, hash_token
+from .secrets_box import UnreadableSecret, unseal
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +104,24 @@ BANNED_URL_WORDS = ("m-pesa", "mpesa", "safaricom", "exec", "exe", "cmd", "sql",
 
 
 def school_credentials(account):
-    return daraja.Credentials(
-        environment=account.environment, shortcode=account.shortcode, kind=account.kind, till_number=account.till_number,
-        consumer_key=unseal(account.consumer_key), consumer_secret=unseal(account.consumer_secret),
-        passkey=unseal(account.passkey))
+    try:
+        return daraja.Credentials(
+            environment=account.environment, shortcode=account.shortcode, kind=account.kind,
+            till_number=account.till_number, consumer_key=unseal(account.consumer_key),
+            consumer_secret=unseal(account.consumer_secret), passkey=unseal(account.passkey))
+    except UnreadableSecret:
+        raise ValidationError({"detail": ["The school's M-Pesa keys can't be read any more (the server's encryption "
+                                          "key changed). An admin needs to enter them again in Fees > M-Pesa."]})
+
+
+def _is_owner_token(token):
+    owner = settings.MPESA_OWNER_CALLBACK_TOKEN
+    return bool(owner) and hmac.compare_digest(str(token or ""), owner)
+
+
+def account_for_token(token):
+    """The school whose callback address this is, by the token's hash (the token itself isn't stored)."""
+    return MpesaAccount.objects.filter(token_hash=hash_token(token)).select_related("school").first()
 
 
 def school_ready(school):
@@ -294,9 +309,9 @@ def _stk_for_c2b(school, row):
 
 def _token_matches(stk, token):
     if stk.purpose == StkRequest.Purpose.SUBSCRIPTION:
-        return bool(settings.MPESA_OWNER_CALLBACK_TOKEN) and token == settings.MPESA_OWNER_CALLBACK_TOKEN
+        return _is_owner_token(token)
     account = getattr(stk.school, "mpesa_account", None)
-    return account is not None and token == account.callback_token
+    return account is not None and hmac.compare_digest(account.token_hash, hash_token(token))
 
 
 def refresh(stk):
@@ -309,7 +324,7 @@ def refresh(stk):
     StkRequest.objects.filter(pk=stk.pk).update(checked_at=now)
     try:
         code, description = daraja.stk_query(credentials_for(stk), stk.checkout_request_id)
-    except daraja.DarajaError:
+    except (daraja.DarajaError, ValidationError):  # M-Pesa unreachable, or the school's keys unreadable
         code, description = None, ""
     if code is None:
         if now - stk.created_at > GIVE_UP_AFTER:
@@ -345,8 +360,8 @@ def handle_c2b(token, body):
         return None
     if not trans_id or amount <= 0:
         return None
-    owner = bool(settings.MPESA_OWNER_CALLBACK_TOKEN) and token == settings.MPESA_OWNER_CALLBACK_TOKEN
-    account = None if owner else MpesaAccount.objects.filter(callback_token=token).select_related("school").first()
+    owner = _is_owner_token(token)
+    account = None if owner else account_for_token(token)
     if not owner and account is None:
         return None
     payer = " ".join(str(body.get(k) or "").strip() for k in ("FirstName", "MiddleName", "LastName")).strip()
