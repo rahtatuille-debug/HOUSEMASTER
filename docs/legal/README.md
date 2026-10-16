@@ -6,6 +6,11 @@ These are working drafts for the owner and their advocate. None of them is
 final, none has been reviewed by a lawyer, and none should be signed,
 published or filed as it stands.
 
+**Updated 2026-10-16** for features added since: school fees and M-Pesa
+collection, pupils' own sign-ins, homework, behaviour records and merits,
+absence reports and alerts, clubs, the calendar and its feeds, and phone and
+browser notifications. New counsel questions 17 to 22.
+
 ## How these were written, and what was not checked
 
 The primary texts the drafts depend on could **not** be opened from the

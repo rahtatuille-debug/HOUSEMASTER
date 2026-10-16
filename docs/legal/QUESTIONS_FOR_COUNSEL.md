@@ -215,3 +215,107 @@ needs admin approval. Today they are in the change log only as "set" or
 
 **Affects:** DRAFT_data_processing_agreement.md (clause 5.1), DRAFT_DPIA.md,
 DRAFT_school_privacy_notice_template.md.
+
+## 17. M-Pesa payments: whose data, and whose money
+
+**Question:** when a school collects fees through HouseMaster, what is each
+party's role for the payment data, and does HouseMaster need anything beyond
+a data processing agreement to do it?
+
+**What the code does (2026-10-16):** each school connects **its own** paybill
+or till with its own Daraja credentials, which HouseMaster stores encrypted.
+Money goes straight from the parent to the school; HouseMaster never holds it.
+To send a PIN prompt, HouseMaster passes the parent's phone number, the amount
+and the pupil's admission number to Safaricom. Safaricom sends back the
+result, the M-Pesa code and, for payments made straight to the paybill, the
+payer's name and a masked phone number. HouseMaster collects its own
+subscription the same way, into its own paybill.
+
+**Specific points:**
+- Is Safaricom an independent controller of M-Pesa transactions (so not
+  HouseMaster's sub-processor), as SUBPROCESSORS.md now assumes?
+- Is HouseMaster the school's processor for fee and payment records, like the
+  rest of the school's data?
+- Outside data protection: does operating schools' Daraja connections and
+  matching payments to pupils need any authorisation (for example from the
+  Central Bank of Kenya), or a contract with Safaricom beyond its developer
+  terms? Do Safaricom's Daraja terms allow a third party to hold a school's
+  credentials?
+
+**Affects:** SUBPROCESSORS.md, DRAFT_data_processing_agreement.md (Annex A),
+DRAFT_school_privacy_notice_template.md ("Paying fees"),
+DRAFT_privacy_notice_housemaster.md.
+
+## 18. Pupils with their own sign-in
+
+**Question:** what does the law require before a school gives a child their
+own account, and does it depend on the child's age?
+
+**What the code does:** a school's admins, leadership or secretary can create
+an account for a pupil: a username made from the pupil's name, no email
+address, and a starting password given on a slip, which the pupil must change
+at first sign-in. The pupil sees only their own record (the parts a parent
+sees, minus fees, leave and absence reports), can change their password and
+hand in homework as text (up to 4,000 characters). The account closes when the
+pupil leaves or the school closes it.
+
+**Specific points:** parental consent or notice; whether the child must be
+given a notice written for them; whether pupils should see behaviour records
+and support concerns that were shared with their parents (today they do).
+
+**Affects:** DRAFT_school_privacy_notice_template.md, DRAFT_DPIA.md (risk 21).
+
+## 19. Keeping financial records versus removing a pupil's data
+
+**Question:** how long must fee charges, payments, receipts and payment
+records be kept, and may payers' names and phone numbers be kept after a
+family asks for a pupil's data to be removed?
+
+**What the code does:** removing a pupil's personal data keeps their charges
+and payments (the school's accounts) but blanks the payer's name on payments
+and claims. It does **not yet** blank the payer's name and masked phone number
+on M-Pesa records (DP-002 in the readiness re-check). Nothing deletes fee
+records automatically.
+
+**Affects:** DRAFT_DPIA.md (action 12), DRAFT_data_processing_agreement.md
+(Annex A, retention), DRAFT_privacy_notice_housemaster.md (invoices).
+
+## 20. Behaviour records
+
+**Question:** are behaviour records (incidents and their outcomes) sensitive
+personal data or otherwise subject to extra rules, especially for children?
+What may be shared with parents, and how long should they be kept?
+
+**What the code does:** staff record incidents (category, severity, what
+happened, action taken, staff-only notes) and merits. A record reaches parents
+and the pupil only if staff share it, and never with the staff-only notes. The
+description is free text, so it can mention other pupils. Records are deleted
+when the pupil's personal data is removed; there is no separate retention
+period.
+
+**Affects:** DRAFT_DPIA.md (risk 20), DRAFT_data_processing_agreement.md
+(Annex A), DRAFT_school_privacy_notice_template.md.
+
+## 21. Locking a school that hasn't paid
+
+**Question:** may HouseMaster stop a school's staff and parents reaching their
+records (including attendance, boarding and sick-bay records) because the
+subscription is unpaid, and what must the contract and the DPA say about it?
+
+**What the code does:** after an unpaid invoice's grace period (14 days by
+default), every teacher, parent and pupil of that school is refused; only its
+admins can still reach billing. The readiness re-check recommends keeping
+safeguarding features open (BILL-001).
+
+**Affects:** DRAFT_data_processing_agreement.md, the subscription terms (not
+drafted yet), DRAFT_DPIA.md (risk 25).
+
+## 22. Notifications through browser makers' push services
+
+**Question:** do phone and browser notifications, which pass (encrypted)
+through Google, Apple, Mozilla or Microsoft depending on the person's browser,
+count as a transfer abroad or need a sub-processor entry, given that each
+person turns them on themselves and the content is only the school's name and
+a short notice?
+
+**Affects:** SUBPROCESSORS.md, DRAFT_school_privacy_notice_template.md.

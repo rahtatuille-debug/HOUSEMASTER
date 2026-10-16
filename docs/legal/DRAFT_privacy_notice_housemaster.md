@@ -39,7 +39,8 @@ address], [phone].
 | School administrators' name, email address and role, and the school's name, contact details and settings | To create and run the school's account, sign you in, and contact you about the service | Performing our contract with your school; our legitimate interest in running the service |
 | Your password (stored only in a scrambled form we can't read), sign-in times, and security records such as failed sign-ins | To keep accounts secure and stop misuse | Legitimate interest; legal obligation to keep data secure |
 | Messages you send us (support requests, enquiries from the website or registration form) | To answer you | Legitimate interest; steps before a contract |
-| Billing details [if and when the service is charged for] | To invoice and keep accounts | Contract; legal obligation |
+| Billing details: the school's invoices (plan, number of pupils, amount, dates, status), a billing email address if the school gives one, how and when it paid (method and reference, such as an M-Pesa code), and payment reminders sent | To invoice, collect the subscription and keep accounts | Contract; legal obligation (tax and accounting records) [VERIFY] |
+| If the school pays by M-Pesa: the phone number the PIN prompt goes to (kept only partly visible), and what Safaricom tells us about the payment (M-Pesa code, amount, the payer's name) | To take the payment and match it to the invoice | Contract |
 | Technical information when the app goes wrong (error reports) | To find and fix faults | Legitimate interest |
 | Website visits: your IP address and browser details in our hosting providers' logs | To deliver the website and keep it secure | Legitimate interest |
 
@@ -53,7 +54,9 @@ has been added.]
 Only the service providers that run HouseMaster, under contract, listed in
 [SUBPROCESSORS.md](SUBPROCESSORS.md): hosting (Render, Vercel), the
 database (Neon), error reports (Sentry), email delivery ([provider]), backups
-(GitHub) and, for the writing assistant, Google Gemini. We may also disclose
+(GitHub) and, for the writing assistant, Google Gemini. When a school pays us
+by M-Pesa, **Safaricom** processes the payment under its own terms
+[VERIFY its role, QUESTIONS_FOR_COUNSEL.md question 17]. We may also disclose
 information where the law requires it.
 
 ## Transfers outside Kenya
@@ -68,6 +71,8 @@ QUESTIONS_FOR_COUNSEL.md question 3.]
 - School administrators' account details: while the school uses
   HouseMaster, then [period] [VERIFY].
 - Support messages: [period].
+- Invoices and payment records: [period required for tax and accounting
+  records, VERIFY].
 - Error reports: [period set in Sentry].
 - Hosting logs: as long as each provider keeps them [TO CONFIRM].
 - Encrypted backups: up to 90 days.
