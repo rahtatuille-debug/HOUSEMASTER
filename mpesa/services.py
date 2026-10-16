@@ -398,11 +398,15 @@ def sweep_soon(school):
             sweep(school=school, limit=20)
         except Exception:
             logger.exception("M-Pesa sweep failed")
+
+    def in_background():
+        try:
+            run()
         finally:
-            connection.close()
+            connection.close()  # this thread's own connection, never the request's
 
     if getattr(settings, "NOTIFICATIONS_IN_BACKGROUND", True):
-        threading.Thread(target=run, daemon=True).start()
+        threading.Thread(target=in_background, daemon=True).start()
     else:
         run()
 
