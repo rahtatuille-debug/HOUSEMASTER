@@ -397,3 +397,13 @@ The school does this itself (the bursar or an admin), in HouseMaster → Fees �
 **Required before a school connects M-Pesa:** `MPESA_ENCRYPTION_KEY` encrypts the schools' saved keys and callback secrets. Production refuses to save new keys without it. Set it, then run `python manage.py mpesa_rekey` once in the Render shell. See docs/ENVIRONMENT.md, "M-Pesa".
 
 Only admins can change a school's M-Pesa settings; every admin is emailed when they change. An admin can press **New callback address** if the old one may have leaked.
+
+**C. Settling payments whose callback was lost (before collecting real money)**
+
+Safaricom's callback can be lost: the server is asleep, a deploy is running, or the parent closed the page. A Render **Cron Job** settles those by asking M-Pesa directly. Set it up once:
+
+- Render → New → **Cron Job**, same repository and environment variables as the backend.
+- Schedule `*/10 * * * *` (every 10 minutes).
+- Command `python manage.py mpesa_sweep`.
+
+Until it exists, opening Fees → M-Pesa as the bursar sweeps that school, at most every 5 minutes. Render Cron Jobs cost about USD 1 a month at the smallest size (check current pricing).

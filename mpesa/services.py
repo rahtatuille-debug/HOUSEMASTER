@@ -26,6 +26,10 @@ GIVE_UP_AFTER = timedelta(minutes=3)  # a prompt nobody answered
 # M-Pesa can confirm a prompt was paid without its code; a paybill confirmation for the same school, amount
 # and account within this window is then taken to be the same payment, not a second one.
 SAME_PAYMENT_WINDOW = timedelta(minutes=30)
+# Giving up is ours, not M-Pesa's: the sweeper keeps asking about these for a day, and a payment still counts.
+TIMED_OUT = "No answer from the phone. Please try again."
+SWEEP_FOR = timedelta(hours=24)
+SWEEP_GAP = timedelta(minutes=2)  # between two questions to M-Pesa about the same prompt
 STARTS_PER_10_MIN = 5
 
 
@@ -224,8 +228,10 @@ def complete(stk, code, description, meta=None):
     meta = meta or {}
     with transaction.atomic():
         stk = StkRequest.objects.select_for_update().get(pk=stk.pk)
-        # A paid confirmation from M-Pesa (with its receipt) still counts after we'd stopped waiting.
-        late_payment = stk.status == StkRequest.Status.FAILED and code == 0 and meta.get("MpesaReceiptNumber")
+        # A paid confirmation from M-Pesa (with its receipt) still counts after we'd stopped waiting, and so does
+        # M-Pesa saying "paid" (even without the receipt) about a prompt we only gave up on.
+        late_payment = stk.status == StkRequest.Status.FAILED and code == 0 and (
+            meta.get("MpesaReceiptNumber") or stk.result_description == TIMED_OUT)
         if stk.status != StkRequest.Status.PENDING and not late_payment:
             return stk
         stk.result_description = str(description or "")[:255]
@@ -328,11 +334,77 @@ def refresh(stk):
         code, description = None, ""
     if code is None:
         if now - stk.created_at > GIVE_UP_AFTER:
-            return complete(stk, 1037, "No answer from the phone. Please try again.")
+            return complete(stk, 1037, TIMED_OUT)
         stk.refresh_from_db()
         return stk
     # A query can say it was paid but not give the receipt: the callback (or the bursar) fills it in.
     return complete(stk, code, description, {})
+
+
+def sweep(school=None, limit=50, now=None):
+    """
+    Ask M-Pesa about prompts whose answer never came (a lost callback, a server asleep, a parent who closed the
+    page), including ones we gave up on, for up to a day. Returns {"asked", "paid", "failed"}.
+    Run by `manage.py mpesa_sweep` (every 10 minutes) and when the bursar opens the M-Pesa page.
+    """
+    from django.db.models import Q
+
+    now = now or timezone.now()
+    open_ = Q(status=StkRequest.Status.PENDING) | Q(status=StkRequest.Status.FAILED, result_description=TIMED_OUT)
+    due = StkRequest.objects.filter(open_, created_at__gte=now - SWEEP_FOR, created_at__lte=now - ASK_AGAIN_AFTER) \
+        .filter(Q(checked_at__isnull=True) | Q(checked_at__lte=now - SWEEP_GAP)).select_related("school")
+    if school is not None:
+        due = due.filter(school=school)
+    counts = {"asked": 0, "paid": 0, "failed": 0}
+    for stk in due.order_by("created_at")[:limit]:
+        StkRequest.objects.filter(pk=stk.pk).update(checked_at=now)
+        counts["asked"] += 1
+        try:
+            code, description = daraja.stk_query(credentials_for(stk), stk.checkout_request_id)
+        except (daraja.DarajaError, ValidationError):
+            continue
+        if code is None:  # still processing, or M-Pesa doesn't know yet
+            if stk.status == StkRequest.Status.PENDING and now - stk.created_at > GIVE_UP_AFTER:
+                complete(stk, 1037, TIMED_OUT)
+            continue
+        was = stk.status
+        stk = complete(stk, code, description, {})
+        if stk.status == StkRequest.Status.PAID and was != StkRequest.Status.PAID:
+            counts["paid"] += 1
+            logger.info("M-Pesa sweep: prompt %s was paid; its callback never came", stk.id)
+        elif code != 0 and was == StkRequest.Status.FAILED:
+            # M-Pesa's own answer replaces "no answer": the sweeper stops asking.
+            StkRequest.objects.filter(pk=stk.pk).update(result_description=str(description or "")[:255])
+            counts["failed"] += 1
+        elif stk.status == StkRequest.Status.FAILED:
+            counts["failed"] += 1
+    # Older than a day and still waiting: M-Pesa won't answer any more.
+    StkRequest.objects.filter(status=StkRequest.Status.PENDING, created_at__lt=now - SWEEP_FOR) \
+        .update(status=StkRequest.Status.FAILED, result_description=TIMED_OUT, completed_at=now)
+    return counts
+
+
+def sweep_soon(school):
+    """Sweep this school in the background, at most every 5 minutes (when the bursar opens the M-Pesa page)."""
+    import threading
+
+    from django.db import connection
+
+    if not cache.add(f"mpesa-sweep:{school.pk}", 1, 300):
+        return
+
+    def run():
+        try:
+            sweep(school=school, limit=20)
+        except Exception:
+            logger.exception("M-Pesa sweep failed")
+        finally:
+            connection.close()
+
+    if getattr(settings, "NOTIFICATIONS_IN_BACKGROUND", True):
+        threading.Thread(target=run, daemon=True).start()
+    else:
+        run()
 
 
 def stk_row(stk):

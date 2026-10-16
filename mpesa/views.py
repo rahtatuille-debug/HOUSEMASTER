@@ -224,7 +224,8 @@ def c2b_row(c):
 @api_view(["GET"])
 @permission_classes(STAFF)
 def fee_mpesa_payments(request):
-    """GET ?status=unmatched|all: payments made straight to the school's paybill."""
+    """GET ?status=unmatched|all: payments made straight to the school's paybill. Also settles lost prompts."""
+    services.sweep_soon(_school(request))
     qs = C2BPayment.objects.filter(school=_school(request), purpose="fees").select_related("student", "fee_payment")
     if request.query_params.get("status", "unmatched") != "all":
         qs = qs.filter(status=C2BPayment.Status.UNMATCHED)
