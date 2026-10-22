@@ -120,23 +120,37 @@ class LockingTests(Base):
         self.assertEqual(services.status(self.school_a, due + timedelta(days=14))["status"], "locked")
         self.assertEqual(Subscription.objects.get(school=self.school_a).locked_from, due + timedelta(days=14))
 
-    def test_a_locked_school_only_lets_its_admins_see_billing(self):
+    def test_a_locked_school_keeps_safeguarding_and_pauses_the_rest(self):
+        """BILL-001: an unpaid subscription pauses the school's work, never children's safety or their families."""
         self.lock()
-        blocked = self.client_a.get("/api/students/")
+        # Paused for staff: marks, reports, fees and the rest; and any change to the pupil list.
+        blocked = self.client_a.get("/api/grades/")
         self.assertEqual((blocked.status_code, blocked.data["code"]), (403, "school_locked"))
-        self.assertEqual(self.parent.get("/api/guardian-students/").data["code"], "school_locked")
-        self.assertEqual(self.admin.get("/api/students/").status_code, 403)
+        self.assertIn("Registers, boarding", blocked.data["detail"])
+        self.assertEqual(self.admin.get("/api/fees/students/").status_code, 403)
+        self.assertEqual(self.client_a.post("/api/students/", {"first_name": "X", "last_name": "Y"}, format="json")
+                         .status_code, 403)
+        # Kept for staff: registers, boarding, absences, messages, alerts, and who is who.
+        for path in ("/api/attendance/", "/api/boarding/houses/", "/api/absence-reports/", "/api/conversations/",
+                     "/api/alerts/", "/api/students/", "/api/school-classes/"):
+            response = self.client_a.get(path)  # may be refused for other reasons (boarding staff only), never the lock
+            data = getattr(response, "data", None)
+            self.assertNotEqual(data.get("code") if isinstance(data, dict) else None, "school_locked", path)
+        me = self.client_a.get("/api/me/")
+        self.assertEqual((me.status_code, me.data["billing"]), (200, {"status": "locked"}))
+        # Admins also keep billing, with the details.
         self.assertEqual(self.admin.get("/api/billing/").status_code, 200)
         self.assertEqual(self.admin.get("/api/me/").data["billing"]["status"], "locked")
-        self.assertEqual(self.client_a.get("/api/me/").status_code, 403)
+        # Families are never locked out: the school pays HouseMaster, not them.
+        self.assertEqual(self.parent.get("/api/guardian-students/").status_code, 200)
         # Another school carries on.
-        self.assertEqual(self.client_b.get("/api/students/").status_code, 200)
+        self.assertEqual(self.client_b.get("/api/grades/").status_code, 200)
 
     def test_paying_unlocks_and_thanks_the_school(self):
         self.lock()
         with self.captureOnCommitCallbacks(execute=True):
             services.record_payment(self.invoice, self.today, Invoice.Method.MPESA, "QWE123")
-        self.assertEqual(self.client_a.get("/api/students/").status_code, 200)
+        self.assertEqual(self.client_a.get("/api/grades/").status_code, 200)
         self.assertEqual(services.status(self.school_a)["status"], "active")
         self.assertEqual(services.paid_until(self.school_a), self.invoice.period_end)
         self.assertIn("payment received", mail.outbox[-1].subject.lower())
