@@ -23,6 +23,7 @@ from django.core import mail
 from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -58,8 +59,8 @@ class SchoolScopedAPITestCase(APITestCase):
         # Rate-limit counters live in the cache, which isn't reset between
         # tests, so start every test with empty counters.
         cache.clear()
-        self.school_a = School.objects.create(name="Alpha Academy", report_tone="formal")
-        self.school_b = School.objects.create(name="Beta College", report_tone="warm")
+        self.school_a = School.objects.create(setup_completed_at=timezone.now(), name="Alpha Academy", report_tone="formal")
+        self.school_b = School.objects.create(setup_completed_at=timezone.now(), name="Beta College", report_tone="warm")
 
         self.user_a = User.objects.create_user(
             username="teacher_a", email="teacher.a@alpha.test", password="pass1234"

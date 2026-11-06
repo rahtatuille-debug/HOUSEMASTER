@@ -67,6 +67,8 @@ class RegistrationTests(SchoolScopedAPITestCase):
 class SetupWizardTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        School.objects.filter(pk=self.school_a.pk).update(setup_completed_at=None)  # a new school
+        self.school_a.refresh_from_db()
         self.admin = self.authed_client(self.admin_a)
 
     def test_state_lists_every_system_and_what_exists(self):

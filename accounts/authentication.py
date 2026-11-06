@@ -13,6 +13,10 @@ GOVERNOR_PATHS = ("/api/me/", "/api/governor/", "/api/logout/", "/api/tour-seen/
 # A school whose subscription has lapsed (billing): its admins may still see their account and pay; nobody
 # else at the school gets in until the payment is recorded.
 LOCKED_ADMIN_PATHS = ("/api/me/", "/api/billing/", "/api/logout/")
+# A school still being set up is open to its admins only. Other staff can see their account (the app tells them to
+# wait); parents and students can only sign out until the admin opens the school.
+SETUP_STAFF_PATHS = ("/api/me/", "/api/logout/", "/api/tour-seen/")
+SETUP_FAMILY_PATHS = ("/api/logout/",)
 STUDENT_PATHS = ("/api/student/", "/api/guardian-students/", "/api/calendar/", "/api/logout/")
 STUDENT_FIRST_PATHS = ("/api/student/me/", "/api/student/password/", "/api/logout/")
 
@@ -34,7 +38,7 @@ class VersionedJWTAuthentication(JWTAuthentication):
                 raise PermissionDenied("Governor accounts can only see the school's summary.")
             if profile is None and getattr(result[0], "guardian", None) is None:
                 self._student_gate(result[0], request.path)
-            self._billing_gate(result[0], profile, request.path)
+            self._school_gates(result[0], profile, request.path)
         return result
 
     @staticmethod
@@ -52,26 +56,35 @@ class VersionedJWTAuthentication(JWTAuthentication):
             raise PermissionDenied("Student accounts can only see their own information.")
 
     @staticmethod
-    def _billing_gate(user, profile, path):
+    def _school_gates(user, profile, path):
+        """The school's subscription (billing) and whether its admin has finished setting it up."""
         from django.utils import timezone
 
         from billing.services import is_locked
 
         if profile is not None:
-            school_id = profile.school_id
+            school = profile.school
         elif getattr(user, "guardian", None) is not None:
-            school_id = user.guardian.school_id
+            school = user.guardian.school
         else:
             from studentaccounts.services import account_of
 
             account = account_of(user)
-            school_id = account.student.school_id if account else None
-        if school_id is None or not is_locked(school_id, timezone.localdate()):
+            school = account.student.school if account else None
+        if school is None:
             return
-        if profile is not None and profile.role == "admin" and path.startswith(LOCKED_ADMIN_PATHS):
+        admin = profile is not None and profile.role == "admin"
+        if is_locked(school.id, timezone.localdate()) and not (admin and path.startswith(LOCKED_ADMIN_PATHS)):
+            raise PermissionDenied({
+                "detail": "HouseMaster is paused for your school because the subscription hasn't been paid. "
+                          "Please contact your school's administrator.",
+                "code": "school_locked",
+            })
+        if admin or path.startswith(SETUP_STAFF_PATHS if profile is not None else SETUP_FAMILY_PATHS):
             return
-        raise PermissionDenied({
-            "detail": "HouseMaster is paused for your school because the subscription hasn't been paid. "
-                      "Please contact your school's administrator.",
-            "code": "school_locked",
-        })
+        if school.setup_completed_at is None:
+            raise PermissionDenied({
+                "detail": "Your school is still being set up on HouseMaster. You'll be able to sign in as soon as "
+                          "its administrator has finished.",
+                "code": "school_not_open",
+            })

@@ -56,7 +56,7 @@ def now_c2b(trans_id, amount, bill_ref):
 @override_settings(**OWNER)
 class PaymentRaceTests(TransactionTestCase):
     def setUp(self):
-        self.school = School.objects.create(name="Alpha Academy")
+        self.school = School.objects.create(setup_completed_at=timezone.now(), name="Alpha Academy")
         admin = User.objects.create_user(username="admin", email="admin@a.test", password="x")
         Profile.objects.create(user=admin, school=self.school, role=Profile.Role.ADMIN)
         self.admin_user = admin

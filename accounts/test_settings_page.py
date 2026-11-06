@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import Profile
@@ -30,8 +31,8 @@ def signed_in(user):
 class OwnDetailsTests(TestCase):
     def setUp(self):
         cache.clear()
-        self.school = School.objects.create(name="Alpha")
-        self.other_school = School.objects.create(name="Beta")
+        self.school = School.objects.create(setup_completed_at=timezone.now(), name="Alpha")
+        self.other_school = School.objects.create(setup_completed_at=timezone.now(), name="Beta")
         self.teacher = staff(self.school, "tom@alpha.example")
         self.admin = staff(self.school, "amina@alpha.example", Profile.Role.ADMIN)
         self.outsider = staff(self.other_school, "bob@beta.example", Profile.Role.ADMIN)
@@ -83,7 +84,7 @@ class OwnDetailsTests(TestCase):
 class PasswordTests(TestCase):
     def setUp(self):
         cache.clear()
-        self.school = School.objects.create(name="Alpha")
+        self.school = School.objects.create(setup_completed_at=timezone.now(), name="Alpha")
         self.teacher = staff(self.school, "tom@alpha-school.org")  # a deliverable address, so the notice is sent
 
     def test_change_password_signs_out_other_devices_but_not_this_one(self):
@@ -156,7 +157,7 @@ class RoutineEmailChoiceTests(TestCase):
         from accounts.models import StaffRole
         from students.models import SchoolClass, Student, YearGroup
 
-        school = School.objects.create(name="Alpha")
+        school = School.objects.create(setup_completed_at=timezone.now(), name="Alpha")
         year = YearGroup.objects.create(school=school, name="Year 7")
         klass = SchoolClass.objects.create(name="7A", year_group=year)
         student = Student.objects.create(school=school, first_name="Amina", last_name="K", school_class=klass)

@@ -7,13 +7,14 @@ from accounts.models import Invite
 from accounts.tests import SchoolScopedAPITestCase
 from guardians.models import ClassSignupLink
 
-from .models import Student
+from .models import School, Student
 from .test_setup import finish_payload
 
 
 class PeopleStepsTests(SchoolScopedAPITestCase):
     def setUp(self):
         super().setUp()
+        School.objects.filter(pk=self.school_a.pk).update(setup_completed_at=None)  # a new school
         self.admin = self.authed_client(self.admin_a)
         self.admin.post("/api/setup/finish/", finish_payload(), format="json")
 
@@ -49,6 +50,7 @@ class PeopleStepsTests(SchoolScopedAPITestCase):
         self.assertTrue(self.status()["staff"]["done"])
 
     def test_the_structure_comes_first(self):
+        School.objects.filter(pk=self.school_b.pk).update(setup_completed_at=None)  # a new school
         self.school_b.refresh_from_db()
         self.make_admin(self.user_b)
         self.assertEqual(self.client_b.get("/api/setup/people/").data["stage"], "structure")

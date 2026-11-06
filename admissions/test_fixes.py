@@ -146,7 +146,7 @@ class DuplicateRaceTests(TransactionTestCase):
 
         from .models import AdmissionsSettings
 
-        school = School.objects.create(name="Race School")
+        school = School.objects.create(setup_completed_at=timezone.now(), name="Race School")
         year = YearGroup.objects.create(school=school, name="Year 7")
         settings = AdmissionsSettings.objects.create(school=school, is_open=True)
         body = {"year_group": year.id, "first_name": "Ann", "last_name": "Lee", "date_of_birth": "2015-01-01",
@@ -369,7 +369,7 @@ class AdmissionNumberRaceTests(TransactionTestCase):
 
         from .models import AdmissionsSettings
 
-        school = School.objects.create(name="Race School")
+        school = School.objects.create(setup_completed_at=timezone.now(), name="Race School")
         klass = SchoolClass.objects.create(year_group=YearGroup.objects.create(school=school, name="Y7"), name="7A")
         AdmissionsSettings.objects.create(school=school, number_prefix="R")
         admin = User.objects.create_user(username="race@example.test", email="race@example.test", password="x")
