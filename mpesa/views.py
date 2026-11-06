@@ -101,7 +101,7 @@ def _tell_admins(school, actor, subject, lines):
     from accounts.models import Profile
     from guardians.notifications import send_after_commit
 
-    admins = Profile.objects.filter(school=school, role=Profile.Role.ADMIN, user__is_active=True) \
+    admins = Profile.objects.filter(school=school, role=Profile.Role.ADMIN, is_active=True) \
         .exclude(user__email="").select_related("user")
     body = (f"{display_name(actor)} changed {school.name}'s M-Pesa settings in HouseMaster.\n\n" + "\n".join(lines)
             + "\n\nIf you didn't expect this, check Fees > M-Pesa now and change it back: parents' payments go to "

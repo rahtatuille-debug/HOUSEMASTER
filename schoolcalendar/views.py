@@ -158,9 +158,14 @@ def calendar_feed(request):
     """
     if services.viewer(request.user)[0] is None:
         raise PermissionDenied("This account has no school calendar.")
-    feed = CalendarFeed.objects.filter(user=request.user).first()
+    from accounts.memberships import key_of
+
+    member = getattr(request.user, "profile", None) or getattr(request.user, "guardian", None)
+    membership = key_of(member) if member is not None else ""
+    feed = CalendarFeed.objects.filter(user=request.user, membership=membership).first()
     if request.method == "POST" or feed is None:
-        feed, _ = CalendarFeed.objects.update_or_create(user=request.user, defaults={"token": CalendarFeed.new_token()})
+        feed, _ = CalendarFeed.objects.update_or_create(user=request.user, membership=membership,
+                                                        defaults={"token": CalendarFeed.new_token()})
     url = request.build_absolute_uri(f"/api/calendar/ical/{feed.token}.ics")
     return Response({"url": url, "webcal": url.replace("https://", "webcal://", 1).replace("http://", "webcal://", 1)})
 
@@ -175,9 +180,16 @@ class FeedThrottle(AnonRateThrottle):
 @throttle_classes([FeedThrottle])
 def calendar_ical(request, token):
     """The calendar as an .ics file, for calendar apps. The long random link is the key."""
+    from accounts.memberships import act_as, find
+
     feed = CalendarFeed.objects.filter(token=token).select_related("user").first()
     if feed is None or not feed.user.is_active:
         raise Http404
+    if feed.membership:
+        membership = find(feed.user, feed.membership)
+        if membership is None:  # no longer at that school
+            raise Http404
+        act_as(feed.user, membership)
     school, _ = services.viewer(feed.user)
     if school is None or getattr(getattr(feed.user, "profile", None), "role", "") == "governor":
         raise Http404

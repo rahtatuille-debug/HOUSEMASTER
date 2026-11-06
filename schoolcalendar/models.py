@@ -58,9 +58,15 @@ class Event(models.Model):
 class CalendarFeed(models.Model):
     """A private link to someone's calendar for their phone or computer calendar app."""
 
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="calendar_feed")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="calendar_feeds")
+    # Which of the person's schools (accounts.memberships key, e.g. "parent:7"); blank for a student account or a
+    # link made before one login could belong to several schools (their only one).
+    membership = models.CharField(max_length=40, blank=True, default="")
     token = models.CharField(max_length=64, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "membership"], name="one_calendar_link_per_school")]
 
     @staticmethod
     def new_token():

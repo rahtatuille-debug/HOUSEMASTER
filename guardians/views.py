@@ -92,7 +92,7 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     """
 
     queryset = Guardian.objects.select_related("user").prefetch_related("students").order_by(
-        "-user__is_active", "display_name"
+        "-is_active", "display_name"
     )
     serializer_class = ParentSerializer
     permission_classes = [HasSchoolProfile, CanManageParents]
@@ -153,9 +153,10 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def _set_active(self, request, active):
         guardian = self.get_object()
-        if guardian.user.is_active != active:
-            guardian.user.is_active = active
-            guardian.user.save(update_fields=["is_active"])
+        if guardian.is_active != active:
+            from accounts.memberships import set_active
+
+            set_active(guardian, active)
             verb = "Reactivated" if active else "Deactivated"
             log_activity(
                 school=guardian.school, actor=request.user,
@@ -175,7 +176,7 @@ class ParentViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send-password-reset")
     def send_password_reset(self, request, pk=None):
         guardian = self.get_object()
-        if not guardian.user.is_active:
+        if not guardian.is_active:
             raise ValidationError("Reactivate this account before sending a password reset.")
         if not guardian.user.email:
             raise ValidationError("This account has no email address to send a reset link to.")
@@ -444,7 +445,7 @@ class AcceptGuardianInviteView(APIView):
             school=user.guardian.school, actor=user, action="parent_invite.accepted", target=user.guardian,
             summary=f"Parent {user.guardian.name} accepted their invite",
         )
-        return Response(tokens_for(user), status=201)
+        return Response(tokens_for(user, user.guardian), status=201)
 
 
 @api_view(["GET", "PATCH"])
@@ -472,10 +473,13 @@ def guardian_me(request):
                          if changed == ["email_notifications"] else f"{guardian.name} updated their contact details"),
                 fields=changed,
             )
+    from accounts.memberships import all_memberships, describe
+
     return Response({
         "id": request.user.id,
         "name": guardian.name,
         "email": request.user.email,
+        "memberships": [describe(m, guardian) for m in all_memberships(request.user)],
         "contact": GuardianContactSerializer(guardian).data,
         "school": school_summary(guardian.school),
         "students": GuardianStudentSerializer(guardian.students.all(), many=True).data,

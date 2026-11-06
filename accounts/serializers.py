@@ -1,5 +1,5 @@
 from django.contrib.auth.models import User
-from django.db import IntegrityError, models, transaction
+from django.db import IntegrityError, transaction
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
@@ -13,11 +13,12 @@ from .models import Invite, PasswordResetToken, Profile, StaffRole, TeachingAssi
 from .tokens import VersionedRefreshToken
 
 
-def email_in_use_at_school(email, school):
-    """Whether a staff member or parent at this school already signs in with this email."""
-    return User.objects.filter(email__iexact=email).filter(
-        models.Q(profile__school=school) | models.Q(guardian__school=school)
-    ).exists()
+def email_in_use_at_school(email, school, as_parent=False):
+    """Whether this email already has a staff account at this school (or, `as_parent`, a parent account). One
+    login can be staff and a parent at the same school (accounts/memberships.py), so each is checked on its own."""
+    if as_parent:
+        return User.objects.filter(email__iexact=email, guardian__school=school).exists()
+    return User.objects.filter(email__iexact=email, profile__school=school).exists()
 
 
 def create_account(field, message, **fields):
@@ -66,13 +67,13 @@ class InviteSerializer(serializers.ModelSerializer):
         }
 
     def validate_email(self, value):
-        # Only this school's accounts and invites are checked, so an admin
+        # Only this school's staff accounts and invites are checked, so an admin
         # can't use this to find out whether an email is in use at another
-        # school. If it is, accepting the invite fails instead, and only the
-        # invitee (who owns that email) sees why.
+        # school. If it is, accepting the invite adds this school to that login
+        # (accounts/joining.py), and only the invitee sees that.
         school = requester_school(self.context.get("request"))
         if email_in_use_at_school(value, school):
-            raise serializers.ValidationError("Someone at your school already has an account with that email.")
+            raise serializers.ValidationError("Someone on your staff already has an account with that email.")
         if Invite.objects.filter(school=school, email__iexact=value, accepted_at__isnull=True).exists():
             raise serializers.ValidationError("There's already a pending invite for that email.")
         return value
@@ -90,7 +91,7 @@ class StaffMemberSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     name = serializers.CharField(read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
-    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
     date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
 
@@ -229,7 +230,13 @@ class InvitePreviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Invite
-        fields = ["school_name", "privacy_contact", "country", "role", "email", "status"]
+        fields = ["school_name", "privacy_contact", "country", "role", "email", "status", "has_account"]
+
+    has_account = serializers.SerializerMethodField()
+
+    def get_has_account(self, obj):
+        """The email already signs in to HouseMaster: accepting asks for that password, not a new one."""
+        return User.objects.filter(email__iexact=obj.email).exists()
 
 
 class AcceptInviteSerializer(serializers.Serializer):
@@ -265,27 +272,42 @@ class AcceptInviteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "This invite is missing an email address — ask your admin to create a new one."
             )
-        if User.objects.filter(email__iexact=invite.email).exists():
-            raise serializers.ValidationError(self.EMAIL_TAKEN)
+        if Profile.objects.filter(user__email__iexact=invite.email, school=invite.school).exists():
+            raise serializers.ValidationError("You already have a staff account at this school. Sign in instead.")
         self._invite = invite
         return value
 
-    def validate_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        from .joining import check_new_password, check_password, existing_login
+
+        # Someone who already signs in to HouseMaster (another school, or as a parent) adds this school to that
+        # login with their current password; anyone else chooses one.
+        self._existing = existing_login(self._invite.email)
+        if self._existing is not None:
+            check_password(self._existing, attrs["password"])
+        else:
+            check_new_password(attrs["password"])
+        return attrs
 
     def save(self):
+        from .joining import reopen
+        from .memberships import act_as
+
         invite = self._invite
         display_name = invite.name.strip()
         first_name, _, last_name = display_name.partition(" ")
-        user = create_account(
-            "token", self.EMAIL_TAKEN,
-            username=username_for_email(invite.email),
-            email=invite.email,
-            password=self.validated_data["password"],
-            first_name=first_name[:150],
-            last_name=last_name[:150],
-        )
+        user = self._existing
+        if user is not None:
+            reopen(user)
+        else:
+            user = create_account(
+                "token", self.EMAIL_TAKEN,
+                username=username_for_email(invite.email),
+                email=invite.email,
+                password=self.validated_data["password"],
+                first_name=first_name[:150],
+                last_name=last_name[:150],
+            )
         profile = Profile.objects.create(
             user=user,
             school=invite.school,
@@ -309,6 +331,7 @@ class AcceptInviteSerializer(serializers.Serializer):
         invite.accepted_at = timezone.now()
         invite.accepted_by = user
         invite.save(update_fields=["accepted_at", "accepted_by"])
+        act_as(user, profile)
         return user
 
 

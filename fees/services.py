@@ -194,7 +194,7 @@ def void_payment(payment, user, reason):
 def _parents(student):
     from guardians.models import Guardian
 
-    return list(Guardian.objects.filter(students=student, email_notifications=True, user__is_active=True)
+    return list(Guardian.objects.filter(students=student, email_notifications=True, is_active=True)
                 .exclude(user__email="").select_related("user"))
 
 
@@ -261,7 +261,7 @@ def tell_bursars(claim):
 
     school = claim.school
     # The bursars, or the admins when the school has no bursar.
-    staff = Profile.objects.filter(school=school, user__is_active=True).exclude(user__email="")
+    staff = Profile.objects.filter(school=school, is_active=True).exclude(user__email="")
     bursars = staff.filter(staff_roles__role=StaffRole.Role.BURSAR)
     emails = set((bursars if bursars.exists() else staff.filter(role=Profile.Role.ADMIN))
                  .filter(email_notifications=True).values_list("user__email", flat=True))

@@ -58,7 +58,7 @@ class LessonSerializer(serializers.ModelSerializer):
         school = self.context["request"].user.profile.school
         fields["school_class"].queryset = SchoolClass.objects.filter(year_group__school=school)
         fields["subject"].queryset = Subject.objects.filter(school=school)
-        fields["teacher"].queryset = Profile.objects.filter(school=school, user__is_active=True)
+        fields["teacher"].queryset = Profile.objects.filter(school=school, is_active=True)
         fields["room"].queryset = Room.objects.filter(school=school)
         fields["period"].queryset = Period.objects.filter(school=school)
         return fields

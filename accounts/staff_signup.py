@@ -102,7 +102,9 @@ def _row(r, staff_emails):
 def _requests(school, status="pending"):
     rows = list(StaffSignupRequest.objects.filter(school=school, status=status)[:500])
     emails = {r.email.lower() for r in rows}
-    taken = {e.lower() for e in User.objects.filter(email__in=[r.email for r in rows]).values_list("email", flat=True)}
+    # Already on this school's staff. Accounts at other schools are never revealed to this school's admins.
+    taken = {e.lower() for e in User.objects.filter(email__in=[r.email for r in rows], profile__school=school)
+             .values_list("email", flat=True)}
     return [_row(r, taken & emails) for r in rows]
 
 
@@ -144,8 +146,10 @@ def staff_join_link(request):
 def approve(signup, admin):
     """Email the person a staff invite (as a teacher). Returns a sentence for the admin."""
     school = signup.school
-    if User.objects.filter(email__iexact=signup.email).exists():
-        raise ValidationError(f"{signup.email} already has a HouseMaster account, so it can't be used for a new one.")
+    if User.objects.filter(email__iexact=signup.email, profile__school=school).exists():
+        raise ValidationError(f"{signup.email} is already on your staff.")
+    # Someone who signs in to HouseMaster elsewhere gets the same invite: accepting it adds this school to their
+    # login (accounts/joining.py).
     invite = Invite.objects.filter(school=school, email__iexact=signup.email, accepted_at__isnull=True).first()
     if invite:
         invite.name = invite.name or signup.name

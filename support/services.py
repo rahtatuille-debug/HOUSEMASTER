@@ -200,7 +200,7 @@ def notify_parents(concern, actor):
 
     student = concern.student
     school = student.school
-    parents = (Guardian.objects.filter(students=student, email_notifications=True, user__is_active=True)
+    parents = (Guardian.objects.filter(students=student, email_notifications=True, is_active=True)
                .exclude(user__email="").select_related("user"))
     messages = [(
         f"A note from {school.name} about {student.first_name}",

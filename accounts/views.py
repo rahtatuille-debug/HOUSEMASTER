@@ -15,6 +15,7 @@ from activity.services import log_activity
 from gradebook.levels import school_summary
 
 from .emails import send_admin_password_reset, send_staff_invite_email
+from .memberships import all_memberships, describe, set_active
 
 from .models import Invite, Profile, StaffRole, TeachingAssignment
 from .permissions import HasSchoolProfile, IsLeader, IsSchoolAdmin
@@ -120,6 +121,8 @@ def me(request):
             "permissions": permissions_for(request.user),
             # Admins only: whether a subscription invoice is due, overdue or the school is locked (billing).
             "billing": _billing(profile),
+            # Every school this login can use (accounts.memberships), for the school switcher.
+            "memberships": [describe(m, profile) for m in all_memberships(request.user)],
         }
     )
 
@@ -268,7 +271,7 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     admin, and admins can't deactivate or demote themselves.
     """
 
-    queryset = Profile.objects.select_related("user").order_by("-user__is_active", "display_name")
+    queryset = Profile.objects.select_related("user").order_by("-is_active", "display_name")
     serializer_class = StaffMemberSerializer
     permission_classes = [IsAuthenticated, HasSchoolProfile, IsSchoolAdmin]
     http_method_names = ["get", "patch", "post", "head", "options"]
@@ -280,7 +283,7 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
 
     def _other_active_admins(self, profile):
         return Profile.objects.filter(
-            school=profile.school, role=Profile.Role.ADMIN, user__is_active=True
+            school=profile.school, role=Profile.Role.ADMIN, is_active=True
         ).exclude(pk=profile.pk)
 
     def _guard_admin_loss(self, profile, what):
@@ -314,10 +317,9 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def deactivate(self, request, pk=None):
         profile = self.get_object()
-        if profile.user.is_active:
+        if profile.is_active:
             self._guard_admin_loss(profile, "deactivate")
-            profile.user.is_active = False
-            profile.user.save(update_fields=["is_active"])
+            set_active(profile, False)
             log_activity(
                 school=profile.school, actor=request.user, action="staff.deactivated", target=profile,
                 summary=f"Deactivated {profile.name}'s account",
@@ -333,7 +335,7 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send-password-reset")
     def send_password_reset(self, request, pk=None):
         profile = self.get_object()
-        if not profile.user.is_active:
+        if not profile.is_active:
             raise ValidationError("Reactivate this account before sending a password reset.")
         if not profile.user.email:
             raise ValidationError("This account has no email address to send a reset link to.")
@@ -347,9 +349,8 @@ class StaffViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def reactivate(self, request, pk=None):
         profile = self.get_object()
-        if not profile.user.is_active:
-            profile.user.is_active = True
-            profile.user.save(update_fields=["is_active"])
+        if not profile.is_active:
+            set_active(profile, True)
             log_activity(
                 school=profile.school, actor=request.user, action="staff.reactivated", target=profile,
                 summary=f"Reactivated {profile.name}'s account",
@@ -452,7 +453,7 @@ class AcceptInviteView(APIView):
             summary=f"{user.profile.name} accepted their invite and joined as "
             f"{user.profile.get_role_display().lower()}",
         )
-        return Response(tokens_for(user), status=201)
+        return Response(tokens_for(user, user.profile), status=201)
 
 
 class RequestPasswordResetView(APIView):

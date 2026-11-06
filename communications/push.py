@@ -111,7 +111,7 @@ def announcement_user_ids(announcement):
 
     from .models import Announcement
 
-    parents = Guardian.objects.filter(school=announcement.school, user__is_active=True, user__push_subscriptions__isnull=False)
+    parents = Guardian.objects.filter(school=announcement.school, is_active=True, user__push_subscriptions__isnull=False)
     audience = announcement.audience
     if audience == Announcement.Audience.YEAR_GROUP:
         parents = parents.filter(students__school_class__year_group=announcement.year_group, students__is_active=True)
@@ -126,7 +126,7 @@ def report_user_ids(reports):
     from guardians.models import Guardian
 
     return sorted(set(Guardian.objects.filter(
-        Q(students__in=[r.student_id for r in reports]), user__is_active=True, user__push_subscriptions__isnull=False,
+        Q(students__in=[r.student_id for r in reports]), is_active=True, user__push_subscriptions__isnull=False,
     ).values_list("user_id", flat=True)))
 
 

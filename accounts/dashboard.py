@@ -76,7 +76,7 @@ def build_dashboard(school):
     invites.sort(key=lambda i: i["created_at"], reverse=True)
 
     # Active students with no active parent account linked.
-    without_parent = students.exclude(guardians__user__is_active=True).select_related("school_class") \
+    without_parent = students.exclude(guardians__is_active=True).select_related("school_class") \
         .order_by("last_name", "first_name")
 
     # The "School numbers" panel: active students per year group, by gender.
@@ -140,7 +140,7 @@ def governor_figures(school):
         "school": school.name,
         "date": today,
         "students": Student.objects.filter(school=school, is_active=True).count(),
-        "staff": Profile.objects.filter(school=school, user__is_active=True).exclude(role=Profile.Role.GOVERNOR).count(),
+        "staff": Profile.objects.filter(school=school, is_active=True).exclude(role=Profile.Role.GOVERNOR).count(),
         "students_by_year_group": full["students_by_year_group"],
         "attendance": {"date": att["date"], "is_today": att["is_today"], "rate": att["rate"],
                        "marked": att["marked"], "students": att["students"], "absent": att["absent"],

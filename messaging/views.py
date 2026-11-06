@@ -43,8 +43,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     pagination_class = LongListPagination
 
     def get_queryset(self):
+        # One login can belong to several schools: only the school this session is acting for.
+        member = getattr(self.request.user, "profile", None) or getattr(self.request.user, "guardian", None)
         queryset = with_list_fields(
-            Conversation.objects.filter(participants=self.request.user).distinct(), self.request.user
+            Conversation.objects.filter(participants=self.request.user,
+                                        school_id=member.school_id if member else None).distinct(),
+            self.request.user,
         ).order_by("-created_at", "-id")
         guardian = getattr(self.request.user, "guardian", None)
         if guardian is not None:
@@ -90,8 +94,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         if request.method == "GET":
             # Oldest first, a page at a time (F-14).
-            messages = conversation.messages.select_related(
-                "sender__profile", "sender__guardian").order_by("created_at", "id")
+            messages = conversation.messages.select_related("sender").prefetch_related(
+                "sender__profiles", "sender__guardian_memberships").order_by("created_at", "id")
             paginator = LongListPagination()
             page = paginator.paginate_queryset(messages, request, view=self)
             return paginator.get_paginated_response(MessageSerializer(page, many=True).data)

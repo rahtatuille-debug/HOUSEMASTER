@@ -239,7 +239,7 @@ def cover(request):
         return Response(status=204)
     teacher = None
     if data.get("cover_teacher") not in (None, ""):
-        teacher = Profile.objects.filter(pk=data.get("cover_teacher"), school=school, user__is_active=True) \
+        teacher = Profile.objects.filter(pk=data.get("cover_teacher"), school=school, is_active=True) \
             .exclude(role=Profile.Role.GOVERNOR).first() if str(data.get("cover_teacher")).isdigit() else None
         if teacher is None:
             raise ValidationError({"cover_teacher": ["Choose a member of staff at your school."]})

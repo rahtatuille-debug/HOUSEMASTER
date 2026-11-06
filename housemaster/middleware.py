@@ -70,3 +70,20 @@ class AdminLoginThrottleMiddleware:
         if response.status_code == 200:  # the form came back with an error: a failed attempt
             cache.set(key, recent + [now], self.WINDOW)
         return response
+
+
+class CurrentSchoolMiddleware:
+    """Each request starts with no current school (accounts.memberships): a worker thread's last request never
+    leaks its school into the next one."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from accounts.memberships import current_school
+
+        token = current_school.set(None)
+        try:
+            return self.get_response(request)
+        finally:
+            current_school.reset(token)

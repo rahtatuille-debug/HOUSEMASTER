@@ -1,5 +1,4 @@
 """Emails to families, and enrolling an accepted applicant (which invites the parent)."""
-from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
@@ -160,13 +159,13 @@ def link_parent(school, student, application, admin):
     from guardians.models import GuardianInvite
 
     email = application.parent_email
-    if User.objects.filter(email__iexact=email, profile__school=school).exists():
-        return f"{email} belongs to a staff account, so no parent invite was sent."
-    user = User.objects.filter(email__iexact=email, guardian__school=school).first()
-    if user:
-        user.guardian.students.add(student)
-        send_child_added_email(user.guardian, student)
-        return f"Added {student_name(student)} to {user.guardian.name}'s parent account."
+    from guardians.models import Guardian
+
+    guardian = Guardian.objects.filter(user__email__iexact=email, school=school).first()
+    if guardian:
+        guardian.students.add(student)
+        send_child_added_email(guardian, student)
+        return f"Added {student_name(student)} to {guardian.name}'s parent account."
     invite = GuardianInvite.objects.filter(school=school, email__iexact=email, accepted_at__isnull=True).first()
     if invite is None:
         invite = GuardianInvite.objects.create(school=school, name=application.parent_name, email=email,

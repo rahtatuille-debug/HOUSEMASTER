@@ -1,7 +1,6 @@
 import re
 
 from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 from accounts.mixins import SchoolScopedRelatedFieldsMixin
@@ -47,8 +46,8 @@ class GuardianInviteSerializer(SchoolScopedRelatedFieldsMixin, serializers.Model
         from accounts.serializers import email_in_use_at_school
 
         school = requester_school(self.context.get("request"))
-        if email_in_use_at_school(value, school):
-            raise serializers.ValidationError("Someone at your school already has an account with that email.")
+        if email_in_use_at_school(value, school, as_parent=True):
+            raise serializers.ValidationError("A parent at your school already signs in with that email.")
         if GuardianInvite.objects.filter(school=school, email__iexact=value, accepted_at__isnull=True).exists():
             raise serializers.ValidationError("There's already a pending guardian invite for that email.")
         return value
@@ -78,7 +77,13 @@ class GuardianInvitePreviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GuardianInvite
-        fields = ["school_name", "privacy_contact", "country", "email", "student_names", "status"]
+        fields = ["school_name", "privacy_contact", "country", "email", "student_names", "status", "has_account"]
+
+    has_account = serializers.SerializerMethodField()
+
+    def get_has_account(self, obj):
+        """The email already signs in to HouseMaster: accepting asks for that password, not a new one."""
+        return User.objects.filter(email__iexact=obj.email).exists()
 
     def get_student_names(self, obj):
         return [f"{s.first_name} {s.last_name}" for s in obj.students.all()]
@@ -107,35 +112,55 @@ class AcceptGuardianInviteSerializer(serializers.Serializer):
             raise serializers.ValidationError("This invite has already been used.")
         if invite.is_expired:
             raise serializers.ValidationError("This invite has expired. Ask the school for a new one.")
-        if User.objects.filter(email__iexact=invite.email).exists():
-            raise serializers.ValidationError(self.EMAIL_TAKEN)
         self._invite = invite
         return value
 
-    def validate_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        from accounts.joining import check_new_password, check_password, existing_login
+
+        # Already signs in to HouseMaster (staff here or elsewhere, or a parent at another school): this school is
+        # added to that login with its current password. Anyone else chooses one.
+        self._existing = existing_login(self._invite.email)
+        if self._existing is not None:
+            check_password(self._existing, attrs["password"])
+        else:
+            check_new_password(attrs["password"])
+        return attrs
 
     def save(self):
+        from accounts.joining import reopen
+        from accounts.memberships import act_as
+
         invite = self._invite
         display_name = invite.name.strip()
         first_name, _, last_name = display_name.partition(" ")
-        user = create_account(
-            "token", self.EMAIL_TAKEN,
-            username=username_for_email(invite.email),
-            email=invite.email,
-            password=self.validated_data["password"],
-            first_name=first_name[:150],
-            last_name=last_name[:150],
+        user = self._existing
+        if user is not None:
+            reopen(user)
+        else:
+            user = create_account(
+                "token", self.EMAIL_TAKEN,
+                username=username_for_email(invite.email),
+                email=invite.email,
+                password=self.validated_data["password"],
+                first_name=first_name[:150],
+                last_name=last_name[:150],
+            )
+        # A parent here already (another child's invite): the children are added to that account.
+        guardian, created = Guardian.objects.get_or_create(
+            user=user, school=invite.school,
+            defaults={"display_name": display_name, "privacy_accepted_at": timezone.now(), "phone": invite.phone,
+                      "relationship": invite.relationship},
         )
-        guardian = Guardian.objects.create(
-            user=user, school=invite.school, display_name=display_name, privacy_accepted_at=timezone.now(),
-            phone=invite.phone, relationship=invite.relationship,
-        )
-        guardian.students.set(invite.students.all())
+        if not created and not guardian.is_active:
+            from accounts.memberships import set_active
+
+            set_active(guardian, True)
+        guardian.students.add(*invite.students.all())
         invite.accepted_at = timezone.now()
         invite.accepted_by = user
         invite.save(update_fields=["accepted_at", "accepted_by"])
+        act_as(user, guardian)
         return user
 
 
@@ -232,7 +257,7 @@ class ParentSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSerializ
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     name = serializers.CharField(read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
-    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
     date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
     last_login = serializers.DateTimeField(source="user.last_login", read_only=True)
     student_names = serializers.SerializerMethodField(read_only=True)

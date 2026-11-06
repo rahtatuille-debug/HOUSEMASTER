@@ -76,7 +76,7 @@ def announcement_recipients(announcement):
     from communications.models import Announcement
 
     parents = Guardian.objects.filter(
-        school=announcement.school, email_notifications=True, user__is_active=True,
+        school=announcement.school, email_notifications=True, is_active=True,
     ).exclude(user__email="")
     audience = announcement.audience
     if audience == Announcement.Audience.ALL_PARENTS:
@@ -134,7 +134,7 @@ def notify_reports_finalized(reports, actor):
     _push_later(school, actor, lambda: report_user_ids(reports), "A new report is ready in HouseMaster.",
                 what=" that reports are ready")
     guardians = Guardian.objects.filter(
-        students__in=[r.student_id for r in reports], email_notifications=True, user__is_active=True,
+        students__in=[r.student_id for r in reports], email_notifications=True, is_active=True,
     ).exclude(user__email="").select_related("user").prefetch_related("students").distinct()
     by_student = {r.student_id: r for r in reports}
     messages = []

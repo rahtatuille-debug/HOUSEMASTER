@@ -31,7 +31,7 @@ def fill_demo(school, share=0.0, house_names=("Kilimanjaro House", "Elgon House"
                 .order_by("gender", "id")]
     if not boarders:
         return 0
-    staff = list(Profile.objects.filter(school=school, role="teacher", user__is_active=True).order_by("id"))
+    staff = list(Profile.objects.filter(school=school, role="teacher", is_active=True).order_by("id"))
     halves = {"female": [s for s in boarders if s.gender == "female"],
               "male": [s for s in boarders if s.gender != "female"]}
     placed = 0

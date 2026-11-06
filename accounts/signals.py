@@ -28,3 +28,24 @@ def end_sessions(sender, instance, created, **kwargs):
     if getattr(instance, "_end_sessions", False):
         instance._end_sessions = False
         bump_token_version(instance.pk)
+
+
+def _forget_memberships(sender, instance, **kwargs):
+    """A membership was added, changed or removed: the user object it was saved with looks it up again."""
+    from .memberships import forget
+
+    user = instance._state.fields_cache.get("user")
+    if user is not None:
+        forget(user)
+
+
+def connect_membership_signals():
+    from django.db.models.signals import post_delete
+
+    from guardians.models import Guardian
+
+    from .models import Profile
+
+    for model in (Profile, Guardian):
+        post_save.connect(_forget_memberships, sender=model, dispatch_uid=f"forget_memberships_save_{model.__name__}")
+        post_delete.connect(_forget_memberships, sender=model, dispatch_uid=f"forget_memberships_del_{model.__name__}")

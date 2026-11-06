@@ -117,6 +117,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'housemaster.middleware.CurrentSchoolMiddleware',
     # WhiteNoise serves static files (Django admin CSS, DRF browsable-API
     # assets) directly from the Django process, right after
     # SecurityMiddleware per WhiteNoise's own placement requirement — no

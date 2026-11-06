@@ -44,7 +44,7 @@ def parent_view(student):
     """A child's active clubs: when they meet, who runs them, attendance and fixtures."""
     today = school_localdate(student.school)
     memberships = (student.club_memberships.filter(club__is_active=True)
-                   .select_related("club").prefetch_related("club__leaders__profile").order_by("club__name"))
+                   .select_related("club").prefetch_related("club__leaders__profiles").order_by("club__name"))
     picked = set(student.fixtures.values_list("id", flat=True))
     clubs = []
     for m in memberships:
@@ -81,7 +81,7 @@ def notify_squad(fixture, student_ids):
     if fixture.start_time:
         when += f" at {fixture.start_time.strftime('%H:%M')}"
     where = fixture.get_venue_display() + (f", {fixture.location}" if fixture.location else "")
-    parents = (Guardian.objects.filter(students__in=student_ids, email_notifications=True, user__is_active=True)
+    parents = (Guardian.objects.filter(students__in=student_ids, email_notifications=True, is_active=True)
                .exclude(user__email="").select_related("user").prefetch_related("students").distinct())
     messages = []
     for g in parents:

@@ -86,7 +86,7 @@ def family_export(student):
         g.name, g.user.email, g.get_relationship_display() if g.relationship else "", g.phone, g.phone_alt,
         g.address, g.occupation, g.get_preferred_contact_display() if g.preferred_contact else "",
         "On" if g.email_notifications else "Off", g.admin_note,
-        "Active" if g.user.is_active else "Deactivated", _when(g.user.date_joined), _when(g.user.last_login),
+        "Active" if g.is_active else "Deactivated", _when(g.user.date_joined), _when(g.user.last_login),
         _when(g.privacy_accepted_at),
     ] for g in guardians], widths={"Home address": 36, "Admin note": 36, "Email": 30})
 
@@ -263,7 +263,7 @@ def family_export_data(student):
             "name": g.name, "email": g.user.email, "relationship": g.relationship, "phone": g.phone,
             "second_phone": g.phone_alt, "home_address": g.address, "occupation": g.occupation,
             "preferred_contact": g.preferred_contact, "email_notifications": g.email_notifications,
-            "admin_note": g.admin_note, "account_active": g.user.is_active, "joined": _iso(g.user.date_joined),
+            "admin_note": g.admin_note, "account_active": g.is_active, "joined": _iso(g.user.date_joined),
             "last_login": _iso(g.user.last_login), "privacy_notice_accepted": _iso(g.privacy_accepted_at),
         } for g in guardians],
         "grades": [{
@@ -397,11 +397,16 @@ def remove_personal_data(student, actor):
             counts["parents_unlinked"] += 1
             continue
         removed_parent_names.extend(n for n in (g.name, g.user.email) if n)
-        direct = Conversation.objects.filter(kind=Conversation.Kind.DIRECT, participants=g.user)
-        counts["messages_deleted"] += Message.objects.filter(Q(conversation__in=direct) | Q(sender=g.user)).count()
-        Message.objects.filter(sender=g.user).delete()
+        # Only this school's: the same login may be staff or a parent at another school (accounts.memberships).
+        direct = Conversation.objects.filter(kind=Conversation.Kind.DIRECT, participants=g.user, school=school)
+        theirs = Message.objects.filter(sender=g.user, conversation__school=school)
+        counts["messages_deleted"] += Message.objects.filter(Q(conversation__in=direct) | Q(pk__in=theirs)).count()
+        theirs.delete()
         direct.delete()
-        g.user.delete()  # also deletes the Guardian row
+        user = g.user
+        g.delete()
+        if not (user.profiles.exists() or user.guardian_memberships.exists()):
+            user.delete()  # nothing left anywhere: the login goes too
         counts["parents_deleted"] += 1
 
     for invite in GuardianInvite.objects.filter(students=student):

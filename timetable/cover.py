@@ -34,7 +34,7 @@ def _is_away(away, teacher_id, period_id):
 def needs_cover(lesson, day, away=None):
     away = absent_on(lesson.school, day) if away is None else away
     teacher = lesson.teacher
-    return teacher is None or not teacher.user.is_active or _is_away(away, lesson.teacher_id, lesson.period_id)
+    return teacher is None or not teacher.is_active or _is_away(away, lesson.teacher_id, lesson.period_id)
 
 
 def free_staff(school, day, period_id, away=None, busy=None):
@@ -42,7 +42,7 @@ def free_staff(school, day, period_id, away=None, busy=None):
     away = absent_on(school, day) if away is None else away
     if busy is None:
         busy = _busy(school, day)
-    staff = Profile.objects.filter(school=school, user__is_active=True).exclude(role=Profile.Role.GOVERNOR) \
+    staff = Profile.objects.filter(school=school, is_active=True).exclude(role=Profile.Role.GOVERNOR) \
         .select_related("user")
     lessons_today = _lessons_today(school, day)
     rows = [{"id": p.id, "name": p.name, "lessons_today": lessons_today.get(p.id, 0)}
@@ -83,7 +83,7 @@ def cover_day(school, day):
             .select_related("teacher__user"):
         reasons.setdefault(absence.teacher_id, absence)
     lessons = Lesson.objects.filter(school=school, day=day.isoweekday()).filter(
-        Q(teacher__isnull=True) | Q(teacher__user__is_active=False) | Q(teacher_id__in=list(away))) \
+        Q(teacher__isnull=True) | Q(teacher__is_active=False) | Q(teacher_id__in=list(away))) \
         .select_related("school_class", "subject", "teacher__user", "room", "period")
     arranged = {c.lesson_id: c for c in CoverAssignment.objects.filter(school=school, date=day)
                 .select_related("cover_teacher")}
@@ -113,7 +113,7 @@ def cover_day(school, day):
 
 def staff_list(school):
     """Everyone who could be away or cover (not governors), for the forms on the Cover page."""
-    staff = Profile.objects.filter(school=school, user__is_active=True).exclude(role=Profile.Role.GOVERNOR) \
+    staff = Profile.objects.filter(school=school, is_active=True).exclude(role=Profile.Role.GOVERNOR) \
         .select_related("user")
     return sorted(({"id": p.id, "name": p.name} for p in staff), key=lambda r: r["name"])
 

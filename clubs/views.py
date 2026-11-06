@@ -72,7 +72,7 @@ class ClubViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = (Club.objects.filter(school=user.profile.school).prefetch_related("leaders__profile")
+        queryset = (Club.objects.filter(school=user.profile.school).prefetch_related("leaders__profiles")
                     .annotate(member_count=Count("members", filter=Q(members__student__is_active=True), distinct=True)))
         if self.request.query_params.get("mine"):
             queryset = queryset.filter(leaders=user)
@@ -87,7 +87,8 @@ class ClubViewSet(viewsets.ModelViewSet):
     def _set_leaders(self, club, ids):
         ids = _ids(ids, "leaders")
         staff = list(get_user_model().objects.filter(
-            pk__in=ids, is_active=True, profile__school=club.school).exclude(profile__role=Profile.Role.GOVERNOR))
+            pk__in=ids, profile__school=club.school, profile__is_active=True,
+            profile__role__in=[Profile.Role.ADMIN, Profile.Role.TEACHER]).distinct())
         if len(staff) != len(ids):
             raise ValidationError({"leaders": ["Choose staff from your school."]})
         club.leaders.set(staff)
@@ -137,7 +138,7 @@ class ClubViewSet(viewsets.ModelViewSet):
         """The staff a club can be given (leadership and admins)."""
         if not is_leader(request.user):
             raise PermissionDenied("Only leadership or an admin can choose a club's staff.")
-        profiles = (Profile.objects.filter(school=request.user.profile.school, user__is_active=True)
+        profiles = (Profile.objects.filter(school=request.user.profile.school, is_active=True)
                     .exclude(role=Profile.Role.GOVERNOR).select_related("user"))
         return Response(sorted(({"id": p.user_id, "name": p.name} for p in profiles), key=lambda r: r["name"].lower()))
 

@@ -104,8 +104,14 @@ class SchoolScopedAPITestCase(APITestCase):
     def authed_client(user):
         from rest_framework.test import APIClient
 
+        from .memberships import MEMBERSHIP_CLAIM, all_memberships, key_of
+
         client = APIClient()
         token = RefreshToken.for_user(user)
+        # As every real sign-in now does: the token names the school (membership) it acts for.
+        memberships = all_memberships(user)
+        if memberships:
+            token[MEMBERSHIP_CLAIM] = key_of(memberships[0])
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
         return client
 
@@ -787,7 +793,9 @@ class DashboardTests(SchoolScopedAPITestCase):
                          [("Year 7", 1, 0, 3), ("Year 8", 1, 1, 2), ("Year 9", 0, 0, 0)])
 
     def test_deactivated_parent_counts_as_no_parent(self):
-        User.objects.filter(email="p@x.test").update(is_active=False)
+        from guardians.models import Guardian
+
+        Guardian.objects.filter(user__email="p@x.test").update(is_active=False)
         self.assertEqual(self.admin_client_a.get("/api/dashboard/").data["students_without_parent"]["count"], 3)
 
     def test_teacher_cannot_see_dashboard(self):

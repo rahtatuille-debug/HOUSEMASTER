@@ -11,7 +11,7 @@ def notify_parents(incident):
 
     student = incident.student
     school = student.school
-    parents = (Guardian.objects.filter(students=student, email_notifications=True, user__is_active=True)
+    parents = (Guardian.objects.filter(students=student, email_notifications=True, is_active=True)
                .exclude(user__email="").select_related("user"))
     messages = [(
         f"A behaviour note from {school.name} about {student.first_name}",

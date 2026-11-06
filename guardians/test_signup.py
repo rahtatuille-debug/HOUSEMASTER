@@ -147,11 +147,20 @@ class ClassSignupTests(SchoolScopedAPITestCase):
         self.assertEqual(self.join(token, admission_number=" ").status_code, 400)
         self.assertFalse(ParentSignupRequest.objects.exists())
 
-    def test_staff_emails_cant_become_parents(self):
+    def test_staff_can_be_parents_at_their_own_school(self):
+        """A teacher with a child at the school is invited like any parent; accepting with their own password adds
+        a parent account to the same login (accounts/memberships.py)."""
         token = self.link()
         self.join(token, email="teacher.a@alpha.test")
         result = self.decide("approve", ParentSignupRequest.objects.get()).data
-        self.assertIn("staff account", result["problems"][0])
+        self.assertFalse(result.get("problems"))
+        invite = GuardianInvite.objects.get(email="teacher.a@alpha.test")
+        response = self.client.post("/api/guardian-invites/accept/", {"token": invite.token, "password": "pass1234",
+                                                                     "accept_privacy": True}, format="json")
+        self.assertEqual(response.status_code, 201)
+        guardian = Guardian.objects.get(user=self.user_a)
+        self.assertEqual(guardian.school, self.school_a)
+        self.assertTrue(self.user_a.profiles.filter(school=self.school_a).exists())
 
     def test_manual_invites_are_emailed_too(self):
         mail.outbox.clear()

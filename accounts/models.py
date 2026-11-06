@@ -37,6 +37,10 @@ class Profile(models.Model):
     Links a Django auth User to a School, so JWT-authenticated requests
     can be scoped to the correct school's data. A school will have multiple
     staff logins (teachers, admins), so this is a ForeignKey to School.
+
+    One person can work at several schools (and be a parent somewhere too)
+    with one login: each school is its own Profile, and `user.profile` is
+    the one their session is using (accounts/memberships.py).
     """
 
     class Role(models.TextChoices):
@@ -45,11 +49,13 @@ class Profile(models.Model):
         # Read-only: school-wide figures, never a named student (accounts.scoping).
         GOVERNOR = "governor", "Governor"
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profiles", related_query_name="profile"
     )
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="staff_profiles")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.TEACHER)
+    # Deactivated by the school's admins: this school only. The login itself closes when nothing else is left.
+    is_active = models.BooleanField(default=True)
     privacy_accepted_at = models.DateTimeField(
         null=True, blank=True, help_text="When they accepted the privacy notice while setting up their account.",
     )
@@ -80,6 +86,9 @@ class Profile(models.Model):
     emergency_contact_phone = models.CharField(max_length=40, blank=True, default="")
     # Routine emails (a parent reports an absence in their class, says they've paid fees). Urgent ones always go.
     email_notifications = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "school"], name="one_staff_profile_per_school")]
 
     @property
     def is_admin(self):
@@ -203,8 +212,9 @@ class Invite(models.Model):
         help_text='Classes to assign when the invite is accepted: [{"school_class": id, "subject": id or null}].',
     )
     accepted_at = models.DateTimeField(null=True, blank=True)
-    accepted_by = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="invite_accepted"
+    # A ForeignKey: one login can accept invites from several schools.
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="invites_accepted"
     )
 
     def renew(self):
@@ -274,6 +284,8 @@ class UserSecurity(models.Model):
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="security")
     token_version = models.PositiveIntegerField(default=0)
+    # The school (membership) they used last, e.g. "staff:12": where their next sign-in starts.
+    last_membership = models.CharField(max_length=40, blank=True, default="")
 
     def __str__(self):
         return f"Session state for user {self.user_id}"

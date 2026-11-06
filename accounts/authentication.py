@@ -6,7 +6,7 @@ from .tokens import token_is_current
 
 # A governor account is read-only and sees school-wide figures only, never a
 # named student, so it may reach these and nothing else.
-GOVERNOR_PATHS = ("/api/me/", "/api/governor/", "/api/logout/", "/api/tour-seen/")
+GOVERNOR_PATHS = ("/api/me/", "/api/governor/", "/api/logout/", "/api/tour-seen/", "/api/account/")
 # A student account sees only what's about that student (studentaccounts):
 # their own record through the parents' child view, the calendar, and the
 # student API. Until they choose their own password, only that.
@@ -17,6 +17,8 @@ LOCKED_ADMIN_PATHS = ("/api/me/", "/api/billing/", "/api/logout/")
 # wait); parents and students can only sign out until the admin opens the school.
 SETUP_STAFF_PATHS = ("/api/me/", "/api/logout/", "/api/tour-seen/")
 SETUP_FAMILY_PATHS = ("/api/logout/",)
+# Someone at several schools can always see their schools and move to another, whatever this one's state.
+ACCOUNT_PATHS = ("/api/account/",)
 STUDENT_PATHS = ("/api/student/", "/api/guardian-students/", "/api/calendar/", "/api/logout/")
 STUDENT_FIRST_PATHS = ("/api/student/me/", "/api/student/password/", "/api/logout/")
 
@@ -25,9 +27,18 @@ class VersionedJWTAuthentication(JWTAuthentication):
     """simplejwt's JWT authentication, refusing tokens from before a password change or deactivation."""
 
     def get_user(self, validated_token):
+        from .memberships import MEMBERSHIP_CLAIM, act_as, default_for, find
+
         user = super().get_user(validated_token)
         if not token_is_current(validated_token, user):
             raise InvalidToken("This session has ended. Please sign in again.")
+        # The school this session acts as. Tokens from before one login could have several carry none: theirs is
+        # the only one. A membership deactivated since (or not this user's) ends the session.
+        key = validated_token.get(MEMBERSHIP_CLAIM)
+        membership = find(user, key) if key else default_for(user)
+        if key and membership is None:
+            raise InvalidToken("You no longer have access to that school. Please sign in again.")
+        act_as(user, membership)
         return user
 
     def authenticate(self, request):
@@ -71,7 +82,7 @@ class VersionedJWTAuthentication(JWTAuthentication):
 
             account = account_of(user)
             school = account.student.school if account else None
-        if school is None:
+        if school is None or path.startswith(ACCOUNT_PATHS):
             return
         admin = profile is not None and profile.role == "admin"
         if is_locked(school.id, timezone.localdate()) and not (admin and path.startswith(LOCKED_ADMIN_PATHS)):

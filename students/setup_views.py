@@ -4,8 +4,6 @@ its first admin, and the setup wizard that admin completes before the school
 starts using HouseMaster (education system, year groups and classes,
 subjects, terms, grading and school details).
 """
-from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
@@ -49,14 +47,21 @@ class RegisterSchoolSerializer(serializers.Serializer):
     EMAIL_TAKEN = "An account with this email already exists. Sign in instead."
 
     def validate_email(self, value):
-        value = value.strip().lower()
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError(self.EMAIL_TAKEN)
-        return value
+        return value.strip().lower()
 
-    def validate_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        from accounts.joining import check_new_password, existing_login
+
+        # Someone who already signs in to HouseMaster (staff at another school, a parent) registers the new school
+        # on that login, with its password (accounts/memberships.py).
+        self.existing = existing_login(attrs["email"])
+        if self.existing is None:
+            check_new_password(attrs["password"])
+        elif not self.existing.check_password(attrs["password"]):
+            raise serializers.ValidationError({"password": [
+                "This email already signs in to HouseMaster. To register a new school on that account, enter its "
+                "password (or reset it from the sign-in page)."]})
+        return attrs
 
     def validate_accept_privacy(self, value):
         if not value:
@@ -76,14 +81,20 @@ def register_school(request):
     first, _, last = name.partition(" ")
     with transaction.atomic():
         school = School.objects.create(name=" ".join(v["school_name"].split()), country=v["country"])
-        user = create_account("email", RegisterSchoolSerializer.EMAIL_TAKEN,
-                              username=username_for_email(v["email"]), email=v["email"],
-                              password=v["password"], first_name=first[:150], last_name=last[:150])
-        Profile.objects.create(user=user, school=school, role=Profile.Role.ADMIN, display_name=name,
-                               privacy_accepted_at=timezone.now())
+        user = data.existing
+        if user is not None:
+            from accounts.joining import reopen
+
+            reopen(user)
+        else:
+            user = create_account("email", RegisterSchoolSerializer.EMAIL_TAKEN,
+                                  username=username_for_email(v["email"]), email=v["email"],
+                                  password=v["password"], first_name=first[:150], last_name=last[:150])
+        profile = Profile.objects.create(user=user, school=school, role=Profile.Role.ADMIN, display_name=name,
+                                         privacy_accepted_at=timezone.now())
         log_activity(school=school, actor=user, action="school.registered",
                      summary=f"{name} registered {school.name} on HouseMaster")
-    return Response(tokens_for(user), status=201)
+    return Response(tokens_for(user, profile), status=201)
 
 
 def setup_stage(school):

@@ -90,7 +90,7 @@ def with_list_fields(queryset, viewer):
         ),
     ).prefetch_related(Prefetch(
         "participant_rows",
-        queryset=ConversationParticipant.objects.select_related("user__profile", "user__guardian").order_by("id"),
+        queryset=ConversationParticipant.objects.prefetch_related("user__profiles", "user__guardian_memberships").order_by("id"),
     ))
 
 
@@ -134,7 +134,7 @@ class ConversationSerializer(SchoolScopedRelatedFieldsMixin, serializers.ModelSe
         if "participant_rows" in getattr(obj, "_prefetched_objects_cache", {}):
             rows = list(obj.participant_rows.all())
         else:
-            rows = list(obj.participant_rows.select_related("user__profile", "user__guardian").order_by("id"))
+            rows = list(obj.participant_rows.prefetch_related("user__profiles", "user__guardian_memberships").order_by("id"))
         viewer = self._viewer()
         if obj.kind == Conversation.Kind.CLASS_NOTICE and viewer is not None and not hasattr(viewer, "profile"):
             # Parents don't see who else received a one-way class notice.

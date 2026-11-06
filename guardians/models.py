@@ -21,12 +21,17 @@ class Guardian(models.Model):
     a deliberately separate identity from accounts.Profile: guardians get
     a narrow permission scope (their own conversations, their own linked
     children) rather than the broad school-wide access HasSchoolProfile
-    grants staff. A User is never both a Profile and a Guardian.
+    grants staff. One login can be a parent at several schools and staff
+    too; each session acts as one of them (accounts/memberships.py), so a
+    request is never both staff and a parent.
     """
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="guardian"
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="guardian_memberships",
+        related_query_name="guardian",
     )
+    # Deactivated by the school's admins: this school only (as for staff, accounts.Profile.is_active).
+    is_active = models.BooleanField(default=True)
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="guardians")
     display_name = models.CharField(
         max_length=255, blank=True,
@@ -66,6 +71,9 @@ class Guardian(models.Model):
         null=True, blank=True, help_text="When they accepted the privacy notice while setting up their account.",
     )
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "school"], name="one_parent_account_per_school")]
+
     @property
     def name(self):
         return self.display_name.strip() or self.user.get_full_name().strip() or "Guardian"
@@ -100,9 +108,9 @@ class GuardianInvite(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=_default_expiry)
     accepted_at = models.DateTimeField(null=True, blank=True)
-    accepted_by = models.OneToOneField(
+    accepted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="guardian_invite_accepted",
+        related_name="guardian_invites_accepted",
     )
     # Filled in from a class sign-up request, and copied onto the parent's account.
     phone = models.CharField(max_length=30, blank=True)

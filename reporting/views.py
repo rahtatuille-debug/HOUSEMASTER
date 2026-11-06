@@ -48,8 +48,10 @@ class StudentReportViewSet(SchoolScopedViewSetMixin, viewsets.ModelViewSet):
     edited, and only draft reports can be regenerated.
     """
     queryset = StudentReport.objects.select_related(
-        "student__school", "student__school_class__year_group",
-        "submitted_by__profile", "submitted_by__guardian", "finalized_by__profile", "finalized_by__guardian",
+        "student__school", "student__school_class__year_group", "submitted_by", "finalized_by",
+    ).prefetch_related(
+        "submitted_by__profiles", "submitted_by__guardian_memberships",
+        "finalized_by__profiles", "finalized_by__guardian_memberships",
     ).order_by("id")
     serializer_class = StudentReportSerializer
     filterset_fields = ["student", "term", "status"]

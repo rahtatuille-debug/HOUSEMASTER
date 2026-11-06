@@ -48,7 +48,7 @@ def build_profile(student, user):
 
     # Teachers and subjects for the student's class.
     assignments = (
-        TeachingAssignment.objects.filter(school_class=school_class, teacher__user__is_active=True)
+        TeachingAssignment.objects.filter(school_class=school_class, teacher__is_active=True)
         .select_related("teacher", "subject")
         if school_class else TeachingAssignment.objects.none()
     )
@@ -129,7 +129,7 @@ def build_profile(student, user):
     parents = []
     for g in student.guardians.select_related("user"):
         parent = {
-            "id": g.id, "name": g.name, "email": g.user.email, "is_active": g.user.is_active,
+            "id": g.id, "name": g.name, "email": g.user.email, "is_active": g.is_active,
             "last_login": g.user.last_login, "user_id": g.user_id,
             "phone": g.phone, "phone_alt": g.phone_alt, "relationship": g.relationship,
             "preferred_contact": g.preferred_contact,

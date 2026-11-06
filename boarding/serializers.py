@@ -37,7 +37,7 @@ class BoardingHouseSerializer(serializers.ModelSerializer):
     def get_fields(self):
         fields = super().get_fields()
         fields["staff"].child_relation.queryset = Profile.objects.filter(
-            school=self.context["request"].user.profile.school, user__is_active=True)
+            school=self.context["request"].user.profile.school, is_active=True)
         return fields
 
     def get_staff_names(self, obj):

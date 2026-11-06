@@ -224,14 +224,13 @@ def approve(signup, admin):
     if student is None:
         raise ValidationError(f"No student at the school has admission number {signup.admission_number}, "
                               "so there's no child to link. Turn this request down or add the student first.")
-    user = User.objects.filter(email__iexact=signup.email).filter(guardian__school=school).first()
-    if User.objects.filter(email__iexact=signup.email, profile__school=school).exists():
-        raise ValidationError(f"{signup.email} belongs to a staff account at the school, so it can't be a "
-                              "parent login too.")
-    if user:
-        user.guardian.students.add(student)
-        send_child_added_email(user.guardian, student)
-        result = f"Added {student_name(student)} to {user.guardian.name}'s account and emailed them."
+    # A parent here already: the child is added to their account. Anyone else (including staff here, who can be a
+    # parent at their own school too) is invited, and accepting adds the parent account to their login.
+    guardian = Guardian.objects.filter(user__email__iexact=signup.email, school=school).first()
+    if guardian:
+        guardian.students.add(student)
+        send_child_added_email(guardian, student)
+        result = f"Added {student_name(student)} to {guardian.name}'s account and emailed them."
     else:
         invite = GuardianInvite.objects.filter(school=school, email__iexact=signup.email,
                                                accepted_at__isnull=True).first()

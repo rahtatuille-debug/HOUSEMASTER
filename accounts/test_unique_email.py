@@ -14,7 +14,6 @@ from rest_framework.test import APIClient
 from accounts.models import Invite
 from guardians.models import GuardianInvite
 from students.models import SchoolClass, Student, YearGroup
-from students.setup_views import RegisterSchoolSerializer
 
 from .serializers import AcceptInviteSerializer
 from .tests import SchoolScopedAPITestCase
@@ -36,7 +35,7 @@ class UniqueEmailTests(SchoolScopedAPITestCase):
         # Simulate the second of two simultaneous sign-ups: its own "is this
         # email free?" check passed before the first one saved.
         User.objects.create_user(username="racer@example.org", email="racer@example.org", password="x")
-        with patch.object(RegisterSchoolSerializer, "validate_email", lambda self, value: value.strip().lower()):
+        with patch("accounts.joining.existing_login", lambda email: None):
             response = APIClient().post("/api/schools/register/", {**SIGNUP, "email": "RACER@example.org"},
                                         format="json")
         self.assertEqual(response.status_code, 400)
@@ -49,7 +48,8 @@ class UniqueEmailTests(SchoolScopedAPITestCase):
         invite = Invite.objects.create(school=self.school_a, email="late@example.org", name="Late Comer",
                                        role="teacher", invited_by=self.admin_a)
         User.objects.create_user(username="someone-else", email="LATE@example.org", password="x")
-        with patch.object(AcceptInviteSerializer, "validate_token", lambda self, value: setattr(self, "_invite", invite) or value):
+        with patch.object(AcceptInviteSerializer, "validate_token", lambda self, value: setattr(self, "_invite", invite) or value), \
+                patch("accounts.joining.existing_login", lambda email: None):
             response = APIClient().post("/api/invites/accept/", {"token": invite.token, "password": "Long-Enough-Pass-1",
                                                                  "accept_privacy": True}, format="json")
         self.assertEqual(response.status_code, 400)
@@ -66,7 +66,8 @@ class UniqueEmailTests(SchoolScopedAPITestCase):
         invite.students.add(kid)
         User.objects.create_user(username="dup", email="Parent.Late@example.org", password="x")
         with patch.object(AcceptGuardianInviteSerializer, "validate_token",
-                          lambda self, value: setattr(self, "_invite", invite) or value):
+                          lambda self, value: setattr(self, "_invite", invite) or value), \
+                patch("accounts.joining.existing_login", lambda email: None):
             response = APIClient().post("/api/guardian-invites/accept/",
                                         {"token": invite.token, "password": "Long-Enough-Pass-1", "accept_privacy": True},
                                         format="json")

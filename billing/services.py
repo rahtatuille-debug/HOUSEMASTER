@@ -143,7 +143,7 @@ def recipients(school):
     from accounts.models import Profile
 
     sub = subscription_for(school)
-    emails = list(Profile.objects.filter(school=school, role=Profile.Role.ADMIN, user__is_active=True)
+    emails = list(Profile.objects.filter(school=school, role=Profile.Role.ADMIN, is_active=True)
                   .exclude(user__email="").values_list("user__email", flat=True))
     if sub.billing_email and sub.billing_email.lower() not in {e.lower() for e in emails}:
         emails.append(sub.billing_email)

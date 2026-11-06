@@ -73,8 +73,9 @@ class ParentNotificationTests(SchoolScopedAPITestCase):
         self.assertTrue(all(len(m.to) == 1 and not m.cc and not m.bcc for m in mail.outbox))
 
     def test_deactivated_parents_get_nothing(self):
-        self.p_7b.user.is_active = False
-        self.p_7b.user.save()
+        from accounts.memberships import set_active
+
+        set_active(self.p_7b, False)
         self.assertNotIn("p7b@alpha.test", self.publish(audience="all_parents"))
 
     def test_finalizing_a_report_tells_that_childs_parents_only(self):

@@ -39,15 +39,23 @@ def token_is_current(token, user):
 
 class VersionedRefreshToken(RefreshToken):
     @classmethod
-    def for_user(cls, user):
+    def for_user(cls, user, membership=None):
+        """`membership`: the school (staff Profile or parent Guardian) the session acts as; by default where the
+        person was last (accounts/memberships.py)."""
+        from .memberships import MEMBERSHIP_CLAIM, default_for, key_of, remember
+
         token = super().for_user(user)
         token[TOKEN_VERSION_CLAIM] = current_token_version(user)
+        membership = membership or default_for(user)
+        if membership is not None:
+            token[MEMBERSHIP_CLAIM] = key_of(membership)
+            remember(user, membership)
         return token
 
 
-def tokens_for(user):
+def tokens_for(user, membership=None):
     """A fresh access/refresh pair for a user who just proved who they are."""
-    refresh = VersionedRefreshToken.for_user(user)
+    refresh = VersionedRefreshToken.for_user(user, membership)
     return {"access": str(refresh.access_token), "refresh": str(refresh)}
 
 
@@ -61,4 +69,12 @@ class VersionedTokenRefreshSerializer(TokenRefreshSerializer):
         ).first()
         if user is None or not token_is_current(refresh, user):
             raise InvalidToken("This session has ended. Please sign in again.")
+        from .memberships import MEMBERSHIP_CLAIM, default_for, key_of
+
+        if MEMBERSHIP_CLAIM not in refresh.payload:
+            # A session from before one login could have several schools: from now on its tokens name its school.
+            membership = default_for(user)
+            if membership is not None:
+                refresh[MEMBERSHIP_CLAIM] = key_of(membership)
+                attrs = {**attrs, "refresh": str(refresh)}
         return super().validate(attrs)

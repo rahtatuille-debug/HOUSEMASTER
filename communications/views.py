@@ -38,8 +38,8 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     """
 
     queryset = Announcement.objects.select_related(
-        "school", "year_group", "school_class", "created_by__profile"
-    ).order_by("-published_at", "-created_at", "-id")
+        "school", "year_group", "school_class", "created_by"
+    ).prefetch_related("created_by__profiles").order_by("-published_at", "-created_at", "-id")
     serializer_class = AnnouncementSerializer
     # Pages when asked for (?page= / ?page_size=); the whole list otherwise,
     # which is what the frontend already deployed expects (B-1).
@@ -305,8 +305,8 @@ class UrgentAlertViewSet(viewsets.ModelViewSet):
     def recipients(self, request, pk=None):
         alert = self.get_object()
         self._check_can_manage(alert)
-        rows = alert.recipients.select_related("user__profile", "user__guardian").prefetch_related(
-            "user__guardian__students"
+        rows = alert.recipients.prefetch_related("user__profiles", "user__guardian_memberships").prefetch_related(
+            "user__guardian_memberships__students"
         ).order_by("acknowledged_at", "id")
         return Response(AlertRecipientSerializer(rows, many=True).data)
 

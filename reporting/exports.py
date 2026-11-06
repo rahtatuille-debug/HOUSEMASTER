@@ -61,7 +61,7 @@ def class_list_xlsx(students, words=DEFAULT_VOCAB):
     wb.remove(wb.active)
     rows = []
     for s in students:
-        parents = [g for g in s.guardians.all() if g.user.is_active]
+        parents = [g for g in s.guardians.all() if g.is_active]
         rows.append([
             s.external_id, s.last_name, s.first_name, GENDERS.get(s.gender, ""), s.date_of_birth,
             s.house, MODES.get(s.mode_of_learning, ""), s.enrolled_on, "Active" if s.is_active else "Inactive",

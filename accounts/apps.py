@@ -10,4 +10,10 @@ class AccountsConfig(AppConfig):
         from housemaster import checks  # noqa: F401
 
         # Ends a user's sessions when their password changes (accounts/tokens.py).
-        from . import signals  # noqa: F401
+        from . import signals
+
+        # One login, several schools: user.profile / user.guardian are the session's membership.
+        from .memberships import install
+
+        install()
+        signals.connect_membership_signals()

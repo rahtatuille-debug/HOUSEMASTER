@@ -186,7 +186,7 @@ def _parents(student, everyone=False):
     linked parent, even one who turned routine emails off."""
     from guardians.models import Guardian
 
-    parents = Guardian.objects.filter(students=student, user__is_active=True).exclude(user__email="")
+    parents = Guardian.objects.filter(students=student, is_active=True).exclude(user__email="")
     if not everyone:
         parents = parents.filter(email_notifications=True)
     return parents.select_related("user")

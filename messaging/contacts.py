@@ -45,7 +45,8 @@ def messageable_guardian_users(staff_user):
     the school for admins and leadership, and parents of students in the
     classes they teach or lead for everyone else (accounts.scoping, "pastoral").
     """
-    users = User.objects.filter(guardian__school=staff_user.profile.school, is_active=True).exclude(id=staff_user.id)
+    users = User.objects.filter(guardian__school=staff_user.profile.school, guardian__is_active=True) \
+        .exclude(id=staff_user.id)
     scope = scope_class_ids(staff_user, PASTORAL)
     if scope is None:
         return users
@@ -80,8 +81,8 @@ def messageable_users(user):
     if guardian is not None:
         return messageable_staff_for_guardian(guardian)
     if getattr(user, "profile", None) is not None:
-        staff = User.objects.filter(profile__school=user.profile.school, is_active=True).exclude(id=user.id) \
-            .exclude(profile__role=Profile.Role.GOVERNOR)
+        staff = User.objects.filter(profile__school=user.profile.school, profile__is_active=True,
+                                    profile__role__in=[Profile.Role.ADMIN, Profile.Role.TEACHER]).exclude(id=user.id)
         guardians = messageable_guardian_users(user)
         return User.objects.filter(Q(id__in=staff.values("id")) | Q(id__in=guardians.values("id")))
     return User.objects.none()

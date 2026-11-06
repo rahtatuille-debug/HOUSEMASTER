@@ -44,6 +44,7 @@ from fees import views as fees_views
 from fees.views import FeeItemViewSet
 from mpesa import views as mpesa_views
 from studentaccounts.views import StudentAccountViewSet, student_hand_in, student_me, student_password
+from accounts.membership_views import memberships as account_memberships, switch as account_switch
 from schoolcalendar.views import EventViewSet, calendar, calendar_feed, calendar_ical
 from discipline.views import DisciplineIncidentViewSet, MeritViewSet
 from support.views import suggestions as support_suggestions
@@ -161,6 +162,8 @@ urlpatterns = [
     path('api/guardian-invites/preview/<str:token>/', GuardianInvitePreviewView.as_view(), name='guardian_invite_preview'),
     path('api/guardian-invites/accept/', AcceptGuardianInviteView.as_view(), name='guardian_invite_accept'),
     path('api/guardian-me/', guardian_me, name='guardian_me'),
+    path('api/account/memberships/', account_memberships, name='account_memberships'),
+    path('api/account/switch/', account_switch, name='account_switch'),
     path('api/calendar/', calendar, name='calendar'),
     path('api/billing/', billing_view, name='billing'),
     path('api/absences/settings/', absence_settings, name='absence_settings'),

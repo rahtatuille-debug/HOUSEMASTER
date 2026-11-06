@@ -25,7 +25,7 @@ def fill_demo(school, seed=7):
     """Returns how many clubs were added."""
     rng = random.Random(seed)
     today = school_localdate(school)
-    staff = list(Profile.objects.filter(school=school, role=Profile.Role.TEACHER, user__is_active=True)
+    staff = list(Profile.objects.filter(school=school, role=Profile.Role.TEACHER, is_active=True)
                  .select_related("user").order_by("id"))
     students = list(Student.objects.filter(school=school, is_active=True).order_by("id"))
     if not staff or len(students) < 20:
