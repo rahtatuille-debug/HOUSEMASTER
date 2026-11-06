@@ -41,6 +41,8 @@ reports it (CI runs that with `--fail-level ERROR`).
 
 | Variable | Default | What it does |
 |---|---|---|
+| `AUTH_REFRESH_COOKIE` | off | `1` keeps the refresh token in an httpOnly cookie. Only with a shared custom domain, and together with the frontend's `VITE_REFRESH_COOKIE=1` (docs/DESIGN_httpOnly_refresh.md). |
+| `AUTH_REFRESH_COOKIE_DOMAIN` | blank | The API host the refresh cookie belongs to, e.g. `api.housemaster.example`. |
 | `GUNICORN_THREADS` | `4` | Threads per process. One slow request only ties up one thread. |
 | `GUNICORN_TIMEOUT` | `60` | Seconds before gunicorn gives up on a request. Keep it above `GEMINI_TIMEOUT_SECONDS + 5`. |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Model used for report comments and announcement drafts. |
@@ -148,6 +150,7 @@ were added by proxies it trusts. Measure it rather than guessing:
 | `VITE_API_BASE_URL` | Production (and Preview if previews are used) | The Render backend URL, e.g. `https://housemaster-api.onrender.com`. A production build fails without it. |
 | `VITE_SENTRY_DSN` | Production, Preview | The frontend Sentry project's DSN. A production build warns without it. |
 | `VITE_SENTRY_ENVIRONMENT` | Production: `production`; Preview: `preview` | |
+| `VITE_REFRESH_COOKIE` | Production | `1` only together with the backend's `AUTH_REFRESH_COOKIE=1` (shared domain needed). Leave unset otherwise. |
 
 ## GitHub repository secrets (backups)
 

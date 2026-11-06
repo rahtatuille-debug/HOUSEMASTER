@@ -1,8 +1,28 @@
 # Design: refresh token in an httpOnly cookie
 
-**Status:** proposed, not built (F-15). Today both tokens are kept in the
-browser's `localStorage`, where any script running on the page can read
-them.
+**Status:** built, switched off (F-15 / AUTH-001). Until it is switched on,
+both tokens are kept in the browser's `localStorage`, where any script
+running on the page can read them. The Content-Security-Policy is now
+enforcing, which is the main guard against such a script.
+
+## Switching it on (owner)
+
+Only after the prerequisites below (one shared domain):
+
+1. Render: `AUTH_REFRESH_COOKIE=1`, and `AUTH_REFRESH_COOKIE_DOMAIN` = the
+   API's host (e.g. `api.housemaster.example`) or blank. This also turns on
+   `CORS_ALLOW_CREDENTIALS`. Deploy.
+2. Vercel: `VITE_REFRESH_COOKIE=1` (Production), and redeploy.
+
+Both switches go on together: the backend alone would leave the app without
+a refresh token, the frontend alone would send cookies the API refuses.
+Undo by removing both. People signed in at the time sign in once more.
+
+Built as: `accounts/refresh_cookie.py` (middleware: moves `refresh` from any
+sign-in answer into the cookie, reads it back for `/api/token/refresh/` and
+`/api/token/logout/`, requires `X-Requested-With: HouseMaster` and an allowed
+`Origin`), tests in `accounts/test_refresh_cookie.py`; frontend `src/api.js`
+(`COOKIE_MODE`), test `src/refreshCookie.test.js`.
 
 ## Goal
 

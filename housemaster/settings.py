@@ -124,6 +124,7 @@ MIDDLEWARE = [
     # separate static file host needed on Render.
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'accounts.refresh_cookie.RefreshCookieMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -384,6 +385,8 @@ if DEBUG:
 # Let the frontend read the file name of downloads (exports, the import
 # template); browsers hide this header from other origins otherwise.
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+# The refresh cookie (AUTH_REFRESH_COOKIE, set further down) needs the browser to send cookies to the API.
+CORS_ALLOW_CREDENTIALS = os.environ.get('AUTH_REFRESH_COOKIE', '').lower() in ('1', 'true', 'yes')
 
 # Set CORS_ALLOWED_ORIGINS in Render to the real Vercel URL(s), e.g.
 # "https://housemaster.vercel.app,https://housemaster-git-main-yourteam.vercel.app"
@@ -416,6 +419,12 @@ SIMPLE_JWT = {
     # parent lists.
     'UPDATE_LAST_LOGIN': True,
 }
+
+# The refresh token in an httpOnly cookie (accounts/refresh_cookie.py, docs/DESIGN_httpOnly_refresh.md). Only once
+# the frontend and the API share a site (a custom domain): leave it off on *.vercel.app + *.onrender.com.
+AUTH_REFRESH_COOKIE = os.environ.get('AUTH_REFRESH_COOKIE', '').lower() in ('1', 'true', 'yes')
+# e.g. "api.housemaster.example". Blank: the API's own host.
+AUTH_REFRESH_COOKIE_DOMAIN = os.environ.get('AUTH_REFRESH_COOKIE_DOMAIN', '').strip()
 
 # Staff invite emails (accounts.Invite).
 # In dev, EMAIL_BACKEND defaults to the console backend, so invite emails

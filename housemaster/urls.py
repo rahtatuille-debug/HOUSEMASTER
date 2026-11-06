@@ -125,6 +125,8 @@ urlpatterns = [
     path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     path('api/logout/', LogoutView.as_view(), name='logout'),
+    # Inside the refresh cookie's path (accounts/refresh_cookie.py).
+    path('api/token/logout/', LogoutView.as_view(), name='token_logout'),
     path('api/me/', me, name='me'),
     path('api/me/password/', change_password, name='me_change_password'),
     path('api/me/sign-out-others/', sign_out_other_devices, name='me_sign_out_others'),
