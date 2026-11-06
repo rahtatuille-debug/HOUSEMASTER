@@ -253,19 +253,17 @@ Vercel → project → **Settings → Environment Variables**:
 **Check:** redeploy the current production build (Deployments → ⋯ →
 Redeploy); it succeeds and the app still signs in.
 
-## H-12 · Turn the Content-Security-Policy from report-only to enforcing
+## H-12 · Content-Security-Policy is now enforcing (check after the deploy)
 
-The frontend Phase 2 release sends `Content-Security-Policy-Report-Only`.
-It blocks nothing; browsers only report what the policy *would* block.
+The frontend now sends `Content-Security-Policy` (enforcing). Before switching, every page an admin can open (28), a
+student profile with charts, and the parent's pages were opened in Chromium against a local copy of the app
+with the policy enforced: nothing was blocked and no page had a script error.
 
-1. After the release, use the app for a few days on a phone and a laptop,
-   visiting every page (including report card PDFs), with the browser's
-   developer console open where you can. Look for messages starting
-   "[Report Only] Refused to…".
-2. If there are none (or only ones you understand and have fixed), edit
-   `vercel.json` in the frontend repository: rename the header key
-   `Content-Security-Policy-Report-Only` to `Content-Security-Policy`
-   (same value), and deploy through a pull request.
+1. After the frontend deploy, open the live app on a phone and a laptop and check a few pages, including a
+   report card PDF and Fees.
+2. If something doesn't load and the browser console says "Refused to…", the quickest way back is to rename
+   the header key in the frontend's `vercel.json` to `Content-Security-Policy-Report-Only` and deploy, then
+   tell me what was refused.
 
 **Check:** the response headers of the live site show
 `Content-Security-Policy`, and every page still works.
