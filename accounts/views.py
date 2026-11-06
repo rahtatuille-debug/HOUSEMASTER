@@ -118,8 +118,7 @@ def me(request):
                        "year_group": r.year_group_id, "subject": r.subject_id, "school_class": r.school_class_id}
                       for r in profile.staff_roles.select_related("year_group", "subject", "school_class")],
             "permissions": permissions_for(request.user),
-            # Admins: whether a subscription invoice is due, overdue or the school is locked (billing).
-            # Other staff: only whether it's locked.
+            # Admins only: whether a subscription invoice is due, overdue or the school is locked (billing).
             "billing": _billing(profile),
         }
     )
@@ -189,12 +188,11 @@ def sign_out_other_devices(request):
 
 
 def _billing(profile):
+    if profile.role != Profile.Role.ADMIN:
+        return None
     from billing.services import status
 
     state = status(profile.school)
-    if profile.role != Profile.Role.ADMIN:
-        # Other staff only need to know the school is paused, to see just the safeguarding pages; no amounts.
-        return {"status": "locked"} if state["status"] == "locked" else None
     return {k: state[k] for k in ("status", "label", "locked_from", "days_left")}
 
 
